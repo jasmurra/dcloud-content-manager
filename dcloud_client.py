@@ -1,0 +1,3573 @@
+"""dCloud session APIs for multi-DC scheduling and session management."""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import json
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
+from urllib.parse import quote, urlencode, urljoin, urlparse
+
+import requests
+import urllib3
+
+from browser_auth.dcloud_token import (
+    DEFAULT_TIMEOUT,
+    dcloud_auth_header,
+    normalize_dcloud_token,
+)
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+SITES = ("sjc", "rtp", "lon", "sng", "syd")
+KNOWN_SITES = frozenset(SITES)
+
+# Same Dev Pool IDs the dCloud bot /sch command uses.
+DEV_POOLS = {
+    "rtp": "dbtrlj8qg2ey6nfvw6ooeaqks",
+    "sjc": "dwy2fhw8w8rxdlzl0wwa3xj58",
+    "lon": "2bstymrd7q03jygha7glua2lo",
+    "sng": "8oaulypgb7540ffe81epjd17b",
+}
+CORE_POOL = "core-content-pool"
+RTP_BLOCK6_POOL = "bea0vjzsnoj7jhks1svt2f5vl"
+
+# Bot /sch ID,days,min,exp sets contentExport to the JSON string "true".
+# Regular /sch ID,days,min uses "false".
+CONTENT_EXPORT = "true"
+CONTENT_REGULAR = "false"
+
+# Authenticated session GET uses numeric codes (2 = starting, 4 = Active).
+# Public /api/public/checkSession returns names: ACTIVE, STARTING_UP, …
+ACTIVE_STATUSES = {"active", "available", "4"}
+ACTIVE_NUMERIC = {4}
+# v2 numeric: 10 = PRESERVE/saving, 12 = SAVED. Same IDs as session.activeId / activeDemoId.
+SAVED_STATUSES = {"saved", "preserve", "preserving", "saving", "10", "12"}
+SAVED_NUMERIC = {10, 12}
+FAILED_STATUSES = {
+    "failed",
+    "error",
+    "cancelled",
+    "canceled",
+    "ended",
+    "notfound",
+    "not found",
+    "complete",
+    "deleted",
+    "sessiondelete",
+    "shutting_down",
+    "shuttingdown",
+}
+STOPPING_STATUSES = {"stopping", "5"}
+STOPPING_NUMERIC = {5}
+POWER_ON_STATES = {"poweredon", "powered_on", "power_on", "poweron", "on", "running"}
+POWER_OFF_STATES = {"poweredoff", "powered_off", "power_off", "poweroff", "off", "notrunning"}
+
+TBV3_API = "https://tbv3-production.ciscodcloud.com"
+TBV3_UI = "https://tbv3-ui.ciscodcloud.com"
+
+
+def tbv3_edit_url(topology_uid: str) -> str:
+    uid = str(topology_uid or "").strip()
+    if not uid or uid.isdigit():
+        return ""
+    return f"{TBV3_UI}/edit/{uid}"
+DEFAULT_SAVE_DESCRIPTION = "Saved"
+_HTML_TITLE_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+)
+
+Progress = Callable[[str], None]
+GetToken = Callable[[], str]
+RefreshAuth = Callable[[str], tuple[str, str | None]]
+
+
+def is_auth_error(err: Any) -> bool:
+    text = str(err or "").lower()
+    return "401" in text or "token was rejected" in text or "unauthorized" in text
+
+
+def site_base(site: str) -> str:
+    return f"https://dcloud2-{site}.cisco.com"
+
+
+def edit_topology_url(
+    site: str,
+    content_id: str,
+    content: dict[str, Any] | None = None,
+) -> str:
+    """v2 custom-content Edit Topology: /topology/builder/{id} (same rel as the dashboard)."""
+    cid = str(content_id or "").strip()
+    if not cid:
+        return ""
+    if isinstance(content, dict):
+        links = content.get("links")
+        if isinstance(links, list):
+            for link in links:
+                if not isinstance(link, dict):
+                    continue
+                rel = str(link.get("rel") or "").lower()
+                href = str(link.get("href") or "").strip()
+                if rel == "edittopology" and href:
+                    if href.startswith("http://") or href.startswith("https://"):
+                        return href
+                    return site_base(site) + (href if href.startswith("/") else f"/{href}")
+    return f"{site_base(site)}/topology/builder/{cid}"
+
+
+def session_view_v2_url(site: str, session_id: str) -> str:
+    site_code = (site or "").strip().lower()
+    sid = (session_id or "").strip()
+    if not site_code or not sid:
+        return ""
+    return (
+        f"{site_base(site_code)}/session/{sid}"
+        "?returnPathTitleKey=view-session"
+    )
+
+
+def session_view_v3_url(session_id: str, topology_version_uid: str) -> str:
+    sid = (session_id or "").strip()
+    uid = (topology_version_uid or "").strip()
+    if not sid or not uid:
+        return ""
+    return (
+        f"https://tbv3-ui.ciscodcloud.com/sessions/{sid}"
+        f"?versionUid={uid}"
+    )
+
+
+def extract_topology_uid(session: dict[str, Any] | None) -> str:
+    if not session:
+        return ""
+    for key in ("topologyVersionUid", "versionUid", "versionUID"):
+        value = session.get(key)
+        if value:
+            return str(value).strip()
+    nested = session.get("topologyVersion")
+    if isinstance(nested, dict) and nested.get("uid"):
+        return str(nested.get("uid") or "").strip()
+    return ""
+
+
+def session_view_url(
+    site: str,
+    session_id: str,
+    topology_uid: str | None = None,
+    session: dict[str, Any] | None = None,
+) -> str:
+    """tbv3 when topologyVersionUid is present (same as the bot /qsd View v3); else v2."""
+    uid = (topology_uid or "").strip() or extract_topology_uid(session)
+    if uid:
+        v3 = session_view_v3_url(session_id, uid)
+        if v3:
+            return v3
+    return session_view_v2_url(site, session_id)
+
+
+def server_rdp_url(site: str, session_id: str, vm_uid: str) -> str:
+    return f"{site_base(site)}/sessions/{session_id}/servers/{vm_uid}/rdp"
+
+
+def vm_console_url(site: str, session_id: str, vm_uid: str) -> str:
+    return f"{site_base(site)}/sessions/{session_id}/servers/{vm_uid}/console"
+
+
+def webrdp_connect_url(site: str, session_id: str, vm_uid: str, credentials: str) -> str:
+    return (
+        f"http://dcloud-{site}-web-4.cisco.com/dCloudConnect"
+        f"?s={vm_uid}&ss={session_id}&p=rdp#/client/{credentials}"
+    )
+
+
+def fetch_webrdp_credentials(token: str, site: str, session_id: str) -> str:
+    """Session-level WebRDP cookie/credentials — same GET the bot /sd command uses."""
+    url = f"{site_base(site)}/api/sessions/{session_id}/servers/{session_id}/webrdp"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException:
+        return ""
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return ""
+    cookie = body.get("cookie") or {}
+    value = cookie.get("value") if isinstance(cookie, dict) else ""
+    if not value:
+        return ""
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return ""
+    if isinstance(parsed, dict):
+        return str(parsed.get("credentials") or "")
+    return ""
+
+
+def attach_vm_access_links(
+    token: str,
+    site: str,
+    session_id: str,
+    vms: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    creds = fetch_webrdp_credentials(token, site, session_id)
+    enriched: list[dict[str, Any]] = []
+    for vm in vms:
+        item = dict(vm)
+        uid = str(item.get("uid") or "")
+        item.pop("rdpUrl", None)
+        item.pop("webRdpUrl", None)
+        if uid:
+            item["consoleUrl"] = vm_console_url(site, session_id, uid)
+            if _flag_true(item.get("rdpEnabled")):
+                item["rdpUrl"] = server_rdp_url(site, session_id, uid)
+                if creds:
+                    item["webRdpUrl"] = webrdp_connect_url(site, session_id, uid, creds)
+        enriched.append(item)
+    return enriched
+
+
+def parse_site_and_id(raw: str, default_site: str = "") -> tuple[str, str]:
+    text = (raw or "").strip()
+    if not text:
+        return (default_site or "").lower(), ""
+    lower = text.lower()
+    if len(lower) > 3 and lower[:3] in KNOWN_SITES:
+        rest = text[3:].lstrip("-: /")
+        if rest:
+            return lower[:3], rest
+    return (default_site or "").lower(), text
+
+
+def _headers(token: str) -> dict[str, str]:
+    return dcloud_auth_header(normalize_dcloud_token(token))
+
+
+def _host_allowed(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host.endswith(".cisco.com") or host.endswith(".ciscodcloud.com") or host in {
+        "cisco.com",
+        "ciscodcloud.com",
+    }
+
+
+def _request(
+    method: str,
+    url: str,
+    token: str,
+    *,
+    json_body: Any | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    extra_headers: dict[str, str] | None = None,
+    include_auth: bool = True,
+) -> requests.Response:
+    """Follow redirects without turning POST/PUT into GET (that yields Tomcat 405 HTML)."""
+    headers = _headers(token) if include_auth else {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if extra_headers:
+        headers.update({key: value for key, value in extra_headers.items() if value})
+    current_url = url
+    current_method = (method or "GET").upper()
+    current_json = json_body
+    last: requests.Response | None = None
+    for _ in range(5):
+        last = requests.request(
+            current_method,
+            current_url,
+            headers=headers,
+            json=current_json,
+            verify=False,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+        if last.status_code not in (301, 302, 303, 307, 308):
+            return last
+        location = last.headers.get("Location") or last.headers.get("location") or ""
+        if not location:
+            return last
+        next_url = urljoin(current_url, location)
+        if not _host_allowed(next_url):
+            return last
+        if last.status_code == 303:
+            current_method = "GET"
+            current_json = None
+        current_url = next_url
+    return last
+
+
+def _json_or_text(response: requests.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError:
+        return response.text.strip()
+
+
+def _looks_like_html(text: str) -> bool:
+    lowered = text.lstrip().lower()
+    return lowered.startswith("<!doctype") or lowered.startswith("<html") or "<h1>" in lowered
+
+
+def api_message(body: Any) -> str:
+    if isinstance(body, str):
+        if _looks_like_html(body):
+            title = _HTML_TITLE_RE.search(body)
+            if title:
+                return re.sub(r"\s+", " ", title.group(1)).strip()
+            return "HTML error page from dCloud"
+        return body
+    if isinstance(body, list) and body:
+        first = body[0]
+        if isinstance(first, dict):
+            return api_message(first)
+        return str(first)
+    if not isinstance(body, dict):
+        return str(body)
+    message = body.get("message")
+    if isinstance(message, list) and message:
+        first = message[0]
+        return first if isinstance(first, str) else str(first)
+    if isinstance(message, str) and message:
+        return message
+    for key in ("developerMessage", "error", "detail", "status"):
+        value = body.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _short_http_message(body: Any, status_code: int) -> str:
+    message = api_message(body).strip()
+    if not message:
+        return f"HTTP {status_code}"
+    if _looks_like_html(message) or len(message) > 180:
+        return f"HTTP {status_code}"
+    if str(status_code) in message:
+        return message
+    return f"HTTP {status_code}: {message}"
+
+
+def parse_schedule_datetime(raw: str) -> datetime | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc)
+
+
+def resolve_schedule_window(
+    *,
+    days: int = 1,
+    start_at: str = "",
+    stop_at: str = "",
+) -> tuple[datetime, datetime] | str:
+    # No day cap here. dCloud decides what window a demo allows and says so.
+    days = max(1, int(days or 1))
+    start = parse_schedule_datetime(start_at) or datetime.now(timezone.utc)
+    stop = parse_schedule_datetime(stop_at)
+    if stop is None:
+        stop = start + timedelta(days=days)
+    if stop <= start:
+        return "Stop time must be after start time."
+    return start, stop
+
+
+def _dcloud_timestamp(when: datetime) -> str:
+    utc = when.astimezone(timezone.utc).replace(tzinfo=None)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _status_text(raw: Any) -> str:
+    if raw is None:
+        return ""
+    return str(raw).strip()
+
+
+def _status_key(raw: Any) -> str:
+    return _status_text(raw).lower().replace(" ", "")
+
+
+def is_active_status(raw: Any) -> bool:
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        return raw in ACTIVE_NUMERIC
+    key = _status_key(raw)
+    if key in ACTIVE_STATUSES:
+        return True
+    try:
+        return int(key) in ACTIVE_NUMERIC
+    except ValueError:
+        return False
+
+
+def is_failed_status(raw: Any) -> bool:
+    key = _status_key(raw)
+    return key in FAILED_STATUSES or key.startswith("fail")
+
+
+def is_stopping_status(raw: Any) -> bool:
+    if isinstance(raw, int):
+        return raw in STOPPING_NUMERIC
+    key = _status_key(raw)
+    if key in STOPPING_STATUSES:
+        return True
+    try:
+        return int(key) in STOPPING_NUMERIC
+    except ValueError:
+        return False
+
+
+def is_saved_status(raw: Any) -> bool:
+    if isinstance(raw, int):
+        return raw in SAVED_NUMERIC
+    key = _status_key(raw)
+    if key in SAVED_STATUSES:
+        return True
+    try:
+        return int(key) in SAVED_NUMERIC
+    except ValueError:
+        return False
+
+
+def session_saved_content_id(session: dict[str, Any] | None) -> str:
+    """Durable custom-content ID: v2 session.activeId / tbv3 sessionDetails.activeDemoId."""
+    if not isinstance(session, dict):
+        return ""
+    nested = []
+    for key in ("session", "sessionDetails"):
+        value = session.get(key)
+        if isinstance(value, dict):
+            nested.append(value)
+    for obj in (session, *nested):
+        for key in ("activeId", "activeDemoId"):
+            val = str(obj.get(key) or "").strip()
+            if val and val.lower() not in {"none", "null"}:
+                return val
+    return ""
+
+
+def format_status(*parts: Any) -> str:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        text = _status_text(part)
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        labels.append(text)
+    return " / ".join(labels) if labels else "unknown"
+
+
+def check_public_session_status(site: str, session_id: str) -> tuple[str, str | None]:
+    """Named status from GET /api/public/checkSession (no auth), same as the cleanup scripts."""
+    site_code = (site or "").strip().lower()
+    sid = (session_id or "").strip()
+    if site_code not in KNOWN_SITES or not sid:
+        return "", "site and session_id required"
+    url = f"{site_base(site_code)}/api/public/checkSession?sessionId={sid}"
+    try:
+        response = requests.get(url, verify=False, timeout=10)
+    except requests.RequestException as exc:
+        return "", str(exc)
+    body: Any = _json_or_text(response)
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except ValueError:
+            return body.strip(), None
+    if isinstance(body, dict):
+        return str(body.get("status") or "").strip(), None
+    return "", f"HTTP {response.status_code}"
+
+
+def _power_key(raw: Any) -> str:
+    return str(raw or "").strip().lower().replace(" ", "").replace("-", "_")
+
+
+def is_powered_on(raw: Any) -> bool:
+    return _power_key(raw) in POWER_ON_STATES
+
+
+def is_powered_off(raw: Any) -> bool:
+    return _power_key(raw) in POWER_OFF_STATES
+
+
+def _flag_true(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _vm_os_text(raw: dict[str, Any] | None) -> str:
+    if not isinstance(raw, dict):
+        return ""
+    for key in (
+        "os",
+        "guestOs",
+        "guestOS",
+        "operatingSystem",
+        "guestFullName",
+        "serverOs",
+        "serverOS",
+        "templateName",
+        "vmTemplateName",
+        "platform",
+        "serverTemplateName",
+    ):
+        text = str(raw.get(key) or "").strip()
+        if text:
+            return text
+    for nest_key in ("vmwareState", "configuration", "config", "serverTemplate", "template", "vmTemplate"):
+        nested = raw.get(nest_key)
+        if isinstance(nested, dict):
+            found = _vm_os_text(nested)
+            if found:
+                return found
+    return ""
+
+
+def _vm_short_name_from_raw(raw: dict[str, Any]) -> str:
+    for key in ("shortName", "vmName", "hostname"):
+        text = str(raw.get(key) or "").strip()
+        if text:
+            return text
+    return str(raw.get("name") or "").strip()
+
+
+def _vm_display_name_from_raw(raw: dict[str, Any], short_name: str = "") -> str:
+    preset = str(raw.get("displayName") or "").strip()
+    if preset:
+        return preset
+    for key in ("contentName", "serverLabel", "label", "title"):
+        text = str(raw.get(key) or "").strip()
+        if text:
+            return text
+    short = short_name or _vm_short_name_from_raw(raw)
+    description = str(raw.get("description") or "").strip()
+    if description and description.lower() != short.lower():
+        return description
+    return short
+
+
+def summarize_vm(vm: dict[str, Any]) -> dict[str, Any]:
+    uid = str(vm.get("uid") or "")
+    mor = str(vm.get("mor") or "")
+    short = str(vm.get("shortName") or _vm_short_name_from_raw(vm) or "").strip()
+    display = str(vm.get("displayName") or _vm_display_name_from_raw(vm, short) or "").strip()
+    if not display:
+        display = short or uid or mor or "Unnamed VM"
+    if not short:
+        short = display
+    name = display
+    nested = vm.get("vmwareState") if isinstance(vm.get("vmwareState"), dict) else {}
+    power = (
+        vm.get("powerState")
+        or vm.get("power_state")
+        or nested.get("powerState")
+        or vm.get("state")
+        or ""
+    )
+    rdp_enabled = _flag_true(vm.get("rdpEnabled"))
+    guest_state = str(nested.get("guestState") or vm.get("guestState") or "")
+    guest_tools = str(nested.get("guestToolsState") or vm.get("guestToolsState") or "")
+    return {
+        "name": name,
+        "displayName": display,
+        "shortName": short,
+        "mor": mor,
+        "uid": uid,
+        "powerState": str(power),
+        "guestState": guest_state,
+        "guestToolsState": guest_tools,
+        "rdpEnabled": rdp_enabled,
+        "os": _vm_os_text(vm),
+    }
+
+
+def fetch_tbv3_vm_status(
+    token: str,
+    session_id: str,
+    mor: str,
+    topology_uid: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """tbv3 vm-status — same API the topology UI polls (see tbv3 HAR)."""
+    sid = (session_id or "").strip()
+    vm_mor = (mor or "").strip()
+    version = (topology_uid or "").strip()
+    if not sid or not vm_mor or not version:
+        return None, None
+    query = urlencode({"versionUid": version, "mor": vm_mor})
+    url = f"{TBV3_API}/api/sessions/{sid}/vm-status?{query}"
+    try:
+        response = _request("GET", url, token, timeout=15)
+    except requests.RequestException:
+        return None, None
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if not isinstance(body, dict) or response.status_code >= 400:
+        return None, None
+    return body, None
+
+
+def _fetch_session_server(
+    token: str,
+    site: str,
+    session_id: str,
+    ident: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    server_id = (ident or "").strip()
+    if not server_id:
+        return None, None
+    url = f"{site_base(site)}/api/sessions/{session_id}/servers/{server_id}"
+    try:
+        response = _request("GET", url, token, timeout=15)
+    except requests.RequestException:
+        return None, None
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if not isinstance(body, dict) or response.status_code >= 400:
+        return None, None
+    return body, None
+
+
+def fetch_vm_runtime_details(
+    token: str,
+    site: str,
+    session_id: str,
+    mor: str,
+    topology_uid: str,
+) -> tuple[dict[str, str], str | None]:
+    """Live power/guest state from tbv3 vm-status; OS from per-server GET when present."""
+    fields: dict[str, str] = {}
+    status, err = fetch_tbv3_vm_status(token, session_id, mor, topology_uid)
+    if err:
+        return fields, err
+    if status:
+        state = status.get("vmwareState") if isinstance(status.get("vmwareState"), dict) else {}
+        power = str(state.get("powerState") or status.get("powerState") or "")
+        if power:
+            fields["powerState"] = power
+        guest = str(state.get("guestState") or "")
+        if guest:
+            fields["guestState"] = guest
+        tools = str(state.get("guestToolsState") or "")
+        if tools:
+            fields["guestToolsState"] = tools
+    server, server_err = _fetch_session_server(token, site, session_id, mor)
+    if is_auth_error(server_err):
+        return fields, server_err
+    if server:
+        nested = server.get("vmwareState") if isinstance(server.get("vmwareState"), dict) else {}
+        if not fields.get("powerState"):
+            power = str(
+                server.get("powerState")
+                or server.get("power_state")
+                or nested.get("powerState")
+                or ""
+            )
+            if power:
+                fields["powerState"] = power
+        os_text = _vm_os_text(server)
+        if os_text:
+            fields["os"] = os_text
+    return fields, None
+
+
+def apply_tbv3_power_states(
+    token: str,
+    site: str,
+    session_id: str,
+    vms: list[dict[str, Any]],
+    session: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    topo = extract_topology_uid(session)
+    if not topo:
+        details, err = fetch_session(token, site, session_id, expand="server")
+        if is_auth_error(err):
+            return list(vms), err
+        topo = extract_topology_uid(details)
+        session = details or session
+    updated: list[dict[str, Any]] = []
+    for vm in vms:
+        item = dict(vm)
+        mor = str(item.get("mor") or "")
+        runtime, err = fetch_vm_runtime_details(token, site, session_id, mor, topo)
+        if is_auth_error(err):
+            return updated or list(vms), err
+        for key in ("powerState", "guestState", "guestToolsState", "os"):
+            value = str(runtime.get(key) or "").strip()
+            if value:
+                item[key] = value
+        updated.append(item)
+    return updated, None
+
+
+def fetch_session(
+    token: str,
+    site: str,
+    session_id: str,
+    *,
+    expand: str = "server",
+) -> tuple[dict[str, Any] | None, str | None]:
+    site_code = (site or "").strip().lower()
+    sid = (session_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return None, "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not sid:
+        return None, "Session ID is required."
+
+    url = f"{site_base(site_code)}/api/sessions/{sid}?expand={expand}"
+    try:
+        response = _request("GET", url, token)
+    except requests.RequestException as exc:
+        return None, str(exc)
+
+    if response.status_code == 404:
+        return None, f"Session {sid} not found in {site_code.upper()}."
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then Continue."
+    if response.status_code >= 400:
+        return None, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return None, "Unexpected session response."
+    return body, None
+
+
+def _session_server_list(details: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(details, dict):
+        return []
+    expand = details.get("expand") if isinstance(details.get("expand"), dict) else {}
+    candidates = [
+        expand.get("servers"),
+        expand.get("server"),
+        details.get("servers"),
+        details.get("server"),
+    ]
+    for raw in candidates:
+        if isinstance(raw, list):
+            return [item for item in raw if isinstance(item, dict)]
+        if isinstance(raw, dict):
+            inner = raw.get("content") or raw.get("servers") or raw.get("server")
+            if isinstance(inner, list):
+                return [item for item in inner if isinstance(item, dict)]
+    return []
+
+
+def list_session_vms(token: str, site: str, session_id: str) -> tuple[list[dict[str, Any]], dict[str, Any], str | None]:
+    details, err = fetch_session(token, site, session_id, expand="server")
+    if err or not details:
+        return [], {}, err or "Could not load session."
+    servers = _session_server_list(details)
+    if not servers:
+        extra, extra_err = fetch_session(token, site, session_id, expand="all")
+        if extra_err and is_auth_error(extra_err):
+            return [], details, extra_err
+        if extra:
+            details = extra
+            servers = _session_server_list(extra)
+    vms = [summarize_vm(vm) for vm in servers]
+    topology_uid = extract_topology_container_uid(details)
+    version_uid = extract_topology_uid(details)
+    if not topology_uid and version_uid:
+        topology_uid = fetch_tbv3_session_topology_uid(token, session_id, version_uid)
+    if topology_uid:
+        vms = enrich_vms_with_topology_names(token, vms, topology_uid)
+    return vms, details, None
+
+
+_TBV3_UID_RE = re.compile(r"^[a-z0-9]{12,}$", re.I)
+
+
+def _looks_like_tbv3_uid(value: str) -> bool:
+    text = (value or "").strip()
+    if not text or text.isdigit():
+        return False
+    return bool(_TBV3_UID_RE.match(text))
+
+
+def _topology_uid_from_href(href: str) -> str:
+    href = (href or "").strip()
+    if not href:
+        return ""
+    parsed = urlparse(href)
+    path = parsed.path or href
+    for pattern in (r"/edit/([^/?#]+)", r"/api/topologies/([^/?#/]+)"):
+        match = re.search(pattern, path, re.I)
+        if not match:
+            continue
+        uid = match.group(1).strip()
+        if uid and not uid.isdigit():
+            return uid
+    return ""
+
+
+def extract_content_topology_uid(content: dict[str, Any], site: str = "") -> str:
+    """Resolve tbv3 topology UID from a dCloud custom-content record."""
+    if not isinstance(content, dict):
+        return ""
+    for key in (
+        "topologyUid",
+        "topologyUID",
+        "topologyId",
+        "topologyVersionUid",
+        "versionUid",
+        "versionUID",
+    ):
+        uid = str(content.get(key) or "").strip()
+        if uid and not uid.isdigit():
+            return uid
+    nested = content.get("topology")
+    if isinstance(nested, dict):
+        uid = str(nested.get("uid") or "").strip()
+        if uid and not uid.isdigit():
+            return uid
+    href = edit_topology_url(site, "", content)
+    found = _topology_uid_from_href(href)
+    if found:
+        return found
+    for link_key in ("links", "_links"):
+        raw = content.get(link_key)
+        links: list[Any] = raw if isinstance(raw, list) else []
+        if isinstance(raw, dict):
+            links = list(raw.values())
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            rel = str(link.get("rel") or link.get("name") or "").lower()
+            href = str(link.get("href") or "").strip()
+            if rel in {"edittopology", "topology", "self"} or "topology" in rel:
+                found = _topology_uid_from_href(href)
+                if found:
+                    return found
+    return ""
+
+
+def fetch_tbv3_topology(
+    token: str,
+    topology_uid: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    uid = (topology_uid or "").strip()
+    if not uid:
+        return None, "Topology UID is required."
+    url = f"{TBV3_API}/api/topologies/{uid}"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException as exc:
+        return None, str(exc)
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if response.status_code >= 400 or not isinstance(body, dict):
+        message = api_message(body) if isinstance(body, dict) else f"HTTP {response.status_code}"
+        return None, message or f"Topology {uid} not found."
+    return body, None
+
+
+def fetch_tbv3_topology_vms(
+    token: str,
+    topology_uid: str,
+) -> tuple[list[dict[str, Any]], str | None]:
+    uid = (topology_uid or "").strip()
+    if not uid:
+        return [], "Topology UID is required."
+    url = f"{TBV3_API}/api/topologies/{uid}/vms"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if response.status_code >= 400:
+        message = api_message(body) if isinstance(body, dict) else f"HTTP {response.status_code}"
+        return [], message or f"Could not load VMs for topology {uid}."
+    if not isinstance(body, dict):
+        return [], "Unexpected topology VMs response."
+    embedded = body.get("_embedded") if isinstance(body.get("_embedded"), dict) else {}
+    rows = embedded.get("vms") or body.get("vms") or []
+    if not isinstance(rows, list):
+        return [], "Unexpected topology VMs response."
+    return [item for item in rows if isinstance(item, dict)], None
+
+
+def extract_topology_container_uid(session: dict[str, Any] | None) -> str:
+    if not session:
+        return ""
+    nested = session.get("topology")
+    if isinstance(nested, dict):
+        uid = str(nested.get("uid") or "").strip()
+        if uid:
+            return uid
+    for key in ("topologyUid", "topologyUID"):
+        uid = str(session.get(key) or "").strip()
+        if uid:
+            return uid
+    return ""
+
+
+def fetch_tbv3_session_topology_uid(
+    token: str,
+    session_id: str,
+    version_uid: str,
+) -> str:
+    sid = (session_id or "").strip()
+    version = (version_uid or "").strip()
+    if not sid or not version:
+        return ""
+    query = urlencode({"versionUid": version})
+    url = f"{TBV3_API}/api/sessions/{sid}?{query}"
+    try:
+        response = _request("GET", url, token, timeout=20)
+    except requests.RequestException:
+        return ""
+    if response.status_code >= 400:
+        return ""
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return ""
+    return extract_topology_container_uid(body)
+
+
+def _topology_vm_display_name(vm: dict[str, Any]) -> str:
+    return str(vm.get("name") or "").strip()
+
+
+def _topology_vmware_name(vm: dict[str, Any]) -> str:
+    """VMware/hypervisor name from topology builder Advanced Settings (same /vms payload)."""
+    advanced = vm.get("advancedSettings")
+    if isinstance(advanced, dict):
+        hypervisor = str(advanced.get("nameInHypervisor") or "").strip()
+        if hypervisor:
+            return hypervisor
+    description = str(vm.get("description") or "").strip()
+    display = _topology_vm_display_name(vm)
+    if description and description.lower() != display.lower():
+        return description
+    return description or display
+
+
+def enrich_vms_with_topology_names(
+    token: str,
+    vms: list[dict[str, Any]],
+    topology_uid: str,
+) -> list[dict[str, Any]]:
+    uid = (topology_uid or "").strip()
+    if not uid or not vms:
+        return vms
+    raw_vms, err = fetch_tbv3_topology_vms(token, uid)
+    if err or not raw_vms:
+        return vms
+    by_vmware: dict[str, str] = {}
+    by_inventory: dict[str, str] = {}
+    vmware_by_inventory: dict[str, str] = {}
+    for item in raw_vms:
+        display = _topology_vm_display_name(item)
+        vmware = _topology_vmware_name(item)
+        inventory = str(item.get("inventoryVmId") or "").strip()
+        if vmware and display:
+            by_vmware[vmware.lower()] = display
+        if inventory and display:
+            by_inventory[inventory] = display
+        if inventory and vmware:
+            vmware_by_inventory[inventory] = vmware
+    enriched: list[dict[str, Any]] = []
+    for vm in vms:
+        row = dict(vm)
+        vmware = str(row.get("shortName") or row.get("name") or "").strip()
+        mor = str(row.get("mor") or "").strip()
+        display = str(row.get("displayName") or "").strip()
+        if not display or display.lower() == vmware.lower():
+            display = (
+                by_vmware.get(vmware.lower())
+                or by_inventory.get(mor)
+                or display
+                or vmware
+            )
+        if not vmware or vmware.lower() == display.lower():
+            vmware = vmware_by_inventory.get(mor) or vmware or display
+        row["displayName"] = display
+        row["shortName"] = vmware or display
+        row["name"] = display
+        enriched.append(row)
+    return enriched
+
+
+def summarize_topology_vm(vm: dict[str, Any]) -> dict[str, Any]:
+    """Map tbv3 saved-content VM records to the same shape as live session VMs."""
+    display = _topology_vm_display_name(vm)
+    vmware = _topology_vmware_name(vm)
+    mor = str(vm.get("inventoryVmId") or "").strip()
+    uid = str(vm.get("uid") or "").strip()
+    os_family = str(vm.get("osFamily") or "").strip()
+    return summarize_vm(
+        {
+            "displayName": display,
+            "shortName": vmware,
+            "name": display,
+            "mor": mor,
+            "uid": uid,
+            "osFamily": os_family,
+            "powerState": "",
+            "guestToolsState": "",
+            "guestState": "",
+        }
+    )
+
+
+def resolve_content_topology_uid(
+    token: str,
+    site: str,
+    content_id: str,
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None, str | None]:
+    """Return (topology_uid, content_record, topology_record, error)."""
+    site_code = (site or "").strip().lower()
+    raw = str(content_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return "", None, None, "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not raw:
+        return "", None, None, "Saved content ID is required."
+
+    content: dict[str, Any] | None = None
+    topology_uid = raw if _looks_like_tbv3_uid(raw) else ""
+    if not topology_uid:
+        content = fetch_content(token, site_code, raw)
+        if not content:
+            return "", None, None, f"Saved content {raw} not found in {site_code.upper()}."
+        topology_uid = extract_content_topology_uid(content, site_code)
+    if not topology_uid:
+        return (
+            "",
+            content,
+            None,
+            "Could not resolve a v3 topology UID for this saved content. "
+            "Open Edit Topology in dCloud and paste the ID from the URL "
+            f"({TBV3_UI}/edit/…), or use an active session instead.",
+        )
+
+    topology, err = fetch_tbv3_topology(token, topology_uid)
+    if err:
+        return "", content, None, err
+    return topology_uid, content, topology, None
+
+
+def list_content_vms(
+    token: str,
+    site: str,
+    content_id: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str | None]:
+    topology_uid, content, topology, err = resolve_content_topology_uid(token, site, content_id)
+    if err or not topology_uid or not topology:
+        return [], {}, err or "Could not load saved content."
+
+    vms_raw, vm_err = fetch_tbv3_topology_vms(token, topology_uid)
+    if vm_err:
+        return [], {}, vm_err
+
+    site_code = (site or "").strip().lower()
+    numeric_id = extract_demo_numeric_id(content) if content else ""
+    if not numeric_id and not _looks_like_tbv3_uid(content_id):
+        numeric_id = str(content_id or "").strip()
+    name = str((content or {}).get("name") or topology.get("name") or "").strip()
+    demo_id = str(topology.get("demoId") or (content or {}).get("parentId") or "").strip()
+    topo_dc = str(topology.get("datacenter") or "").strip().lower()
+    details: dict[str, Any] = {
+        "name": name,
+        "status": str(topology.get("status") or "SAVED_CONTENT"),
+        "demoId": demo_id,
+        "contentId": numeric_id,
+        "topologyUid": topology_uid,
+        "datacenter": topo_dc,
+        "source": "content",
+        "viewUrl": tbv3_edit_url(topology_uid),
+    }
+    if topo_dc and topo_dc != site_code:
+        details["siteMismatch"] = f"Topology is in {topo_dc.upper()}, not {site_code.upper()}."
+    vms = [summarize_topology_vm(vm) for vm in vms_raw]
+    return vms, details, None
+
+
+def _norm_name(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _numeric_id(*values: Any) -> str:
+    for value in values:
+        if value is None or isinstance(value, (dict, list, bool)):
+            continue
+        text = str(value).strip()
+        if text.isdigit():
+            return text
+    return ""
+
+
+def extract_demo_numeric_id(obj: Any) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    found = _numeric_id(
+        obj.get("uid"),
+        obj.get("demoId"),
+        obj.get("demoUid"),
+        obj.get("contentId"),
+        obj.get("contentUid"),
+        obj.get("id"),
+        obj.get("fkrootDemoId"),
+        obj.get("parentId"),
+    )
+    if found:
+        return found
+    for nest in ("demo", "content", "item", "data", "result"):
+        nested = extract_demo_numeric_id(obj.get(nest))
+        if nested:
+            return nested
+    return ""
+
+
+def extract_parent_content_id(obj: Any, *, saved_id: str = "") -> str:
+    """Published / parent demo ID for a saved copy. Empty if unknown or same as the saved ID."""
+    saved = str(saved_id or "").strip()
+    if not isinstance(obj, dict):
+        return ""
+    for key in ("parentId", "parentDemoId", "publishedId", "fkrootDemoId", "fkRootDemoId"):
+        value = str(obj.get(key) or "").strip()
+        if value.isdigit() and value != saved:
+            return value
+    for link in obj.get("links") or []:
+        if not isinstance(link, dict):
+            continue
+        rel = str(link.get("rel") or "").lower()
+        href = str(link.get("href") or link.get("uri") or "")
+        if "parent" not in rel:
+            continue
+        hit = re.search(r"/contents/(\d+)", href)
+        if hit and hit.group(1) != saved:
+            return hit.group(1)
+    for nest in ("demo", "content", "item", "data", "result"):
+        found = extract_parent_content_id(obj.get(nest), saved_id=saved)
+        if found:
+            return found
+    return ""
+
+
+def _owner_name(item: dict[str, Any]) -> str:
+    owner = item.get("owner") or item.get("createdBy") or item.get("username") or ""
+    if isinstance(owner, dict):
+        return str(owner.get("username") or owner.get("name") or owner.get("uid") or "").strip()
+    return str(owner or "").strip()
+
+
+def _state_text(item: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("state", "states", "status", "lifecycleState"):
+        value = item.get(key)
+        if isinstance(value, list):
+            parts.extend(str(part) for part in value if part)
+        elif value:
+            parts.append(str(value))
+    for flag in ("published", "promoted"):
+        if item.get(flag) is True:
+            parts.append(flag)
+    return " ".join(parts).lower()
+
+
+def _as_item_list(body: Any) -> list[dict[str, Any]]:
+    if isinstance(body, list):
+        return [item for item in body if isinstance(item, dict)]
+    if not isinstance(body, dict):
+        return []
+    for key in ("content", "contents", "demos", "items"):
+        value = body.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    embedded = body.get("_embedded")
+    if isinstance(embedded, dict):
+        for value in embedded.values():
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def catalog_search(
+    token: str,
+    site: str,
+    name: str,
+    strategy: str = "EXACT",
+) -> tuple[list[dict[str, Any]], str | None]:
+    """POST /api/global-catalog/search — same call as the catalog Exact Match checkbox."""
+    url = f"{site_base(site)}/api/global-catalog/search"
+    payload = {"criteria": name, "strategy": strategy}
+    try:
+        response = _request("POST", url, token, json_body=payload, timeout=30)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if response.status_code >= 400:
+        return [], api_message(body) or f"HTTP {response.status_code}"
+    items = []
+    if isinstance(body, dict):
+        items = ((body.get("_embedded") or {}).get("contentItems")) or []
+    if not isinstance(items, list):
+        return [], None
+    return [item for item in items if isinstance(item, dict)], None
+
+
+def fetch_catalog_item(token: str, site: str, item: dict[str, Any]) -> dict[str, Any] | None:
+    slug = str(item.get("id") or "").strip()
+    href = ""
+    links = item.get("_links") if isinstance(item.get("_links"), dict) else {}
+    self_link = links.get("self") if isinstance(links.get("self"), dict) else {}
+    href = str((self_link or {}).get("href") or "").strip()
+    urls: list[str] = []
+    if href:
+        urls.append(href)
+    if slug:
+        urls.append(f"{site_base(site)}/api/global-catalog/{quote(slug)}")
+        urls.append(f"{site_base(site)}/dCloudAPI/global-catalog/{quote(slug)}")
+    seen: set[str] = set()
+    for url in urls:
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        try:
+            response = _request("GET", url, token, timeout=20)
+        except requests.RequestException:
+            continue
+        body = _json_or_text(response)
+        if response.status_code < 400 and isinstance(body, dict):
+            return body
+    return None
+
+
+def _pick_published_admin(matches: list[dict[str, Any]]) -> dict[str, Any] | None:
+    published_admin: list[dict[str, Any]] = []
+    for item in matches:
+        owner = _owner_name(item).lower()
+        state = _state_text(item)
+        if owner == "admin" and "published" in state:
+            published_admin.append(item)
+    pool = published_admin
+    if not pool:
+        return None
+    promoted = [item for item in pool if "promoted" in _state_text(item)]
+    chosen = promoted or pool
+
+    def sort_key(item: dict[str, Any]) -> str:
+        return str(
+            item.get("updated")
+            or item.get("lastUpdated")
+            or item.get("modifiedOn")
+            or item.get("publishedOn")
+            or ""
+        )
+
+    chosen.sort(key=sort_key, reverse=True)
+    return chosen[0]
+
+
+def find_admin_demo_by_name(
+    token: str,
+    site: str,
+    name: str,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
+    """Admin content list (same table as /api/admin/demos). Prefer admin + published/promoted."""
+    wanted = _norm_name(name)
+    encoded = quote(name)
+    urls = [
+        f"{site_base(site)}/api/admin/demos?name={encoded}",
+        f"{site_base(site)}/api/admin/demos?search={encoded}",
+        f"{site_base(site)}/api/contents?name={encoded}",
+        f"{site_base(site)}/api/admin/demos",
+    ]
+    last_err: str | None = None
+    scanned_full = False
+    for url in urls:
+        is_full = url.endswith("/api/admin/demos")
+        if scanned_full:
+            break
+        try:
+            response = _request("GET", url, token, timeout=90)
+        except requests.RequestException as exc:
+            last_err = str(exc)
+            continue
+        if response.status_code == 401:
+            return None, [], "dCloud token was rejected (401)."
+        if response.status_code >= 400:
+            last_err = api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+            continue
+        items = _as_item_list(_json_or_text(response))
+        if is_full:
+            scanned_full = True
+        matches = [
+            item
+            for item in items
+            if _norm_name(item.get("name") or item.get("contentName") or "") == wanted
+        ]
+        if not matches and not is_full:
+            continue
+        picked = _pick_published_admin(matches)
+        return picked, matches, None
+    return None, [], last_err
+
+
+def lookup_demo_id_for_site(
+    token: str,
+    site: str,
+    name: str,
+    *,
+    source_site: str = "",
+    source_demo_id: str = "",
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "site": site,
+        "id": "",
+        "name": name,
+        "source": "",
+        "owner": "",
+        "state": "",
+        "catalogId": "",
+        "note": "",
+    }
+    source_code = (source_site or "").strip().lower()
+    demo_id = str(source_demo_id or "").strip()
+    if source_code and site == source_code and demo_id:
+        result["id"] = demo_id
+        result["source"] = "session"
+        result["note"] = "from this session"
+        return result
+    if not _norm_name(name):
+        result["source"] = "not_found"
+        result["note"] = "session has no name"
+        return result
+
+    exact: list[dict[str, Any]] = []
+    last_err: str | None = None
+    items: list[dict[str, Any]] = []
+    for strategy in ("SUBSTRING", "EXACT"):
+        found, err = catalog_search(token, site, name, strategy)
+        last_err = err or last_err
+        if found:
+            items = found
+            break
+    exact = [item for item in items if _norm_name(item.get("name")) == _norm_name(name)]
+
+    if not exact:
+        result["source"] = "not_found"
+        result["note"] = last_err or "no exact catalog match"
+        return result
+
+    exact.sort(key=lambda item: 0 if str(item.get("contentType") or "").upper() == "DEMO" else 1)
+    item = exact[0]
+    result["catalogId"] = str(item.get("id") or "")
+    numeric = extract_demo_numeric_id(item)
+    source = "catalog"
+    if not numeric:
+        detail = fetch_catalog_item(token, site, item)
+        numeric = extract_demo_numeric_id(detail or {})
+    if not numeric:
+        admin_hit, _matches, admin_err = find_admin_demo_by_name(token, site, name)
+        if admin_hit:
+            numeric = extract_demo_numeric_id(admin_hit)
+            result["owner"] = _owner_name(admin_hit)
+            result["state"] = _state_text(admin_hit)
+            source = "catalog+admin"
+        elif admin_err:
+            last_err = admin_err
+
+    if numeric:
+        result["id"] = numeric
+        result["source"] = source
+        bits = ["catalog exact match"]
+        if result["owner"]:
+            bits.append(result["owner"])
+        if "published" in (result["state"] or "") or source.startswith("catalog"):
+            bits.append("published")
+        if "promoted" in (result["state"] or ""):
+            bits.append("promoted")
+        if len(exact) > 1:
+            bits.append(f"{len(exact)} name hits")
+        result["note"] = " · ".join(bits)
+        return result
+
+    result["source"] = "not_found"
+    result["note"] = last_err or "in catalog, but no numeric content ID"
+    return result
+
+
+def lookup_demo_ids_across_sites(
+    token: str,
+    name: str,
+    *,
+    source_site: str = "",
+    source_demo_id: str = "",
+) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+        futures = {
+            pool.submit(
+                lookup_demo_id_for_site,
+                token,
+                site,
+                name,
+                source_site=source_site,
+                source_demo_id=source_demo_id,
+            ): site
+            for site in SITES
+        }
+        for future in as_completed(futures):
+            site = futures[future]
+            try:
+                results[site] = future.result()
+            except Exception as exc:
+                results[site] = {
+                    "site": site,
+                    "id": "",
+                    "name": name,
+                    "source": "error",
+                    "note": str(exc),
+                }
+    return results
+
+
+BLOCKING_TIMESLOT_TYPES = frozenset({"CONFLICT", "UNAVAILABLE", "UNAVAILABILITY"})
+
+
+def _timeslot_interval(slot: dict[str, Any]) -> tuple[datetime, datetime] | None:
+    start = parse_schedule_datetime(str(slot.get("start") or ""))
+    end = parse_schedule_datetime(str(slot.get("stop") or slot.get("end") or ""))
+    if not start or not end or end <= start:
+        return None
+    return start, end
+
+
+def _is_blocking_timeslot(slot: dict[str, Any]) -> bool:
+    if slot.get("available") is False:
+        return True
+    slot_type = str(slot.get("type") or "").upper()
+    return slot_type in BLOCKING_TIMESLOT_TYPES
+
+
+def _merge_intervals(intervals: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
+    if not intervals:
+        return []
+    ordered = sorted(intervals, key=lambda item: item[0])
+    merged = [ordered[0]]
+    for start, end in ordered[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _blocking_intervals(
+    timeslots: list[dict[str, Any]],
+    range_start: datetime,
+    range_end: datetime,
+) -> list[tuple[datetime, datetime]]:
+    blocks: list[tuple[datetime, datetime]] = []
+    for slot in timeslots or []:
+        if not _is_blocking_timeslot(slot):
+            continue
+        interval = _timeslot_interval(slot)
+        if not interval:
+            continue
+        start, end = interval
+        if end <= range_start or start >= range_end:
+            continue
+        blocks.append((max(start, range_start), min(end, range_end)))
+    return _merge_intervals(blocks)
+
+
+def window_has_conflict(
+    begin: datetime,
+    end: datetime,
+    timeslots: list[dict[str, Any]],
+) -> bool:
+    if end <= begin:
+        return True
+    for block_start, block_end in _blocking_intervals(timeslots, begin, end):
+        if block_end > begin and block_start < end:
+            return True
+    return False
+
+
+def find_next_available_window(
+    desired_start: datetime,
+    duration: timedelta,
+    timeslots: list[dict[str, Any]],
+    *,
+    search_end: datetime | None = None,
+) -> tuple[datetime, datetime] | None:
+    if duration <= timedelta(0):
+        return None
+    search_end = search_end or (desired_start + timedelta(days=14))
+    if search_end <= desired_start:
+        return None
+    blocks = _blocking_intervals(timeslots, desired_start, search_end)
+    cursor = desired_start
+    for block_start, block_end in blocks:
+        if cursor < block_start and cursor + duration <= block_start:
+            return cursor, cursor + duration
+        if cursor < block_end:
+            cursor = block_end
+    if cursor + duration <= search_end:
+        return cursor, cursor + duration
+    return None
+
+
+def fetch_content_calendar(
+    token: str,
+    site: str,
+    demo_id: str,
+    *,
+    range_start: datetime,
+    range_end: datetime,
+    pool_id: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """GET /api/contents/{id}/calendar — same feed as the dCloud schedule calendar UI."""
+    site_code = (site or "").strip().lower()
+    demo = str(demo_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return [], f"Unknown datacenter {site}."
+    if not demo:
+        return [], "Demo / content ID is required."
+    if range_end <= range_start:
+        return [], "Invalid calendar range."
+    params: dict[str, str] = {
+        "start": _dcloud_timestamp(range_start),
+        "end": _dcloud_timestamp(range_end),
+    }
+    if pool_id:
+        params["contentPoolOptionId"] = pool_id
+    url = f"{site_base(site_code)}/api/contents/{demo}/calendar?{urlencode(params)}"
+    try:
+        response = _request("GET", url, token, timeout=90)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if response.status_code >= 400:
+        return [], api_message(body) or f"HTTP {response.status_code}"
+    if not isinstance(body, dict):
+        return [], "Unexpected calendar response."
+    slots = body.get("timeslots") or []
+    if not isinstance(slots, list):
+        return [], "Unexpected calendar response."
+    return [slot for slot in slots if isinstance(slot, dict)], None
+
+
+def _schedule_payload(
+    demo_id: str,
+    start: str,
+    stop: str,
+    *,
+    pool_id: str | None,
+    content_export: bool = True,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "count": 1,
+        "demoId": demo_id,
+        "start": start,
+        "stop": stop,
+        "metrics": [
+            {"name": "demoUse", "value": "developtest"},
+            {"name": "revenue", "value": "Not Applicable"},
+            {"name": "customerName", "value": "dcloud_bot"},
+        ],
+        "contentExport": CONTENT_EXPORT if content_export else CONTENT_REGULAR,
+        "scenario": "null",
+        "endpoints": [],
+    }
+    if pool_id:
+        payload["contentPoolOptionId"] = pool_id
+    return payload
+
+
+def _pool_attempts(site: str) -> list[tuple[str, str | None]]:
+    """Dev Pool first (same IDs as /sch), then Public/Core if Dev cannot take the demo."""
+    if site == "syd":
+        return [("SYD", None)]
+    attempts: list[tuple[str, str | None]] = []
+    if site in DEV_POOLS:
+        attempts.append(("Dev Pool", DEV_POOLS[site]))
+    attempts.append(("Public / Core Pool", CORE_POOL))
+    if site == "rtp":
+        attempts.append(("Block 6 RTP", RTP_BLOCK6_POOL))
+    return attempts
+
+
+def _should_try_next_pool(message: str) -> bool:
+    text = (message or "").lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "schedule an instance of demo",
+            "content pool",
+            "not available in this pool",
+            "unable to schedule",
+            "resource",
+            "0 available",
+            "capacity",
+        )
+    )
+
+
+def _should_try_next_slot(message: str) -> bool:
+    text = (message or "").lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "unable to schedule",
+            "not available",
+            "resource",
+            "capacity",
+            "conflict",
+            "0 available",
+        )
+    )
+
+
+def _conflict_payload(
+    site_code: str,
+    demo: str,
+    pool_name: str,
+    begin: datetime,
+    end: datetime,
+    alt: tuple[datetime, datetime] | None,
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "conflict": True,
+        "site": site_code,
+        "demoId": demo,
+        "pool": pool_name,
+        "requestedStart": _dcloud_timestamp(begin),
+        "requestedStop": _dcloud_timestamp(end),
+        "nextStart": _dcloud_timestamp(alt[0]) if alt else "",
+        "nextStop": _dcloud_timestamp(alt[1]) if alt else "",
+        "message": (
+            f"Content could not be scheduled in {site_code.upper()} at the selected time."
+        ),
+    }
+
+
+def find_schedule_conflict(
+    token: str,
+    site: str,
+    demo_id: str,
+    *,
+    days: int = 1,
+    start_at: str = "",
+    stop_at: str = "",
+) -> dict[str, Any] | None:
+    """When the user wants a fixed time, check dCloud calendar before scheduling."""
+    site_code = site.strip().lower()
+    demo = str(demo_id).strip()
+    if site_code not in KNOWN_SITES or not demo:
+        return None
+    window = resolve_schedule_window(days=days, start_at=start_at, stop_at=stop_at)
+    if isinstance(window, str):
+        return None
+    begin, end = window
+    duration = end - begin
+
+    def _cal_end(from_when: datetime) -> datetime:
+        return min(from_when + timedelta(days=14), from_when + duration + timedelta(days=7))
+
+    saw_clear = False
+    first_conflict: dict[str, Any] | None = None
+
+    for pool_name, pool_id in _pool_attempts(site_code):
+        cal_end = _cal_end(begin)
+        timeslots, cal_err = fetch_content_calendar(
+            token,
+            site_code,
+            demo,
+            range_start=begin,
+            range_end=cal_end,
+            pool_id=pool_id,
+        )
+        if cal_err:
+            saw_clear = True
+            continue
+        if not window_has_conflict(begin, end, timeslots):
+            saw_clear = True
+            break
+        if first_conflict is None:
+            alt = find_next_available_window(
+                begin,
+                duration,
+                timeslots,
+                search_end=cal_end,
+            )
+            first_conflict = _conflict_payload(site_code, demo, pool_name, begin, end, alt)
+
+    if saw_clear:
+        return None
+    return first_conflict
+
+
+def schedule_exported_session(
+    token: str,
+    site: str,
+    demo_id: str,
+    *,
+    days: int = 1,
+    start_at: str = "",
+    stop_at: str = "",
+    content_export: bool = True,
+    auto_next_available: bool = True,
+    progress: Progress | None = None,
+) -> dict[str, Any]:
+    """Schedule a session. content_export=True is bot `/sch ID,days,min,exp`; False is regular `/sch`."""
+    site_code = site.strip().lower()
+    demo = str(demo_id).strip()
+    if site_code not in KNOWN_SITES:
+        return {"ok": False, "message": f"Unknown datacenter {site}."}
+    if not demo:
+        return {"ok": False, "message": "Demo / content ID is required."}
+
+    window = resolve_schedule_window(days=days, start_at=start_at, stop_at=stop_at)
+    if isinstance(window, str):
+        return {"ok": False, "site": site_code, "message": window}
+    begin, end = window
+    duration = end - begin
+    kind = "exported" if content_export else "regular"
+
+    url = f"{site_base(site_code)}/api/sessions/schedule"
+    last_message = "Schedule failed."
+    if progress:
+        progress(
+            f"{site_code.upper()}: scheduling {kind} session for demo {demo} "
+            f"{begin.strftime('%Y-%m-%d %H:%M')}–{end.strftime('%Y-%m-%d %H:%M')} UTC "
+            f"(contentExport={'true' if content_export else 'false'}; "
+            "Dev Pool first, then Public/Core if needed)."
+        )
+
+    def _calendar_search_end(from_when: datetime) -> datetime:
+        return min(from_when + timedelta(days=14), from_when + duration + timedelta(days=7))
+
+    def _pick_window_for_pool(
+        pool_name: str,
+        pool_id: str | None,
+        begin_at: datetime,
+        end_at: datetime,
+    ) -> tuple[datetime, datetime, bool] | None:
+        if not auto_next_available:
+            cal_end = _calendar_search_end(begin_at)
+            timeslots, cal_err = fetch_content_calendar(
+                token,
+                site_code,
+                demo,
+                range_start=begin_at,
+                range_end=cal_end,
+                pool_id=pool_id,
+            )
+            if cal_err:
+                return begin_at, end_at, False
+            if window_has_conflict(begin_at, end_at, timeslots):
+                return None
+            return begin_at, end_at, False
+        cal_end = _calendar_search_end(begin_at)
+        timeslots, cal_err = fetch_content_calendar(
+            token,
+            site_code,
+            demo,
+            range_start=begin_at,
+            range_end=cal_end,
+            pool_id=pool_id,
+        )
+        if cal_err:
+            if progress:
+                progress(f"{site_code.upper()}: calendar check skipped ({cal_err}).")
+            return begin_at, end_at, False
+        if not window_has_conflict(begin_at, end_at, timeslots):
+            return begin_at, end_at, False
+        alt = find_next_available_window(
+            begin_at,
+            duration,
+            timeslots,
+            search_end=cal_end,
+        )
+        if not alt:
+            if progress:
+                progress(
+                    f"{site_code.upper()}: no open slot in calendar for {pool_name} "
+                    f"before {cal_end.strftime('%Y-%m-%d %H:%M')} UTC."
+                )
+            return None
+        new_begin, new_end = alt
+        if progress:
+            progress(
+                f"{site_code.upper()}: resources busy at requested time — "
+                f"using next slot {new_begin.strftime('%Y-%m-%d %H:%M')}–"
+                f"{new_end.strftime('%Y-%m-%d %H:%M')} UTC ({pool_name})."
+            )
+        return new_begin, new_end, True
+
+    def _post_schedule(
+        start_ts: str,
+        stop_ts: str,
+        pool_name: str,
+        pool_id: str | None,
+    ) -> dict[str, Any]:
+        nonlocal last_message
+        if progress:
+            progress(f"{site_code.upper()}: trying {pool_name}…")
+        payload = _schedule_payload(
+            demo, start_ts, stop_ts, pool_id=pool_id, content_export=content_export
+        )
+        try:
+            response = _request("POST", url, token, json_body=payload, timeout=60)
+        except requests.RequestException as exc:
+            return {"ok": False, "message": str(exc)}
+        body = _json_or_text(response)
+        last_message = api_message(body) or f"HTTP {response.status_code}"
+        success = isinstance(body, dict) and body.get("success") is True
+        sessions = body.get("sessions") if isinstance(body, dict) else None
+        if success and isinstance(sessions, list) and sessions:
+            uid = str(sessions[0].get("uid") or "")
+            first = sessions[0] if isinstance(sessions[0], dict) else {}
+            return {
+                "ok": True,
+                "sessionId": uid,
+                "viewUrl": session_view_url(site_code, uid, session=first) if uid else "",
+                "message": last_message,
+            }
+        return {"ok": False, "message": last_message}
+
+    last_conflict: dict[str, Any] | None = None
+
+    for pool_name, pool_id in _pool_attempts(site_code):
+        picked = _pick_window_for_pool(pool_name, pool_id, begin, end)
+        if picked is None:
+            cal_end = _calendar_search_end(begin)
+            timeslots, cal_err = fetch_content_calendar(
+                token,
+                site_code,
+                demo,
+                range_start=begin,
+                range_end=cal_end,
+                pool_id=pool_id,
+            )
+            if not cal_err and window_has_conflict(begin, end, timeslots):
+                alt = find_next_available_window(
+                    begin,
+                    duration,
+                    timeslots,
+                    search_end=cal_end,
+                )
+                if last_conflict is None:
+                    last_conflict = _conflict_payload(
+                        site_code, demo, pool_name, begin, end, alt
+                    )
+                if progress:
+                    progress(
+                        f"{site_code.upper()}: {pool_name} busy at requested time — "
+                        "trying next pool…"
+                    )
+            continue
+        begin_use, end_use, adjusted = picked
+        start = _dcloud_timestamp(begin_use)
+        stop = _dcloud_timestamp(end_use)
+
+        result = _post_schedule(start, stop, pool_name, pool_id)
+        if result.get("ok"):
+            uid = result.get("sessionId") or ""
+            if progress:
+                progress(f"{site_code.upper()}: scheduled {kind} session {uid} in {pool_name}.")
+            return {
+                "ok": True,
+                "site": site_code,
+                "demoId": demo,
+                "sessionId": uid,
+                "pool": pool_name,
+                "contentExport": content_export,
+                "scheduleStart": start,
+                "scheduleStop": stop,
+                "adjusted": adjusted,
+                "message": (
+                    f"{kind.capitalize()} session {uid} scheduled in {pool_name}"
+                    + (" (next available slot)." if adjusted else ".")
+                ),
+                "viewUrl": result.get("viewUrl") or "",
+            }
+
+        if progress:
+            progress(f"{site_code.upper()}: {pool_name} not available ({result.get('message') or last_message}).")
+
+        if not auto_next_available and _should_try_next_slot(result.get("message") or last_message):
+            cal_end = _calendar_search_end(begin_use)
+            timeslots, cal_err = fetch_content_calendar(
+                token,
+                site_code,
+                demo,
+                range_start=begin_use,
+                range_end=cal_end,
+                pool_id=pool_id,
+            )
+            alt = None
+            if not cal_err:
+                alt = find_next_available_window(
+                    begin_use + timedelta(minutes=1),
+                    duration,
+                    timeslots,
+                    search_end=cal_end,
+                ) if timeslots else None
+            if last_conflict is None:
+                last_conflict = _conflict_payload(
+                    site_code, demo, pool_name, begin, end, alt
+                )
+            continue
+
+        if auto_next_available and _should_try_next_slot(result.get("message") or last_message):
+            cal_end = _calendar_search_end(begin_use)
+            timeslots, _cal_err = fetch_content_calendar(
+                token,
+                site_code,
+                demo,
+                range_start=begin_use,
+                range_end=cal_end,
+                pool_id=pool_id,
+            )
+            retry_from = begin_use + timedelta(minutes=1)
+            alt = find_next_available_window(
+                retry_from,
+                duration,
+                timeslots,
+                search_end=cal_end,
+            ) if timeslots else None
+            if alt and alt[0] > begin_use:
+                retry_begin, retry_end = alt
+                retry_start = _dcloud_timestamp(retry_begin)
+                retry_stop = _dcloud_timestamp(retry_end)
+                if progress:
+                    progress(
+                        f"{site_code.upper()}: retrying {pool_name} at "
+                        f"{retry_begin.strftime('%Y-%m-%d %H:%M')} UTC…"
+                    )
+                retry = _post_schedule(retry_start, retry_stop, pool_name, pool_id)
+                if retry.get("ok"):
+                    uid = retry.get("sessionId") or ""
+                    if progress:
+                        progress(f"{site_code.upper()}: scheduled {kind} session {uid} in {pool_name}.")
+                    return {
+                        "ok": True,
+                        "site": site_code,
+                        "demoId": demo,
+                        "sessionId": uid,
+                        "pool": pool_name,
+                        "contentExport": content_export,
+                        "scheduleStart": retry_start,
+                        "scheduleStop": retry_stop,
+                        "adjusted": True,
+                        "message": (
+                            f"{kind.capitalize()} session {uid} scheduled in {pool_name} "
+                            "(next available slot)."
+                        ),
+                        "viewUrl": retry.get("viewUrl") or "",
+                    }
+                last_message = retry.get("message") or last_message
+
+        if not _should_try_next_pool(result.get("message") or last_message):
+            break
+
+    if not auto_next_available and last_conflict:
+        return last_conflict
+
+    return {
+        "ok": False,
+        "site": site_code,
+        "demoId": demo,
+        "contentExport": content_export,
+        "message": last_message,
+    }
+
+
+def match_selected_vms(
+    session_vms: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    by_name = {vm["name"].strip().lower(): vm for vm in session_vms if vm.get("name")}
+    by_display = {
+        vm["displayName"].strip().lower(): vm
+        for vm in session_vms
+        if vm.get("displayName")
+    }
+    by_short = {
+        vm["shortName"].strip().lower(): vm
+        for vm in session_vms
+        if vm.get("shortName")
+    }
+    by_mor = {vm["mor"]: vm for vm in session_vms if vm.get("mor")}
+    by_uid = {vm["uid"]: vm for vm in session_vms if vm.get("uid")}
+    matched: list[dict[str, Any]] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    for sel in selected:
+        name = str(sel.get("name") or sel.get("displayName") or "").strip()
+        short = str(sel.get("shortName") or "").strip()
+        mor = str(sel.get("mor") or "").strip()
+        uid = str(sel.get("uid") or "").strip()
+        hit = None
+        if name and name.lower() in by_display:
+            hit = by_display[name.lower()]
+        elif name and name.lower() in by_name:
+            hit = by_name[name.lower()]
+        elif short and short.lower() in by_short:
+            hit = by_short[short.lower()]
+        elif short and short.lower() in by_name:
+            hit = by_name[short.lower()]
+        elif mor and mor in by_mor:
+            hit = by_mor[mor]
+        elif uid and uid in by_uid:
+            hit = by_uid[uid]
+        if not hit:
+            missing.append(name or short or mor or uid or "?")
+            continue
+        key = hit.get("mor") or hit.get("uid") or hit["name"]
+        if key in seen:
+            continue
+        seen.add(key)
+        matched.append(hit)
+    return matched, missing
+
+
+def tag_selected_vms(
+    session_vms: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep the full session VM list, marking which ones were checked at schedule time."""
+    tagged = [dict(vm) for vm in session_vms]
+    if not tagged:
+        return tagged
+    pool = list(selected or [])
+    if not pool:
+        for vm in tagged:
+            vm["selected"] = False
+        return tagged
+    matched, _ = match_selected_vms(tagged, pool)
+    keys = {
+        (vm.get("mor") or "", vm.get("uid") or "", str(vm.get("name") or "").strip().lower())
+        for vm in matched
+    }
+    for vm in tagged:
+        key = (vm.get("mor") or "", vm.get("uid") or "", str(vm.get("name") or "").strip().lower())
+        vm["selected"] = key in keys
+    return tagged
+
+
+def vm_action(
+    token: str,
+    site: str,
+    session_id: str,
+    vm: dict[str, Any],
+    action: str,
+) -> dict[str, Any]:
+    vmid = str(vm.get("mor") or vm.get("uid") or "")
+    name = str(vm.get("name") or vmid)
+    if not vmid:
+        return {"ok": False, "name": name, "message": "VM is missing mor/uid."}
+    url = f"{site_base(site)}/api/sessions/{session_id}/servers/{vmid}/action"
+    try:
+        response = _request("PUT", url, token, json_body={"action": action})
+    except requests.RequestException as exc:
+        return {"ok": False, "name": name, "mor": vmid, "message": str(exc)}
+    body = _json_or_text(response)
+    message = api_message(body) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    return {"ok": ok, "name": name, "mor": vmid, "uid": vm.get("uid") or "", "message": message}
+
+
+def power_on_vms(
+    token: str,
+    site: str,
+    session_id: str,
+    vms: list[dict[str, Any]],
+    progress: Progress | None = None,
+) -> list[dict[str, Any]]:
+    results = []
+    for vm in vms:
+        if progress:
+            progress(f"{site.upper()}: powering on {vm.get('name') or vm.get('mor')}…")
+        results.append(vm_action(token, site, session_id, vm, "vmPowerOn"))
+    return results
+
+
+def guest_shutdown_vms(
+    token: str,
+    site: str,
+    session_id: str,
+    vms: list[dict[str, Any]],
+    progress: Progress | None = None,
+    *,
+    fallback_power_off: bool = True,
+) -> list[dict[str, Any]]:
+    """Fire guest-shutdown requests; do not wait for VMs to power off. Fall back to hard power-off on failure."""
+    results = []
+    for vm in vms:
+        name = str(vm.get("name") or vm.get("mor") or "VM")
+        if progress:
+            progress(f"{site.upper()}: guest shutdown {name}…")
+        result = vm_action(token, site, session_id, vm, "guestShutdown")
+        if result.get("ok"):
+            if progress:
+                progress(f"{site.upper()}: guest shutdown {name}: {result.get('message') or 'accepted'}")
+        elif fallback_power_off:
+            msg = str(result.get("message") or "failed")
+            if progress:
+                progress(
+                    f"{site.upper()}: guest shutdown failed for {name} ({msg}) — trying power off…"
+                )
+            hard = vm_action(token, site, session_id, vm, "vmPowerOff")
+            result = {
+                **result,
+                "fallback": "vmPowerOff",
+                "fallbackOk": hard.get("ok"),
+                "fallbackMessage": hard.get("message"),
+            }
+            if hard.get("ok"):
+                if progress:
+                    progress(f"{site.upper()}: power off {name}: {hard.get('message') or 'accepted'}")
+            elif progress:
+                progress(f"{site.upper()}: power off also failed for {name} — continuing to save anyway.")
+        else:
+            if progress:
+                progress(f"{site.upper()}: guest shutdown failed for {name} — continuing to save anyway.")
+        results.append(result)
+    return results
+
+
+def list_dashboard_sessions(token: str, site: str) -> tuple[list[dict[str, Any]], str | None]:
+    """GET /api/sessions?expand=sharedWith — same list the bot /ms command uses."""
+    site_code = (site or "").strip().lower()
+    if site_code not in KNOWN_SITES:
+        return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    url = f"{site_base(site_code)}/api/sessions?expand=sharedWith"
+    try:
+        response = _request("GET", url, token)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return [], "Unexpected sessions response."
+    rows = body.get("content") or []
+    if not isinstance(rows, list):
+        return [], "Unexpected sessions response."
+    labels = {
+        "1": "Scheduled",
+        "2": "Starting",
+        "4": "Active",
+        "5": "Stopping",
+        "12": "Saving",
+    }
+    out: list[dict[str, Any]] = []
+    for session in rows:
+        if not isinstance(session, dict):
+            continue
+        sid = str(session.get("uid") or session.get("id") or "").strip()
+        if not sid:
+            continue
+        status = session.get("status")
+        status_key = _status_text(status)
+        out.append(
+            {
+                "site": site_code,
+                "sessionId": sid,
+                "name": str(session.get("name") or "").strip(),
+                "status": labels.get(status_key, format_status(status)),
+                "rawStatus": status,
+                "active": is_active_status(status),
+                "demoId": str(session.get("demoId") or session.get("parentId") or "").strip(),
+                "viewUrl": session_view_url(site_code, sid, session=session),
+            }
+        )
+    return out, None
+
+
+def list_dashboard_sessions_all_sites(token: str) -> dict[str, Any]:
+    sessions: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+        futures = {
+            pool.submit(list_dashboard_sessions, token, site): site for site in SITES
+        }
+        for future in as_completed(futures):
+            site = futures[future]
+            rows, err = future.result()
+            if err:
+                errors[site] = err
+            sessions.extend(rows)
+    order = {site: index for index, site in enumerate(SITES)}
+    sessions.sort(key=lambda row: (order.get(row.get("site") or "", 99), row.get("sessionId") or ""))
+    return {"sessions": sessions, "errors": errors}
+
+
+def _monitor_session_name(session: dict[str, Any]) -> str:
+    for obj in (
+        session,
+        session.get("sessionDetails"),
+        session.get("session"),
+        session.get("demo"),
+    ):
+        if not isinstance(obj, dict):
+            continue
+        for key in ("name", "demoName", "parentDemoName"):
+            value = str(obj.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def resolve_monitor_sessions(
+    token: str,
+    site: str,
+    identifier: str,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Resolve a session ID directly, or an admin-visible demo/content ID to live sessions."""
+    site_code = (site or "").strip().lower()
+    wanted = str(identifier or "").strip()
+    if site_code not in KNOWN_SITES:
+        return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not wanted:
+        return [], "Enter a demo ID or session ID."
+
+    direct, direct_err = fetch_session(token, site_code, wanted, expand="all")
+    if direct:
+        return [
+            {
+                "site": site_code,
+                "sessionId": wanted,
+                "demoId": str(direct.get("demoId") or direct.get("parentId") or "").strip(),
+                "name": _monitor_session_name(direct),
+                "status": format_status(direct.get("status")),
+            }
+        ], None
+    if direct_err and is_auth_error(direct_err):
+        return [], direct_err
+
+    url = f"{site_base(site_code)}/api/admin/sessions"
+    try:
+        response = _request("GET", url, token, timeout=60)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], "dCloud rejected the token. Log in or import a fresh token in Step 1."
+    if response.status_code in {403, 404}:
+        return [], "Admin session lookup is not available for this dCloud account."
+    if response.status_code >= 400:
+        return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    body = _json_or_text(response)
+    rows = body.get("content") if isinstance(body, dict) else None
+    if not isinstance(rows, list):
+        return [], "Unexpected admin sessions response."
+
+    live_statuses = {
+        "1", "2", "4", "5", "12",
+        "scheduled", "starting", "active", "stopping", "saving",
+        "waiting", "queued", "provisioning",
+    }
+    matches: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("uid") or row.get("id") or row.get("sessionId") or "").strip()
+        if not sid or sid in seen:
+            continue
+        demo_ids = {
+            str(row.get(key) or "").strip()
+            for key in ("demoId", "parentId", "activeId", "contentId", "demoUid")
+        }
+        nested = row.get("demo")
+        if isinstance(nested, dict):
+            demo_ids.update(
+                str(nested.get(key) or "").strip()
+                for key in ("uid", "id", "demoId", "parentId")
+            )
+        if wanted != sid and wanted not in demo_ids:
+            continue
+        status = row.get("status")
+        status_key = _status_text(status).lower()
+        if status_key and status_key not in live_statuses:
+            continue
+        seen.add(sid)
+        matches.append(
+            {
+                "site": site_code,
+                "sessionId": sid,
+                "demoId": next((value for value in demo_ids if value), ""),
+                "name": _monitor_session_name(row),
+                "status": format_status(status),
+            }
+        )
+    return matches, None
+
+
+def resolve_extended_stop(
+    *,
+    current_stop: str,
+    session_start: str = "",
+    days: int = 1,
+) -> tuple[str, str | None]:
+    """Push session stop forward by days; returns (iso_stop, error)."""
+    days = max(1, int(days or 1))
+    stop = parse_schedule_datetime(current_stop)
+    if stop is None:
+        return "", "Could not read the current session end time."
+    new_stop = stop + timedelta(days=days)
+    start = parse_schedule_datetime(session_start)
+    if start is not None and new_stop <= start:
+        return "", "Extended stop must be after session start."
+    return _dcloud_timestamp(new_stop), None
+
+
+def extend_session(
+    token: str,
+    site: str,
+    session_id: str,
+    *,
+    stop_at: str,
+) -> dict[str, Any]:
+    """PUT /api/sessions/{id} with a new stop time — same as the dCloud UI extend."""
+    sid = (session_id or "").strip()
+    stop = (stop_at or "").strip()
+    if not sid:
+        return {"ok": False, "message": "Session ID is required."}
+    if not stop:
+        return {"ok": False, "message": "Stop time is required."}
+    url = f"{site_base(site)}/api/sessions/{sid}"
+    try:
+        response = _request("PUT", url, token, json_body={"stop": stop}, timeout=60)
+    except requests.RequestException as exc:
+        return {"ok": False, "sessionId": sid, "message": str(exc)}
+    body = _json_or_text(response)
+    if response.status_code == 404:
+        return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
+    message = api_message(body) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    session = body.get("session") if isinstance(body, dict) else None
+    new_stop = ""
+    if isinstance(session, dict):
+        new_stop = str(session.get("stop") or "").strip()
+    return {
+        "ok": ok,
+        "sessionId": sid,
+        "message": message if message else ("Session extended." if ok else "Extend failed."),
+        "stop": new_stop,
+        "session": session if isinstance(session, dict) else {},
+    }
+
+
+def update_session_name(
+    token: str,
+    site: str,
+    session_id: str,
+    name: str,
+) -> dict[str, Any]:
+    """PUT /api/sessions/{id} with a new name — same as the dCloud dashboard rename."""
+    site_code = (site or "").strip().lower()
+    sid = (session_id or "").strip()
+    new_name = (name or "").strip()
+    if site_code not in KNOWN_SITES:
+        return {"ok": False, "message": "Datacenter must be SJC, RTP, LON, SNG, or SYD."}
+    if not sid:
+        return {"ok": False, "message": "Session ID is required."}
+    if not new_name:
+        return {"ok": False, "message": "Session name is required."}
+    if len(new_name) > 255:
+        return {"ok": False, "message": "Session name must be 255 characters or fewer."}
+    url = f"{site_base(site_code)}/api/sessions/{sid}"
+    try:
+        response = _request("PUT", url, token, json_body={"name": new_name}, timeout=60)
+    except requests.RequestException as exc:
+        return {"ok": False, "sessionId": sid, "message": str(exc)}
+    body = _json_or_text(response)
+    if response.status_code == 404:
+        return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site_code.upper()}."}
+    message = api_message(body) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    session = body.get("session") if isinstance(body, dict) else None
+    resolved_name = new_name
+    if isinstance(session, dict):
+        resolved_name = str(session.get("name") or new_name).strip() or new_name
+    return {
+        "ok": ok,
+        "sessionId": sid,
+        "name": resolved_name,
+        "message": message if message else ("Session renamed." if ok else "Rename failed."),
+        "session": session if isinstance(session, dict) else {},
+    }
+
+
+def end_session(token: str, site: str, session_id: str) -> dict[str, Any]:
+    """PUT /api/sessions/{id}/end — same as the bot /end command (no save)."""
+    sid = (session_id or "").strip()
+    if not sid:
+        return {"ok": False, "message": "Session ID is required."}
+    url = f"{site_base(site)}/api/sessions/{sid}/end"
+    try:
+        response = _request("PUT", url, token)
+    except requests.RequestException as exc:
+        return {"ok": False, "sessionId": sid, "message": str(exc)}
+    body = _json_or_text(response)
+    if response.status_code == 404:
+        return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
+    message = api_message(body) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    return {"ok": ok, "sessionId": sid, "message": message if message else ("Session ended." if ok else "End session failed.")}
+
+
+def reset_session(token: str, site: str, session_id: str) -> dict[str, Any]:
+    """PUT /api/sessions/{id}/reset — the dashboard Reset button. Keeps the same demo and session ID."""
+    sid = (session_id or "").strip()
+    if not sid:
+        return {"ok": False, "message": "Session ID is required."}
+    url = f"{site_base(site)}/api/sessions/{sid}/reset"
+    try:
+        response = _request("PUT", url, token, timeout=60)
+    except requests.RequestException as exc:
+        return {"ok": False, "sessionId": sid, "message": str(exc)}
+    body = _json_or_text(response)
+    if response.status_code == 404:
+        return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    # dCloud answers a good reset with `"message": []`, so fall back to our own wording.
+    detail = api_message(body)
+    message = detail or (
+        "Reset requested." if ok else f"Reset failed (HTTP {response.status_code})."
+    )
+    session = body.get("session") if isinstance(body, dict) else None
+    return {
+        "ok": ok,
+        "sessionId": sid,
+        "session": session if isinstance(session, dict) else {},
+        "message": message,
+    }
+
+
+def wait_until_active(
+    token: str,
+    site: str,
+    session_id: str,
+    *,
+    timeout_seconds: int = 5400,
+    poll_seconds: int = 20,
+    progress: Progress | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    on_session: Callable[[dict[str, Any]], None] | None = None,
+    on_status: Callable[[str, dict[str, Any]], None] | None = None,
+    get_token: GetToken | None = None,
+    refresh_auth: RefreshAuth | None = None,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout_seconds
+    last_status = ""
+    last_details: dict[str, Any] | None = None
+    current_token = token
+    while time.time() < deadline:
+        if should_stop and should_stop():
+            return {"ok": False, "status": last_status, "message": "Stopped by user."}
+        if get_token:
+            current_token = get_token() or current_token
+
+        public_status, _pub_err = check_public_session_status(site, session_id)
+        details, err = fetch_session(current_token, site, session_id, expand="server")
+        if is_auth_error(err):
+            if refresh_auth:
+                new_token, refresh_err = refresh_auth(current_token)
+                if refresh_err:
+                    return {"ok": False, "status": last_status, "message": refresh_err}
+                current_token = new_token
+                continue
+            return {"ok": False, "status": last_status, "message": err}
+        if details:
+            last_details = details
+            if on_session:
+                on_session(details)
+        numeric = ""
+        if details:
+            numeric = _status_text(details.get("status") or details.get("sessionStatus"))
+        elif err:
+            if progress:
+                progress(f"{site.upper()}: {err}")
+
+        last_status = format_status(numeric, public_status)
+        if is_active_status(public_status) or is_active_status(numeric):
+            if progress:
+                progress(f"{site.upper()}: session {session_id} is Active ({last_status}).")
+            return {
+                "ok": True,
+                "status": last_status,
+                "session": details or last_details or {},
+                "message": "Active",
+                "viewUrl": session_view_url(site, session_id, session=details or last_details),
+            }
+        if is_saved_status(public_status) or is_saved_status(numeric):
+            if progress:
+                progress(f"{site.upper()}: session {session_id} already saved ({last_status}).")
+            return {
+                "ok": False,
+                "saved": True,
+                "status": last_status,
+                "session": details or last_details or {},
+                "message": f"Session already saved ({last_status}).",
+            }
+        if is_failed_status(public_status) or is_failed_status(numeric):
+            return {
+                "ok": False,
+                "status": last_status,
+                "session": details or last_details or {},
+                "message": f"Session ended in {last_status}.",
+            }
+        if on_status:
+            on_status(last_status, details or last_details or {})
+        if progress:
+            progress(f"{site.upper()}: waiting for Active (currently {last_status})…")
+        time.sleep(poll_seconds)
+    return {
+        "ok": False,
+        "status": last_status,
+        "message": f"Timed out waiting for Active (last status: {last_status or 'unknown'}).",
+    }
+
+
+def wait_for_power_state(
+    token: str,
+    site: str,
+    session_id: str,
+    vms: list[dict[str, Any]],
+    *,
+    want_on: bool,
+    timeout_seconds: int = 600,
+    poll_seconds: int = 15,
+    progress: Progress | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    get_token: GetToken | None = None,
+    refresh_auth: RefreshAuth | None = None,
+) -> dict[str, Any]:
+    wanted_keys: set[str] = set()
+    wanted_names: set[str] = set()
+    for vm in vms:
+        for field in ("mor", "uid", "name"):
+            value = str(vm.get(field) or "").strip().lower()
+            if value:
+                wanted_keys.add(value)
+        name = str(vm.get("name") or "").strip().lower()
+        if name:
+            wanted_names.add(name)
+    deadline = time.time() + timeout_seconds
+    label = "powered on" if want_on else "powered off"
+    last_current: list[dict[str, Any]] = []
+    logged_tbv3 = False
+    current_token = token
+    while time.time() < deadline:
+        if should_stop and should_stop():
+            return {"ok": False, "message": "Stopped by user."}
+        if get_token:
+            current_token = get_token() or current_token
+        current, details, err = list_session_vms(current_token, site, session_id)
+        if is_auth_error(err):
+            if refresh_auth:
+                new_token, refresh_err = refresh_auth(current_token)
+                if refresh_err:
+                    return {"ok": False, "message": refresh_err, "vms": last_current}
+                current_token = new_token
+                continue
+            return {"ok": False, "message": err or "dCloud token expired (401).", "vms": last_current}
+        if err:
+            if progress:
+                progress(f"{site.upper()}: {err}")
+            time.sleep(poll_seconds)
+            continue
+        selected = []
+        for vm in current:
+            key = (vm.get("mor") or vm.get("uid") or vm.get("name") or "").strip().lower()
+            if key not in wanted_keys and vm["name"].strip().lower() not in wanted_names:
+                continue
+            selected.append(vm)
+        if not selected:
+            if progress:
+                progress(f"{site.upper()}: could not match target VMs while waiting for power state.")
+            return {"ok": False, "message": "Could not match VMs for power wait.", "vms": last_current}
+        selected, power_err = apply_tbv3_power_states(current_token, site, session_id, selected, details)
+        if is_auth_error(power_err):
+            if refresh_auth:
+                new_token, refresh_err = refresh_auth(current_token)
+                if refresh_err:
+                    return {"ok": False, "message": refresh_err, "vms": selected}
+                current_token = new_token
+                continue
+            return {"ok": False, "message": power_err, "vms": selected}
+        last_current = selected
+        if not logged_tbv3:
+            logged_tbv3 = True
+            topo = extract_topology_uid(details)
+            if progress and not topo:
+                progress(
+                    f"{site.upper()}: session has no topologyVersionUid; "
+                    "tbv3 vm-status cannot be used."
+                )
+            elif progress and all(not str(vm.get("powerState") or "").strip() for vm in selected):
+                progress(
+                    f"{site.upper()}: tbv3 vm-status returned no powerState yet "
+                    f"(versionUid={topo})."
+                )
+            elif progress:
+                progress(f"{site.upper()}: using tbv3 vm-status for power checks.")
+        pending = []
+        for vm in selected:
+            power = vm.get("powerState") or ""
+            ok = is_powered_on(power) if want_on else is_powered_off(power)
+            if not ok:
+                pending.append(f"{vm['name']} ({power or 'unknown'})")
+        if not pending:
+            if progress:
+                progress(f"{site.upper()}: selected VMs are {label}.")
+            return {"ok": True, "message": f"VMs {label}.", "vms": selected}
+        if progress:
+            progress(f"{site.upper()}: waiting for {label}: {', '.join(pending)}")
+        time.sleep(poll_seconds)
+    return {
+        "ok": False,
+        "message": f"Timed out waiting for VMs to be {label}.",
+        "vms": last_current,
+    }
+
+
+def _save_payload(name: str, description: str) -> dict[str, Any]:
+    # tbv3 requires description length 1–255; empty/null is rejected.
+    desc = "" if description is None else str(description).strip()
+    if not desc:
+        desc = DEFAULT_SAVE_DESCRIPTION
+    name_text = (name or "").strip()
+    return {
+        "saveDocuments": False,
+        "name": name_text[:255],
+        "description": desc[:255],
+    }
+
+
+def _save_looks_disabled(message: str) -> bool:
+    text = (message or "").lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "save disabled",
+            "savedisabled",
+            "save is disabled",
+            "not allowed to save",
+            "save not enabled",
+            "saveenabled",
+            "cannot save",
+            "can't save",
+        )
+    )
+
+
+def set_demo_save_enabled(token: str, site: str, demo_id: str, enabled: bool) -> dict[str, Any]:
+    """Same REST call as the bot /esave and /dsave (not the old ajax admin UI)."""
+    did = str(demo_id or "").strip()
+    if not did:
+        return {"ok": False, "message": "Content ID is required to toggle save."}
+    url = f"{site_base(site)}/api/admin/demos/{did}"
+    body = {"saveDisabled": "false" if enabled else "true"}
+    try:
+        response = _request("PUT", url, token, json_body=body)
+    except requests.RequestException as exc:
+        return {"ok": False, "message": str(exc)}
+    parsed = _json_or_text(response)
+    message = api_message(parsed) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(parsed, dict) and "success" in parsed:
+        ok = parsed.get("success") is True
+    return {"ok": ok, "message": message or ("Save enabled." if enabled else "Save disabled.")}
+
+
+def _save_browser_headers(href: str) -> dict[str, str]:
+    if "ciscodcloud.com" in href:
+        origin = TBV3_UI
+        referer = f"{TBV3_UI}/"
+    else:
+        parsed = urlparse(href)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        referer = f"{origin}/dashboard/sessions"
+    return {
+        "Accept": "application/json, text/plain, */*",
+        "Origin": origin,
+        "Referer": referer,
+        "User-Agent": _BROWSER_UA,
+    }
+
+
+def _save_candidates(
+    site: str,
+    session_id: str,
+    session: dict[str, Any] | None,
+    payload: dict[str, Any],
+) -> list[tuple[str, str, dict[str, Any] | None]]:
+    """One save call: tbv3 POST when the session is v3 (savev3.har), else v2 PUT (savev2ui.har)."""
+    topo = extract_topology_uid(session)
+    if topo:
+        v3_body = dict(payload)
+        v3_body["sessionId"] = str(session_id)
+        v3_body["topologyVersion"] = {"uid": topo}
+        return [("POST", f"{TBV3_API}/api/session-save-actions", v3_body)]
+    return [("PUT", f"{site_base(site)}/api/sessions/{session_id}/save", payload)]
+
+
+def _first_id(values: list[Any]) -> str:
+    for value in values:
+        if value is None or value is False:
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in {"none", "null"}:
+            return text
+    return ""
+
+
+def extract_save_ids(body: Any) -> dict[str, str]:
+    found: dict[str, str] = {}
+
+    def walk(obj: Any, depth: int = 0) -> None:
+        if depth > 5 or obj is None:
+            return
+        if isinstance(obj, list):
+            for item in obj[:20]:
+                walk(item, depth + 1)
+            return
+        if not isinstance(obj, dict):
+            return
+        mapping = {
+            "activeId": ("savedId",),
+            "activeDemoId": ("savedId",),
+            "savedId": ("savedId",),
+            "demoId": ("demoId",),
+            "contentId": ("contentId",),
+            "parentId": ("parentId",),
+            "topologyVersionUid": ("topologyVersionUid",),
+            "name": ("savedName",),
+        }
+        for key, dests in mapping.items():
+            raw = obj.get(key)
+            if raw is None or isinstance(raw, (dict, list)):
+                continue
+            text = str(raw).strip()
+            if not text or text.lower() in {"none", "null"}:
+                continue
+            for dest in dests:
+                found.setdefault(dest, text)
+        for nested in ("demo", "content", "save", "session", "data", "result"):
+            walk(obj.get(nested), depth + 1)
+
+    walk(body)
+    return found
+
+
+def list_saved_contents(token: str, site: str, *, state: str | None = "saved") -> list[dict[str, Any]]:
+    url = f"{site_base(site)}/api/contents?expand=sharedWith"
+    if state:
+        url = f"{site_base(site)}/api/contents?state={state}&expand=sharedWith"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return [], "Unexpected contents response."
+    items = body.get("content") or body.get("contents") or []
+    return [item for item in items if isinstance(item, dict)], None
+
+
+def _content_states(item: dict[str, Any]) -> list[str]:
+    raw = item.get("state") or item.get("states") or []
+    if isinstance(raw, list):
+        return [str(part).strip() for part in raw if str(part).strip()]
+    text = str(raw or "").strip()
+    return [text] if text else []
+
+
+def _content_is_promoted(item: dict[str, Any] | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+    return any(part.lower() == "promoted" for part in _content_states(item))
+
+
+def _content_saved_at(item: dict[str, Any] | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    dates = item.get("dates") if isinstance(item.get("dates"), dict) else {}
+    for raw in (
+        dates.get("saved"),
+        item.get("updated"),
+        dates.get("published"),
+        item.get("published"),
+        item.get("created"),
+    ):
+        text = str(raw or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def summarize_saved_content(item: dict[str, Any], site: str) -> dict[str, Any]:
+    uid = extract_demo_numeric_id(item)
+    states = _content_states(item)
+    promoted = _content_is_promoted(item)
+    parent = extract_parent_content_id(item, saved_id=uid)
+    topology_uid = extract_content_topology_uid(item, site)
+    is_tbv3 = bool(topology_uid)
+    return {
+        "site": (site or "").strip().lower(),
+        "contentId": uid,
+        "name": str(item.get("name") or "").strip(),
+        "owner": _owner_name(item),
+        "state": ", ".join(states),
+        "states": states,
+        "promoted": promoted,
+        "isTbv3": is_tbv3,
+        "topologyUid": topology_uid,
+        "deletable": not promoted or is_tbv3,
+        "eolOnly": promoted and not is_tbv3,
+        "local": bool(item.get("local")),
+        "parentId": parent,
+        "savedAt": _content_saved_at(item),
+        "contentViewUrl": tbv3_edit_url(topology_uid) or (edit_topology_url(site, uid, item) if uid else ""),
+    }
+
+
+def list_saved_contents_for_site(token: str, site: str) -> tuple[list[dict[str, Any]], str | None]:
+    site_code = (site or "").strip().lower()
+    if site_code not in KNOWN_SITES:
+        return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    items, err = list_saved_contents(token, site_code, state="saved")
+    if err:
+        return [], err
+    rows = [summarize_saved_content(item, site_code) for item in items if extract_demo_numeric_id(item)]
+    rows.sort(key=lambda row: (row.get("name") or "").lower())
+    return rows, None
+
+
+def list_saved_contents_all_sites(token: str) -> dict[str, Any]:
+    contents: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+        futures = {
+            pool.submit(list_saved_contents_for_site, token, site): site for site in SITES
+        }
+        for future in as_completed(futures):
+            site = futures[future]
+            rows, err = future.result()
+            if err:
+                errors[site] = err
+            contents.extend(rows)
+    order = {site: index for index, site in enumerate(SITES)}
+    contents.sort(
+        key=lambda row: (
+            order.get(row.get("site") or "", 99),
+            row.get("name") or "",
+            row.get("contentId") or "",
+        )
+    )
+    return {"contents": contents, "errors": errors}
+
+
+def delete_saved_content(token: str, site: str, content_id: str) -> dict[str, Any]:
+    """DELETE /api/contents/{id} — same as the dCloud custom-content dashboard delete."""
+    site_code = (site or "").strip().lower()
+    cid = str(content_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return {"ok": False, "site": site_code, "contentId": cid, "message": "Invalid datacenter."}
+    if not cid:
+        return {"ok": False, "site": site_code, "contentId": cid, "message": "Content ID is required."}
+    details = fetch_content(token, site_code, cid)
+    topology_uid = extract_content_topology_uid(details or {}, site_code)
+    if _content_is_promoted(details) and not topology_uid:
+        return {
+            "ok": False,
+            "site": site_code,
+            "contentId": cid,
+            "message": "This promoted content uses Topology Builder v2 — use the EOL process to delete it.",
+            "locked": True,
+            "builderVersion": "v2",
+        }
+    url = f"{site_base(site_code)}/api/contents/{cid}"
+    try:
+        response = _request("DELETE", url, token, timeout=60)
+    except requests.RequestException as exc:
+        return {"ok": False, "site": site_code, "contentId": cid, "message": str(exc)}
+    body = _json_or_text(response)
+    message = api_message(body) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    if ok and not message:
+        message = "Deleted."
+    return {
+        "ok": ok,
+        "site": site_code,
+        "contentId": cid,
+        "message": message if message else ("Deleted." if ok else "Delete failed."),
+    }
+
+
+def list_pending_surveys(token: str, site: str) -> tuple[list[dict[str, Any]], str | None]:
+    """GET /api/surveys — pending session feedback surveys (same as dashboard decline)."""
+    site_code = (site or "").strip().lower()
+    if site_code not in KNOWN_SITES:
+        return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    url = f"{site_base(site_code)}/api/surveys"
+    try:
+        response = _request("GET", url, token)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return [], "Unexpected surveys response."
+    rows = body.get("surveys") or []
+    if not isinstance(rows, list):
+        return [], "Unexpected surveys response."
+    out: list[dict[str, Any]] = []
+    for survey in rows:
+        if not isinstance(survey, dict):
+            continue
+        uid = str(survey.get("uid") or "").strip()
+        if not uid:
+            continue
+        out.append(
+            {
+                "site": site_code,
+                "surveyId": uid,
+                "sessionId": str(survey.get("sessionId") or "").strip(),
+                "name": str(survey.get("name") or "").strip(),
+                "start": str(survey.get("start") or "").strip(),
+                "stop": str(survey.get("stop") or "").strip(),
+            }
+        )
+    return out, None
+
+
+def list_pending_surveys_all_sites(token: str) -> dict[str, Any]:
+    surveys: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+        futures = {
+            pool.submit(list_pending_surveys, token, site): site for site in SITES
+        }
+        for future in as_completed(futures):
+            site = futures[future]
+            rows, err = future.result()
+            if err:
+                errors[site] = err
+            surveys.extend(rows)
+    order = {site: index for index, site in enumerate(SITES)}
+    surveys.sort(
+        key=lambda row: (
+            order.get(row.get("site") or "", 99),
+            row.get("name") or "",
+            row.get("surveyId") or "",
+        )
+    )
+    return {"surveys": surveys, "errors": errors}
+
+
+def decline_survey(token: str, site: str, survey_id: str) -> dict[str, Any]:
+    """PUT /api/surveys/{uid}/decline — dismiss session feedback survey (HAR: clear surveys.har)."""
+    site_code = (site or "").strip().lower()
+    uid = str(survey_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return {"ok": False, "site": site_code, "surveyId": uid, "message": "Invalid datacenter."}
+    if not uid:
+        return {"ok": False, "site": site_code, "surveyId": uid, "message": "Survey ID is required."}
+    url = f"{site_base(site_code)}/api/surveys/{uid}/decline"
+    try:
+        response = _request("PUT", url, token, json_body={})
+    except requests.RequestException as exc:
+        return {"ok": False, "site": site_code, "surveyId": uid, "message": str(exc)}
+    body = _json_or_text(response)
+    message = api_message(body) or f"HTTP {response.status_code}"
+    ok = response.status_code < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    return {
+        "ok": ok,
+        "site": site_code,
+        "surveyId": uid,
+        "message": message if message else ("Declined." if ok else "Decline failed."),
+    }
+
+
+def decline_surveys(token: str, items: list[tuple[str, str]]) -> dict[str, Any]:
+    if not items:
+        return {"ok": True, "declined": 0, "failed": 0, "results": []}
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(len(items), 10)) as pool:
+        futures = [
+            pool.submit(decline_survey, token, site, survey_id)
+            for site, survey_id in items
+        ]
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as exc:
+                results.append({"ok": False, "message": str(exc)})
+    declined = sum(1 for item in results if item.get("ok"))
+    return {
+        "ok": all(item.get("ok") for item in results),
+        "declined": declined,
+        "failed": len(results) - declined,
+        "results": results,
+    }
+
+
+def fetch_content(token: str, site: str, content_id: str) -> dict[str, Any] | None:
+    cid = str(content_id or "").strip()
+    if not cid:
+        return None
+    url = f"{site_base(site)}/api/contents/{cid}"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException:
+        return None
+    if response.status_code >= 400:
+        return None
+    body = _json_or_text(response)
+    return body if isinstance(body, dict) else None
+
+
+def wait_until_saved(
+    site: str,
+    session_id: str,
+    *,
+    timeout_seconds: int = 900,
+    poll_seconds: int = 10,
+    progress: Progress | None = None,
+) -> str:
+    deadline = time.time() + timeout_seconds
+    last = ""
+    while time.time() < deadline:
+        status, err = check_public_session_status(site, session_id)
+        last = status or (err or "")
+        key = _status_key(status)
+        if key in {"saved", "12"} or (key.isdigit() and int(key) == 12):
+            if progress:
+                progress(f"{site.upper()}: save finished ({status}).")
+            return status
+        if key in {"cancelled", "canceled", "deleted", "failed", "error"}:
+            return status
+        if progress and last:
+            progress(f"{site.upper()}: waiting for save to finish (currently {last})…")
+        time.sleep(poll_seconds)
+    return last
+
+
+def _newest_content_by_name(
+    token: str,
+    site: str,
+    name: str,
+    skip: set[str],
+) -> dict[str, Any] | None:
+    wanted = (name or "").strip().lower()
+    if not wanted:
+        return None
+    matches: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for state in ("saved", None):
+        items, _err = list_saved_contents(token, site, state=state)
+        for item in items:
+            uid = str(item.get("uid") or item.get("id") or "").strip()
+            if not uid or uid in skip or uid in seen:
+                continue
+            if str(item.get("name") or "").strip().lower() != wanted:
+                continue
+            seen.add(uid)
+            matches.append(item)
+    if not matches:
+        return None
+
+    def sort_key(item: dict[str, Any]) -> int:
+        uid = str(item.get("uid") or "").strip()
+        return int(uid) if uid.isdigit() else 0
+
+    matches.sort(key=sort_key, reverse=True)
+    return matches[0]
+
+
+def collect_save_ids(
+    token: str,
+    site: str,
+    session_id: str,
+    save_body: Any,
+    session: dict[str, Any] | None,
+    progress: Progress | None = None,
+    source_demo_id: str = "",
+    save_name: str = "",
+) -> dict[str, str]:
+    """Saved content ID is session.activeId / activeDemoId — it already exists during the live session."""
+    parent = str(
+        (session or {}).get("parentId")
+        or (session or {}).get("parentDemoId")
+        or source_demo_id
+        or ""
+    ).strip()
+    skip = {item for item in (str(session_id), str(source_demo_id or ""), parent) if item}
+
+    from_save = extract_save_ids(save_body)
+    ids = {
+        key: value
+        for key, value in from_save.items()
+        if key != "savedId" or value not in skip
+    }
+    if save_name:
+        ids["savedName"] = save_name
+    ids["sessionId"] = str(session_id)
+
+    wait_until_saved(site, session_id, timeout_seconds=900, progress=progress)
+    time.sleep(2)
+    details, _err = fetch_session(token, site, session_id, expand="all")
+    if details:
+        after = extract_save_ids(details)
+        for key in ("parentId", "topologyVersionUid", "savedName"):
+            if after.get(key) and not ids.get(key):
+                ids[key] = after[key]
+        parent = str(details.get("parentId") or details.get("parentDemoId") or parent).strip()
+        if parent:
+            skip.add(parent)
+            ids.setdefault("parentId", parent)
+
+    saved_id = session_saved_content_id(details) or session_saved_content_id(session)
+    if saved_id in skip:
+        saved_id = ""
+    source = "session activeId/activeDemoId" if saved_id else ""
+    if not saved_id and ids.get("savedId") and ids["savedId"] not in skip:
+        saved_id, source = ids["savedId"], "save API"
+
+    wanted_name = (save_name or ids.get("savedName") or "").strip()
+    deadline = time.time() + 120
+    while True:
+        if saved_id:
+            content = fetch_content(token, site, saved_id)
+            if content:
+                ids.setdefault("savedName", str(content.get("name") or ""))
+                break
+            if progress:
+                progress(
+                    f"{site.upper()}: waiting for content {saved_id} to appear in custom content…"
+                )
+        else:
+            match = _newest_content_by_name(token, site, wanted_name, skip)
+            if match:
+                saved_id = str(match.get("uid") or "")
+                source = "custom content list by save name"
+                ids.setdefault("savedName", str(match.get("name") or ""))
+                extra_match = extract_save_ids(match)
+                for key in ("parentId", "topologyVersionUid"):
+                    if extra_match.get(key):
+                        ids.setdefault(key, extra_match[key])
+                break
+        if time.time() >= deadline:
+            if saved_id and not fetch_content(token, site, saved_id):
+                if progress:
+                    progress(
+                        f"{site.upper()}: {saved_id} did not show in GET /api/contents — "
+                        "keeping the session activeId anyway."
+                    )
+            break
+        time.sleep(10)
+
+    if saved_id and saved_id not in skip:
+        ids["savedId"] = saved_id
+        ids["contentViewUrl"] = edit_topology_url(site, saved_id)
+        if progress:
+            progress(f"{site.upper()}: saved content ID {saved_id} ({source})")
+    elif progress:
+        progress(f"{site.upper()}: save finished but the custom-content ID was not found.")
+    return ids
+
+
+def save_session(
+    token: str,
+    site: str,
+    session_id: str,
+    *,
+    save_url: str = "",
+    save_method: str = "PUT",
+    source_demo_id: str = "",
+    name: str = "",
+    description: str = "",
+    progress: Progress | None = None,
+) -> dict[str, Any]:
+    details, err = fetch_session(token, site, session_id, expand="all")
+    session = details if not err else None
+    save_name = (name or "").strip() or str((session or {}).get("name") or "").strip()
+    payload = _save_payload(save_name, description)
+    if progress and save_name:
+        progress(f"{site.upper()}: saving as {save_name!r} (no enable-save step first).")
+
+    if save_url:
+        method = (save_method or "PUT").upper()
+        href = save_url.replace("{id}", session_id).replace("{sessionId}", session_id)
+        if href.startswith("/"):
+            href = site_base(site) + href
+        candidates = [(method, href, payload)]
+    else:
+        candidates = _save_candidates(site, session_id, session, payload)
+
+    def try_one(method: str, href: str, body: dict[str, Any] | None) -> tuple[requests.Response | None, str]:
+        extra = _save_browser_headers(href)
+        if progress:
+            progress(f"{site.upper()}: trying save {method} {href}")
+        try:
+            response = _request(
+                method,
+                href,
+                token,
+                json_body=body,
+                extra_headers=extra,
+            )
+        except requests.RequestException as exc:
+            return None, str(exc)
+        parsed = _json_or_text(response)
+        detail = _short_http_message(parsed, response.status_code)
+        if progress:
+            progress(f"{site.upper()}: {method} {href} -> {response.status_code} {detail}")
+        return response, detail
+
+    def try_candidates() -> dict[str, Any]:
+        last = "Save API not found."
+        for method, href, body in candidates:
+            response, detail = try_one(method, href, body)
+            last = detail
+            if response is None:
+                continue
+            parsed = _json_or_text(response)
+            ok = response.status_code < 400
+            if isinstance(parsed, dict) and "success" in parsed:
+                ok = parsed.get("success") is True
+            if not ok:
+                continue
+            ids = collect_save_ids(
+                token,
+                site,
+                session_id,
+                parsed,
+                session,
+                progress,
+                source_demo_id,
+                save_name=save_name,
+            )
+            return {
+                "ok": True,
+                "message": detail or "Session saved.",
+                "statusCode": response.status_code,
+                "url": href,
+                **ids,
+            }
+        return {"ok": False, "message": last}
+
+    result = try_candidates()
+    if result.get("ok"):
+        return result
+
+    if source_demo_id and _save_looks_disabled(str(result.get("message") or "")):
+        if progress:
+            progress(
+                f"{site.upper()}: save looks blocked. Trying bot /esave on content "
+                f"{source_demo_id} with this token (not the old admin UI)…"
+            )
+        enabled = set_demo_save_enabled(token, site, source_demo_id, True)
+        if progress:
+            progress(f"{site.upper()}: enable-save: {enabled.get('message')}")
+        if enabled.get("ok"):
+            result = try_candidates()
+            if result.get("ok") and progress:
+                progress(
+                    f"{site.upper()}: save worked after enabling. Disable save on "
+                    f"{source_demo_id} later if you still want that content locked."
+                )
+            return result
+        if progress:
+            progress(
+                f"{site.upper()}: this token may not work on the old admin enable-save UI. "
+                "A dedicated HAR for that click would be needed if save stays blocked."
+            )
+    return result
+
+
+def token_identities(token: str) -> set[str]:
+    """CEC IDs / emails in the dCloud access token, used to tell my sessions from shared ones."""
+    clean = normalize_dcloud_token(token)
+    parts = clean.split(".")
+    if len(parts) < 2:
+        return set()
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except (ValueError, json.JSONDecodeError, binascii.Error):
+        return set()
+    if not isinstance(claims, dict):
+        return set()
+    names: set[str] = set()
+    for key in ("ccoid", "sub", "email_address", "email", "preferred_username", "uid"):
+        value = str(claims.get(key) or "").strip().lower()
+        if not value:
+            continue
+        names.add(value)
+        if "@" in value:
+            names.add(value.split("@", 1)[0])
+    return {name for name in names if name}
+
+
+def session_owner(details: dict[str, Any] | None) -> str:
+    """Owner CEC ID on a dCloud session or saved content record."""
+    if not isinstance(details, dict):
+        return ""
+    return _owner_name(details)
+
+
+def owner_is_me(owner: str, identities: set[str] | None) -> bool | None:
+    """True/False when both sides are known, None when we cannot tell."""
+    name = str(owner or "").strip().lower()
+    if not name or not identities:
+        return None
+    if name in identities:
+        return True
+    if "@" in name and name.split("@", 1)[0] in identities:
+        return True
+    return False
+
+
+def shared_with_from_details(details: dict[str, Any] | None) -> list[dict[str, str]]:
+    if not isinstance(details, dict):
+        return []
+    expand = details.get("expand") if isinstance(details.get("expand"), dict) else {}
+    raw = expand.get("sharedWith")
+    if not isinstance(raw, list):
+        raw = details.get("sharedWith")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        user_id = str(item.get("userId") or "").strip()
+        if not user_id:
+            continue
+        out.append(
+            {
+                "userId": user_id,
+                "fullName": str(item.get("fullName") or "").strip(),
+            }
+        )
+    return out
+
+
+def search_share_users(
+    token: str,
+    site: str,
+    query: str,
+    *,
+    content_scope: bool = False,
+) -> tuple[list[dict[str, str]], str | None]:
+    site_code = (site or "").strip().lower()
+    name = str(query or "").strip()
+    if site_code not in KNOWN_SITES:
+        return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if len(name) < 2:
+        return [], None
+    params = {"name": name}
+    if content_scope:
+        params["scope"] = "dsx"
+    url = f"{site_base(site_code)}/api/users/search?{urlencode(params)}"
+    try:
+        response = _request("GET", url, token)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return [], "Unexpected user search response."
+    rows = body.get("users") or []
+    if not isinstance(rows, list):
+        return [], None
+    out: list[dict[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        user_id = str(row.get("userId") or "").strip()
+        if not user_id:
+            continue
+        out.append(
+            {
+                "userId": user_id,
+                "fullName": str(row.get("fullName") or "").strip(),
+                "email": str(row.get("email") or "").strip(),
+            }
+        )
+    return out, None
+
+
+def fetch_session_shared_with(
+    token: str,
+    site: str,
+    session_id: str,
+) -> tuple[list[dict[str, str]], str | None]:
+    details, err = fetch_session(token, site, session_id, expand="sharedWith")
+    if err:
+        return [], err
+    return shared_with_from_details(details), None
+
+
+def fetch_content_shared_with(
+    token: str,
+    site: str,
+    content_id: str,
+) -> tuple[list[dict[str, str]], str | None]:
+    site_code = (site or "").strip().lower()
+    cid = str(content_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not cid:
+        return [], "Content ID is required."
+    url = f"{site_base(site_code)}/api/contents/{cid}?expand=sharedWith"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    if response.status_code == 401:
+        return [], (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    body = _json_or_text(response)
+    if not isinstance(body, dict):
+        return [], "Unexpected content response."
+    return shared_with_from_details(body), None
+
+
+def _share_payload(shared_with: list[dict[str, Any]]) -> dict[str, list[dict[str, str]]]:
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in shared_with or []:
+        if isinstance(item, dict):
+            user_id = str(item.get("userId") or "").strip()
+        else:
+            user_id = str(item or "").strip()
+        if not user_id or user_id in seen:
+            continue
+        seen.add(user_id)
+        rows.append({"userId": user_id})
+    return {"sharedWith": rows}
+
+
+def update_session_share(
+    token: str,
+    site: str,
+    session_id: str,
+    shared_with: list[dict[str, Any]],
+) -> tuple[bool, str | None]:
+    site_code = (site or "").strip().lower()
+    sid = str(session_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return False, "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not sid:
+        return False, "Session ID is required."
+    url = f"{site_base(site_code)}/api/sessions/{sid}/share"
+    payload = _share_payload(shared_with)
+    try:
+        response = _request("PUT", url, token, json_body=payload)
+    except requests.RequestException as exc:
+        return False, str(exc)
+    if response.status_code == 401:
+        return False, (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return False, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    return True, None
+
+
+def update_content_share(
+    token: str,
+    site: str,
+    content_id: str,
+    shared_with: list[dict[str, Any]],
+) -> tuple[bool, str | None]:
+    site_code = (site or "").strip().lower()
+    cid = str(content_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return False, "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not cid:
+        return False, "Content ID is required."
+    url = f"{site_base(site_code)}/api/contents/{cid}/share"
+    payload = _share_payload(shared_with)
+    try:
+        response = _request("PUT", url, token, json_body=payload, timeout=30)
+    except requests.RequestException as exc:
+        return False, str(exc)
+    if response.status_code == 401:
+        return False, (
+            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+        )
+    if response.status_code >= 400:
+        return False, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    return True, None

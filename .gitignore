@@ -1,0 +1,12 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+.DS_Store
+*.log
+last-saved-ids.json
+last-job.json
+.dcloud-session.json
+.dcloud-cai-session.json
+.dcloud-camgr-session.json
+managed-saved-ids.json

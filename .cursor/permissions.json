@@ -1,0 +1,15 @@
+{
+  "autoRun": {
+    "allow_instructions": [
+      "Auto-run local development in this repo without waiting for a Run click: read and edit project files, python3, pip, pytest, lsof, curl against localhost, chmod, and start.command / uvicorn on 127.0.0.1.",
+      "Allow git read-only commands (status, diff, log, show) and restarting the local dCloud Content Manager app.",
+      "Allow searching the codebase and reading HAR or JSON fixtures in this repo for debugging.",
+      "Allow syntax checks (python -m py_compile) and installing requirements into .venv."
+    ],
+    "block_instructions": [
+      "Always ask before git push, git reset --hard, force push, or deleting branches.",
+      "Always ask before rm -rf, deleting files, or modifying files outside this project directory.",
+      "Always ask before commands that read or write .env, credentials, or production dCloud systems beyond normal API calls the tool already makes."
+    ]
+  }
+}
