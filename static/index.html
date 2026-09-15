@@ -27,6 +27,35 @@
     }
     .wrap { max-width: 1180px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
     h1 { font-size: 1.45rem; margin: 0 0 0.25rem; }
+    .title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin-left: auto;
+    }
+    .app-version {
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .dcloud-auth-button {
+      min-width: 9.5rem;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.8rem;
+    }
+    .dcloud-auth-button.authorized {
+      background: var(--ok);
+      border-color: var(--ok);
+      color: #07130d;
+    }
     .sub { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.95rem; }
     .panel {
       background: var(--panel);
@@ -44,6 +73,9 @@
       padding: 1rem 1.25rem;
       font-size: 0.95rem;
       font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
       user-select: none;
     }
     details.panel-collapse > summary.panel-collapse-summary::-webkit-details-marker { display: none; }
@@ -60,6 +92,70 @@
     details.panel-collapse.auth-panel {
       border-color: rgba(4, 159, 217, 0.45);
       box-shadow: 0 0 0 1px rgba(4, 159, 217, 0.12);
+    }
+    details.panel-collapse.auth-panel:not(.auth-panel-open) {
+      display: none;
+    }
+    details.panel-collapse.auth-panel.auth-panel-open {
+      display: block;
+      position: fixed;
+      z-index: 1901;
+      top: 50%;
+      left: 50%;
+      width: min(760px, calc(100vw - 2rem));
+      max-height: calc(100vh - 2rem);
+      margin: 0;
+      overflow: auto;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+    }
+    .auth-panel-backdrop {
+      position: fixed;
+      z-index: 1900;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.68);
+    }
+    .auth-panel-close {
+      margin-left: auto;
+      padding: 0.2rem 0.5rem;
+      line-height: 1.1;
+    }
+    .section-order-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      margin-left: auto;
+    }
+    p#lookup-status.lookup-ready {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .section-drag-handle {
+      cursor: grab;
+      color: var(--muted);
+      padding: 0.1rem 0.35rem;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      line-height: 1.2;
+      user-select: none;
+    }
+    .section-drag-handle:hover {
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .section-drag-handle:active { cursor: grabbing; }
+    details.panel.section-dragging { opacity: 0.45; }
+    details.panel.section-drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
+    details.panel.section-drop-after { box-shadow: 0 3px 0 0 var(--accent); }
+    .section-order-controls button {
+      min-width: 2rem;
+      padding: 0.18rem 0.4rem;
+      font-size: 0.8rem;
+      line-height: 1.2;
+    }
+    .section-order-controls button:disabled {
+      opacity: 0.35;
     }
     input.saved-id-published,
     .saved-id-parent {
@@ -181,8 +277,25 @@
     .found-session-attached { opacity: 0.62; }
     .found-session-attached .found-session:disabled { cursor: not-allowed; }
     button:disabled:active { transform: none; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28); }
-    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); box-shadow: none; }
-    button.secondary:not(:disabled):active {
+    button.secondary,
+    a.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      box-shadow: none;
+    }
+    a.secondary {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+      border-radius: 6px;
+      padding: 0.6rem 1rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary:not(:disabled):active,
+    a.secondary:active {
       background: rgba(139, 156, 179, 0.14);
       border-color: #3d4f66;
     }
@@ -202,6 +315,7 @@
       border-left-width: 3px;
       border-radius: 10px;
       background: rgba(139, 156, 179, 0.04);
+      scroll-margin-top: 1rem;
     }
     .task-group.cai { border-left-color: #7c6cf0; }
     .task-group.camgr { border-left-color: var(--accent); }
@@ -627,9 +741,70 @@
     }
     .fresh-scope input { width: auto; margin: 0.2rem 0 0; }
     .fresh-scope .hint { display: block; margin: 0.1rem 0 0; }
+    .prompt-field {
+      margin-top: 0.7rem;
+    }
+    .prompt-field label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .prompt-field input {
+      width: 100%;
+    }
     .action-modal-card h2 {
       color: var(--warn);
     }
+    .details-modal-card {
+      width: min(100%, 760px);
+      max-height: 82vh;
+      overflow: auto;
+      border-color: var(--border);
+    }
+    /* Log lines are long, so give them the window width without overflowing
+       a small laptop screen (.modal already reserves the outer padding). */
+    .details-modal-card.details-modal-wide { width: min(100%, 1180px); }
+    .details-modal-card h2 { color: var(--text); }
+    .details-log {
+      margin: 0;
+      max-height: 64vh;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.76rem;
+      line-height: 1.35;
+      tab-size: 4;
+    }
+    .details-modal-body {
+      display: grid;
+      gap: 0.8rem;
+    }
+    .details-modal-body h3 { margin: 0 0 0.3rem; font-size: 0.92rem; }
+    .details-list { margin: 0; padding-left: 1.2rem; }
+    .details-kv {
+      display: grid;
+      grid-template-columns: minmax(8rem, auto) 1fr;
+      gap: 0.3rem 0.8rem;
+    }
+    .details-kv dt { color: var(--muted); }
+    .details-kv dd { margin: 0; }
+    .details-modal-body table { width: 100%; }
+    .details-modal-body .secret-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-right: 0.4rem;
+    }
+    .details-modal-body .btn-reveal-secret {
+      padding: 0.1rem 0.4rem;
+      font-size: 0.72rem;
+    }
+    .search-actions-menu { display: inline-block; }
+    .search-actions-menu > summary { white-space: nowrap; }
+    .vm-menu-list button.danger {
+      background: transparent;
+      color: #f87171;
+    }
+    .vm-menu-list button.danger:hover { background: rgba(248, 113, 113, 0.14); }
     .schedule-conflict-card {
       width: min(100%, 520px);
       border-color: rgba(251, 191, 36, 0.55);
@@ -981,14 +1156,97 @@
     }
     .camgr-auto-integrate.hidden { display: none; }
     .camgr-auto-integrate.dev-dest-only { opacity: 0.5; }
-    .camgr-auto-integrate input {
+    .camgr-auto-integrate input[type="checkbox"] {
       margin-top: 0.2rem;
+    }
+    .camgr-burn-in {
+      margin-top: -0.4rem;
+      margin-left: 1.55rem;
+      align-items: center;
+    }
+    .camgr-burn-in input[type="number"] {
+      width: 4.2rem;
+      min-width: 4.2rem;
+      padding: 0.32rem 0.45rem;
     }
     .camgr-status-cell {
       display: flex;
       flex-direction: column;
       gap: 0.22rem;
       min-width: 11rem;
+    }
+    .unified-search-row {
+      display: grid;
+      grid-template-columns: minmax(16rem, 1fr) minmax(24rem, auto);
+      gap: 0.65rem;
+      align-items: end;
+    }
+    .unified-search-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: end;
+    }
+    .unified-search-filters select {
+      min-width: 11rem;
+    }
+    .unified-search-dcs,
+    .unified-search-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+    .unified-search-dcs label {
+      display: inline-flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    .unified-search-dcs input { width: auto; }
+    .unified-search-results {
+      display: grid;
+      gap: 0.8rem;
+      margin-top: 0.85rem;
+    }
+    .search-result-group {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem;
+      overflow-x: auto;
+    }
+    .search-result-group h3 {
+      margin: 0 0 0.45rem;
+      font-size: 0.95rem;
+    }
+    details.search-source-group > summary {
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      list-style: none;
+    }
+    details.search-source-group > summary::-webkit-details-marker { display: none; }
+    th.sortable-col {
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    th.sortable-col:hover { color: var(--text); }
+    th.sortable-col.sorted { color: var(--accent); }
+    .search-result-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .search-result-actions button,
+    .search-result-actions a {
+      padding: 0.38rem 0.6rem;
+      font-size: 0.78rem;
+    }
+    @media (max-width: 780px) {
+      .unified-search-row { grid-template-columns: 1fr; }
     }
     .camgr-dc-chips {
       display: flex;
@@ -1039,6 +1297,13 @@
     a.camgr-dc-chip:hover {
       text-decoration: underline;
     }
+    .replace-vm-chips {
+      align-items: center;
+    }
+    .replace-vm-count {
+      font-size: 0.68rem;
+      white-space: nowrap;
+    }
     .replace-status {
       font-size: 0.75rem;
       text-transform: capitalize;
@@ -1080,14 +1345,21 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>dCloud Content Manager</h1>
+    <div class="title-row">
+      <h1>dCloud Content Manager</h1>
+      <div class="header-actions">
+        <span id="app-version" class="app-version">Version 1.0</span>
+        <button type="button" class="secondary dcloud-auth-button" id="btn-dcloud-authorize" data-tip="Open dCloud login and token controls.">Sign in to dCloud</button>
+      </div>
+    </div>
     <p class="sub">
       Schedule sessions and manage saved content across datacenters — transfer, integrate, replace VMs,
       clean up, and keep live sessions running from one place.
     </p>
     <div class="layout-toolbar">
-      <button type="button" class="secondary" id="btn-collapse-all-ui" data-tip="Collapse every section, session card VM list, and DC group on this page. Your layout is remembered after refresh or Start fresh.">Collapse all</button>
-      <button type="button" class="secondary" id="btn-expand-all-ui" data-tip="Expand every collapsible section on this page. Your layout is remembered after refresh or Start fresh.">Expand all</button>
+      <button type="button" class="secondary" id="btn-collapse-all-ui" data-tip="Collapse every section, session card VM list, and DC group on this page. Sections always start collapsed when the page loads.">Collapse all</button>
+      <button type="button" class="secondary" id="btn-expand-all-ui" data-tip="Expand every collapsible section on this page. Sections collapse again on the next page load.">Expand all</button>
+      <button type="button" class="secondary" id="btn-reset-section-order" data-tip="Put the main sections back in their original order.">Reset section order</button>
     </div>
 
     <div id="error-banner" class="banner-dismissible err-box hidden">
@@ -1102,7 +1374,7 @@
         <p id="token-alert-body"></p>
         <div class="actions">
           <button type="button" id="token-alert-login">Log in to dCloud</button>
-          <button type="button" class="secondary" id="token-alert-goto">Go to Step 1</button>
+          <button type="button" class="secondary" id="token-alert-goto">Open dCloud sign-in</button>
           <button type="button" class="secondary" id="token-alert-import">Import from browser</button>
           <button type="button" class="secondary" id="token-alert-dismiss">Dismiss</button>
         </div>
@@ -1117,6 +1389,46 @@
         <div class="actions">
           <button type="button" id="action-alert-ok">OK</button>
           <button type="button" class="secondary hidden" id="action-alert-goto">Go there</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="details-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="details-modal-title">
+      <div class="modal-backdrop" id="details-modal-backdrop"></div>
+      <div class="modal-card details-modal-card">
+        <h2 id="details-modal-title">Details</h2>
+        <div id="details-modal-body" class="details-modal-body"></div>
+        <div class="actions">
+          <button type="button" class="secondary" id="details-modal-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="session-edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="session-edit-title">
+      <div class="modal-backdrop" id="session-edit-backdrop"></div>
+      <div class="modal-card action-modal-card">
+        <h2 id="session-edit-title">Edit session</h2>
+        <dl class="details-kv" style="margin:0 0 0.6rem">
+          <dt>Demo ID</dt><dd id="session-edit-demo">—</dd>
+          <dt>Parent Demo</dt><dd id="session-edit-parent">—</dd>
+        </dl>
+        <div class="prompt-field">
+          <label for="session-edit-name">Session Name</label>
+          <input id="session-edit-name" type="text" maxlength="255" autocomplete="off" />
+        </div>
+        <div class="prompt-field">
+          <label for="session-edit-start">Start</label>
+          <input id="session-edit-start" type="datetime-local" autocomplete="off" />
+        </div>
+        <div class="prompt-field">
+          <label for="session-edit-stop">End</label>
+          <input id="session-edit-stop" type="datetime-local" autocomplete="off" />
+        </div>
+        <p class="hint" style="margin-top:0.45rem">Only the fields you change are sent to dCloud. Times use this computer's timezone.</p>
+        <p id="session-edit-status" class="hint" aria-live="polite"></p>
+        <div class="actions">
+          <button type="button" id="session-edit-save">Update</button>
+          <button type="button" class="secondary" id="session-edit-cancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -1136,9 +1448,16 @@
     <div id="prompt-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-alert-title">
       <div class="modal-backdrop" id="prompt-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
-        <h2 id="prompt-alert-title">Name</h2>
+        <h2 id="prompt-alert-title">Save as</h2>
         <p id="prompt-alert-body"></p>
-        <input id="prompt-alert-input" type="text" autocomplete="off" style="width:100%" />
+        <div class="prompt-field">
+          <label id="prompt-alert-input-label" for="prompt-alert-input">Name</label>
+          <input id="prompt-alert-input" type="text" maxlength="255" autocomplete="off" />
+        </div>
+        <div class="prompt-field">
+          <label for="prompt-alert-description">Description</label>
+          <input id="prompt-alert-description" type="text" maxlength="255" autocomplete="off" />
+        </div>
         <div class="actions">
           <button type="button" id="prompt-alert-ok">Save</button>
           <button type="button" class="secondary" id="prompt-alert-cancel">Cancel</button>
@@ -1197,12 +1516,18 @@
       </div>
     </div>
 
-    <details class="panel panel-collapse auth-panel" id="panel-step1" open>
-      <summary class="panel-collapse-summary">Step 1 — dCloud token</summary>
+    <div id="auth-panel-backdrop" class="auth-panel-backdrop hidden"></div>
+    <details class="panel panel-collapse auth-panel" id="panel-step1">
+      <summary class="panel-collapse-summary">
+        dCloud sign-in
+        <button type="button" class="secondary auth-panel-close" id="btn-close-dcloud-auth" aria-label="Close dCloud sign-in" title="Close">×</button>
+      </summary>
       <div class="panel-collapse-body">
       <p class="hint">
-        Sessions run under <strong>your</strong> dCloud login. <strong>Log in to dCloud</strong> exchanges the SSO code
-        directly (fast, saves refresh token). <strong>Import</strong> scans Chrome storage as a backup.
+        Sessions run under <strong>your</strong> dCloud login.
+        <strong>Log in</strong> goes straight to the Cisco SSO popup — if Chrome is already signed into dCloud
+        it finishes on its own in a second or two. <strong>Import</strong> reads the login Chrome already has,
+        without a popup. If a popup sits on “Logging you in…”, close it and the tool finishes the login.
       </p>
       <div class="actions" style="margin-top:0.4rem">
         <button type="button" id="btn-login" data-tip="Opens Cisco SSO in a popup. After sign-in, tokens are captured from the SSO exchange (refresh token saved for auto-renew).">Log in to dCloud</button>
@@ -1227,10 +1552,10 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-step2" open>
-      <summary class="panel-collapse-summary">Step 2 — Load VMs</summary>
+    <details class="panel panel-collapse" id="panel-step2">
+      <summary class="panel-collapse-summary">Load VMs (for content exports and VM power-ons)</summary>
       <div class="panel-collapse-body">
-      <p class="hint" id="step2-hint">Load VMs, check the ones you want powered on after scheduling, then continue to Step 3.</p>
+      <p class="hint" id="step2-hint">Load VMs, check the ones you want powered on after scheduling, then open Schedule sessions.</p>
       <div class="vm-source-toggle" role="radiogroup" aria-label="VM source">
         <label class="check-line">
           <input type="radio" name="vm-source" id="vm-source-content" value="content" checked />
@@ -1259,10 +1584,10 @@
       </div>
       <label class="check-line" for="skip-catalog">
         <input type="checkbox" id="skip-catalog" />
-        <span>I already have the content IDs — don’t search the catalog in other DCs</span>
+        <span>I already have the content IDs — don’t look up the other IDs in the global catalog</span>
       </label>
       <div class="actions">
-        <button type="button" id="btn-load-vms" data-tip="Loads the VM list so you can check which ones to power on when the session is scheduled.">Load VMs</button>
+        <button type="button" id="btn-load-vms" data-tip="Loads the VM list for content exports and for selecting which VMs to power on after scheduling.">Load VMs</button>
         <span id="session-meta" class="hint"></span>
       </div>
       <div id="vm-wrap" class="hidden" style="margin-top:1rem">
@@ -1284,13 +1609,13 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-step3" open>
-      <summary class="panel-collapse-summary">Step 3 — Demo / content IDs to schedule per DC</summary>
+    <details class="panel panel-collapse" id="panel-step3">
+      <summary class="panel-collapse-summary">Schedule sessions — demo / content IDs per DC</summary>
       <div class="panel-collapse-body">
       <p class="hint">
         Loading VMs fills the source DC from that session’s content ID. Unless you check
-        “I already have the content IDs”, it also exact-match searches the catalog in the
-        other DCs (admin / published). Leave a DC blank to skip it.
+        “I already have the content IDs”, it uses the global catalog to get the IDs for
+        every available DC in one lookup. Leave a DC blank to skip it.
       </p>
       <p id="lookup-status" class="hint"></p>
       <div class="row">
@@ -1303,7 +1628,7 @@
       <div class="row" style="margin-top:0.85rem">
         <div style="max-width:470px">
           <label for="days">Duration (days)</label>
-          <input id="days" type="number" min="1" value="1" />
+          <input id="days" type="number" min="1" value="1" autocomplete="off" />
         </div>
         <!-- How long the tool watches for Active before it stops polling. dCloud keeps
              building the session either way, so there is nothing to tune here. -->
@@ -1385,8 +1710,8 @@
         Use <strong>Clear job workspace cards</strong> below if you want a fresh workspace (monitoring cards stay).
       </p>
       <div class="actions">
-        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC in Step 3 using Step 2 VMs. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
-        <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you import a new token in Step 1, resumes the job that paused because your token expired.">Continue with new token</button>
+        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section, using the VMs checked in Load VMs. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
+        <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you import a new token from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with new token</button>
       </div>
       <details class="advanced" id="panel-recovery">
         <summary>Refresh recovery — restore last job</summary>
@@ -1435,16 +1760,16 @@
           <p class="step-label" style="margin-top:1rem">Start new sessions from saved content</p>
           <p class="hint">
             Check rows in the list above, then click <strong>Schedule checked saved content</strong> below.
-            That spins up <strong>new</strong> dCloud sessions from those saved copies (same idea as Step 3 schedule, but using saved IDs instead of demo IDs).
+            That spins up <strong>new</strong> dCloud sessions from those saved copies (same idea as Schedule sessions, but using saved IDs instead of demo IDs).
           </p>
           <p class="hint">
-            <strong>Which VMs power on</strong> comes from the VM checkboxes in Step 2 — or from a restored job if you used Restore last job.
+            <strong>Which VMs power on</strong> comes from the VM checkboxes in Load VMs — or from a restored job if you used Restore last job.
           </p>
           <p class="step-label" style="margin-top:0.85rem">Session schedule</p>
           <div class="row">
             <div style="max-width:470px">
               <label for="saved-days">Duration (days)</label>
-              <input id="saved-days" type="number" min="1" value="1" />
+              <input id="saved-days" type="number" min="1" value="1" autocomplete="off" />
             </div>
           </div>
           <div class="row" style="margin-top:0.85rem">
@@ -1491,7 +1816,7 @@
             </div>
           </div>
           <p class="hint">
-            Start/stop stay in sync with Step 3. One day = now until this time tomorrow — open the calendar if you need a later window.
+            Start/stop stay in sync with Schedule sessions. One day = now until this time tomorrow — open the calendar if you need a later window.
           </p>
           <p class="hint">
             After you save sessions, the <strong>Content Automation Hub</strong> list shows those new IDs.
@@ -1503,7 +1828,7 @@
             <span>Schedule as exported sessions (unchecked = regular sessions)</span>
           </label>
           <div class="actions">
-            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and Step 2 VMs. All selected DCs run in parallel.">Schedule checked saved content</button>
+            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs. All selected DCs run in parallel.">Schedule checked saved content</button>
           </div>
           </div>
         </details>
@@ -1511,14 +1836,61 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-job-cards" open>
+    <details class="panel panel-collapse" id="panel-job-cards">
       <summary class="panel-collapse-summary">Job workspace</summary>
       <div class="panel-collapse-body">
       <p class="hint">Sessions you schedule or move here support bulk extend, shutdown, and end.</p>
       <p id="job-phase" class="hint" style="margin-top:0">No job running.</p>
+      <details class="found-sessions-panel">
+        <summary>Add an existing session</summary>
+        <div class="found-sessions-body">
+          <p class="hint">
+            Enter a session ID directly, or enter a demo/content ID to find its running sessions.
+            These cards are added to the job workspace for bulk actions.
+          </p>
+          <div class="row">
+            <div>
+              <label for="workspace-manual-site">Datacenter</label>
+              <select id="workspace-manual-site">
+                <option value="sjc">SJC</option>
+                <option value="rtp">RTP</option>
+                <option value="lon">LON</option>
+                <option value="sng">SNG</option>
+                <option value="syd">SYD</option>
+              </select>
+            </div>
+            <div>
+              <label for="workspace-manual-id">Demo or session ID</label>
+              <input id="workspace-manual-id" inputmode="numeric" autocomplete="off" placeholder="e.g. 491482" />
+            </div>
+            <div style="align-self:flex-end">
+              <button type="button" class="secondary" id="btn-workspace-manual">Add to job workspace</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="secondary" id="btn-find-workspace-sessions">Find my sessions</button>
+          </div>
+          <details id="found-workspace-sessions-panel" class="found-sessions-panel hidden">
+            <summary id="found-workspace-sessions-summary">Your active dCloud sessions</summary>
+            <div class="found-sessions-body">
+              <div class="list-toolbar">
+                <button type="button" class="secondary" id="btn-workspace-check-all">Check all</button>
+                <button type="button" class="secondary" id="btn-workspace-uncheck-all">Uncheck all</button>
+                <button type="button" class="secondary" id="btn-workspace-expand-sessions">Expand all DCs</button>
+                <button type="button" class="secondary" id="btn-workspace-collapse-sessions">Collapse all DCs</button>
+              </div>
+              <div id="found-workspace-sessions" style="margin-top:0.35rem"></div>
+              <div class="actions" style="margin-top:0.65rem">
+                <button type="button" class="secondary" id="btn-attach-workspace-sessions" disabled>Add checked to job workspace</button>
+              </div>
+              <p id="attach-workspace-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
+            </div>
+          </details>
+        </div>
+      </details>
       <div id="auth-pause-banner" class="banner-dismissible warn-box hidden">
         <span id="auth-pause-banner-text" class="banner-text">
-          Token expired. Log in to dCloud or Import from browser in Step 1, then Continue with new token.
+          Token expired. Click Sign in to dCloud, log in or import from browser, then Continue with new token.
         </span>
         <button type="button" class="banner-dismiss" id="auth-pause-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
       </div>
@@ -1557,20 +1929,9 @@
             <button type="button" class="secondary" id="btn-extend-checked" data-tip="Sets a new scheduled stop time in dCloud for each checked session (PUT /api/sessions/{id}).">Extend checked</button>
           </div>
         </div>
-        <div class="row" style="margin-bottom:0.75rem">
-          <div>
-            <label for="save-name">Save as (name)</label>
-            <input id="save-name" type="text" maxlength="255" placeholder="Filled from the content name — append a suffix if you want" autocomplete="off" />
-            <p class="hint">Prefills the name prompt. Every save asks you to check the name first, and a save covering different demos asks once per demo.</p>
-          </div>
-          <div>
-            <label for="save-description">Save description</label>
-            <input id="save-description" type="text" maxlength="255" placeholder="Required (1–255). Default: Saved" autocomplete="off" />
-          </div>
-        </div>
         <div class="actions">
         <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh all session statuses</button>
-        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down and saves checked ready cards, or all remaining ready cards if none checked. Skips sessions that are already saved or currently saving. Uses Save as name/description above.">Guest shutdown &amp; save</button>
+        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down and saves checked ready cards, or all remaining ready cards if none checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest shutdown &amp; save</button>
         <button type="button" class="end" id="btn-end" data-tip="Ends checked sessions without saving, or all visible cards if none checked.">End sessions (no save)</button>
         <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear job workspace cards</button>
         </div>
@@ -1578,7 +1939,7 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-monitoring" open>
+    <details class="panel panel-collapse" id="panel-monitoring">
       <summary class="panel-collapse-summary">Session monitoring</summary>
       <div class="panel-collapse-body">
       <p class="hint">
@@ -1635,7 +1996,7 @@
       </div>
     </details>
 
-    <details id="saved-ids-panel" class="panel panel-collapse" open>
+    <details id="saved-ids-panel" class="panel panel-collapse">
       <summary class="panel-collapse-summary">Content Automation Hub</summary>
       <div class="panel-collapse-body" id="hub-body">
       <div class="task-group-head">
@@ -1648,7 +2009,7 @@
         <strong>Find saved content</strong>
         (<a href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer">dcloud-cai.cisco.com</a>,
         <a href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer">dcloud-camgr.cisco.com</a>).
-        These are separate from the dCloud token in Step 1. Cisco network required.
+        These are separate from the dCloud sign-in at the top of the page. Cisco network required.
         Removing a row only affects this list — not dCloud.
         To transfer existing saved content: Find saved content here or add its DC and ID, check the row,
         Connect to CAMGR, Load transfer VMs, check dest DCs, then Submit transfer.
@@ -1659,7 +2020,7 @@
         <button type="button" class="secondary" id="btn-saved-ids-remove-all" data-tip="Removes every row from this list in one step. Does not delete saved content in dCloud.">Remove all</button>
       </div>
       <p class="step-label" style="margin-top:0.85rem">Add content by ID</p>
-      <p class="hint help-text">Add any demo or saved-content ID you can access; it does not have to appear under Find saved content.</p>
+      <p class="hint help-text">Add any demo ID you can access; it does not have to appear under Find saved content.</p>
       <div class="row">
         <div>
           <label for="hub-manual-site">Datacenter</label>
@@ -1672,7 +2033,7 @@
           </select>
         </div>
         <div>
-          <label for="hub-manual-id">Demo or saved-content ID</label>
+          <label for="hub-manual-id">Demo ID</label>
           <input id="hub-manual-id" inputmode="numeric" autocomplete="off" placeholder="e.g. 1389840" />
         </div>
         <div style="align-self:flex-end">
@@ -1720,14 +2081,14 @@
         CAMGR status comes from <strong>your</strong> jobs in Content Transfer and fills in once you are
         connected to CAMGR. Other people's transfers are not added.
       </p>
-      <div class="task-group cai">
+      <div class="task-group cai" id="cai-task-group">
       <div class="task-group-head">
         <p class="task-group-title">Content Integration Tasks</p>
         <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
       </div>
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-cai-connect" data-tip="Checks that this machine can reach Content Automation Hub on the Cisco network.">Connect to CAI</button>
-        <button type="button" class="secondary" id="btn-cai-open" data-tip="Optional. Opens Content Automation Hub in a new tab if you want to look at CAI in the browser. Not required for Connect to CAI.">Open CAI</button>
+        <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
       </div>
       <p id="cai-status" class="hint" style="margin-top:0.35rem">CAI: on the Cisco network, click Connect to CAI.</p>
       <p class="hint chip-toolbar-label hidden" id="cai-vm-label"></p>
@@ -1837,16 +2198,16 @@
       </table>
       </div>
 
-      <div class="task-group camgr">
+      <div class="task-group camgr" id="camgr-task-group">
       <div class="task-group-head">
         <p class="task-group-title">Content Transfer Tasks</p>
         <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
       </div>
       <div class="actions" style="margin-top:0">
-        <button type="button" id="btn-camgr-connect" data-tip="Imports the CAMGR Chrome login (Cisco/Duo). Use this after you are signed in to CAMGR in Chrome, or if CAMGR is already open and logged in.">Connect to CAMGR</button>
-        <button type="button" class="secondary" id="btn-camgr-open" data-tip="First-time CAMGR: opens Content Transfer so you can finish Cisco/Duo in Chrome. Then come back and click Connect to CAMGR.">Open CAMGR</button>
+        <button type="button" id="btn-camgr-connect" data-tip="Uses your open CAMGR tab in Chrome. Keep Content Transfer open, then click Connect.">Connect to CAMGR</button>
+        <a class="secondary" id="btn-camgr-open" href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Transfer in a new tab if you want to look at CAMGR. Not required for Connect.">Open CAMGR</a>
       </div>
-      <p id="camgr-status" class="hint" style="margin-top:0.35rem">CAMGR: first time, Open CAMGR, finish Cisco/Duo in Chrome, then Connect to CAMGR. If CAMGR is already signed in, Connect is enough.</p>
+      <p id="camgr-status" class="hint" style="margin-top:0.35rem">Keep Content Transfer open in Chrome, then Connect. This tool uses that tab.</p>
       <p class="hint">
         Check a box in the saved content list above for what you want to transfer, then click
         <strong>Load transfer VMs</strong> and pick the destination DCs. Several rows of the same demo can be
@@ -1874,6 +2235,12 @@
         <input type="checkbox" id="camgr-auto-integrate" />
         <span>After transfer completes, submit CAI Integrate to the same destination DCs</span>
       </label>
+      <div id="camgr-burn-in-wrap" class="camgr-auto-integrate camgr-burn-in hidden">
+        <input type="checkbox" id="camgr-burn-in" />
+        <label for="camgr-burn-in">After integration completes, spin up new demo sessions for</label>
+        <input type="number" id="camgr-burn-in-days" min="1" step="1" value="1" autocomplete="off" aria-label="Burn-in days" />
+        <span>day(s)</span>
+      </div>
       <div class="actions">
         <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load transfer VMs</button>
         <button type="button" id="btn-camgr-transfer" data-tip="Submits a CAMGR transfer for each checked row to the checked destination DCs. Greyed out for ContentDEV rows — use Submit dev transfer instead.">Submit transfer</button>
@@ -1904,7 +2271,71 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-log" open>
+    <details class="panel panel-collapse" id="panel-unified-search">
+      <summary class="panel-collapse-summary">Search dCloud</summary>
+      <div class="panel-collapse-body">
+        <p class="hint">
+          Load the complete Content or Sessions lists for the datacenters you pick, then filter them
+          instantly by name, ID, owner, or status.
+        </p>
+        <div>
+          <span>Load from</span>
+          <div class="unified-search-dcs" id="unified-search-dcs">
+            <label><input type="checkbox" class="unified-search-dc" value="sjc" /> SJC</label>
+            <label><input type="checkbox" class="unified-search-dc" value="rtp" checked /> RTP</label>
+            <label><input type="checkbox" class="unified-search-dc" value="lon" /> LON</label>
+            <label><input type="checkbox" class="unified-search-dc" value="sng" /> SNG</label>
+            <label><input type="checkbox" class="unified-search-dc" value="syd" /> SYD</label>
+            <button type="button" class="secondary" id="btn-unified-search-all-dcs">All</button>
+            <button type="button" class="secondary" id="btn-unified-search-no-dcs">None</button>
+          </div>
+        </div>
+        <div class="unified-search-toolbar" style="margin-top:0.65rem">
+          <button type="button" id="btn-unified-load-content">Load Content</button>
+          <button type="button" id="btn-unified-load-sessions">Load Sessions</button>
+          <button type="button" class="secondary" id="btn-unified-load-both">Load both</button>
+          <button type="button" class="secondary" id="btn-unified-search-refresh" data-tip="Downloads fresh copies of the lists already loaded, bypassing the 15-minute server cache.">Refresh loaded data</button>
+        </div>
+        <p id="unified-search-cache-status" class="hint">No saved Content or Sessions data is available yet.</p>
+        <div class="unified-search-filters" style="margin-top:0.7rem">
+          <label style="flex:1;min-width:16rem">
+            <span>Filter loaded Content and Sessions</span>
+            <input id="unified-search-filter" type="search" autocomplete="off" placeholder="Start typing a name, ID, owner, or status" />
+          </label>
+          <label>
+            <span>Session status</span>
+            <select id="unified-search-status-filter" data-tip="Limits the Sessions list to one status, for example Active. Content is not affected.">
+              <option value="">All statuses</option>
+            </select>
+          </label>
+        </div>
+        <div class="unified-search-toolbar" style="margin-top:0.5rem">
+          <button type="button" class="secondary" id="btn-unified-expand-all" data-tip="Opens the Content and Sessions sections and every datacenter inside them.">Expand all</button>
+          <button type="button" class="secondary" id="btn-unified-collapse-all" data-tip="Closes the Content and Sessions sections and every datacenter inside them.">Collapse all</button>
+        </div>
+        <p id="unified-search-status" class="hint"></p>
+        <div id="unified-search-results" class="unified-search-results"></div>
+
+        <hr style="margin:1rem 0;border:0;border-top:1px solid var(--border)" />
+        <h3 style="margin:0 0 0.35rem">Catalog search</h3>
+        <p class="hint">Catalog uses its own search. Enter a name or catalog ID.</p>
+        <div class="unified-search-toolbar">
+          <label style="flex:1;min-width:16rem">
+            <span>Catalog search</span>
+            <input id="unified-search-query" type="search" autocomplete="off" placeholder="Name or catalog ID" />
+          </label>
+          <label class="check-line" for="unified-search-exact" data-tip="Limits results to catalog names containing the complete search phrase.">
+            <input type="checkbox" id="unified-search-exact" checked />
+            <span>Exact match</span>
+          </label>
+          <button type="button" id="btn-unified-search">Search Catalog</button>
+        </div>
+        <p id="unified-catalog-status" class="hint"></p>
+        <div id="unified-catalog-results" class="unified-search-results"></div>
+      </div>
+    </details>
+
+    <details class="panel panel-collapse" id="panel-log">
       <summary class="panel-collapse-summary">Log</summary>
       <div class="panel-collapse-body">
       <p class="hint">Scroll this box to see older lines. It stays put unless you are already at the bottom.</p>
@@ -1958,13 +2389,60 @@
     let actionAlertScrollTarget = null;
     let confirmAlertResolver = null;
     let promptAlertResolver = null;
+    let unifiedSearchLastData = null;
+    let unifiedSearchRequest = 0;
+    let unifiedSearchDcData = {
+      content: [],
+      sessions: [],
+      errors: {},
+      loaded: { content: false, sessions: false },
+      sites: { content: [], sessions: [] },
+      fetchedAt: { content: {}, sessions: {} },
+    };
+    const unifiedSearchLimits = new Map();
+    const unifiedGroupOpen = new Map();
+    const unifiedSectionOpen = new Map();
+    const unifiedContentDetailsCache = new Map();
+    let sessionEditRow = null;
+    // Same columns dCloud shows on its own Content and Sessions pages.
+    const UNIFIED_COLUMNS = {
+      content: [
+        { key: "id", label: "Content ID", cls: "mono", type: "number" },
+        { key: "name", label: "Content Name" },
+        { key: "owner", label: "Owner" },
+        { key: "status", label: "State" },
+        { key: "updated", label: "Last Updated", type: "date" },
+        { key: "actions", label: "" },
+      ],
+      sessions: [
+        { key: "id", label: "ID", cls: "mono", type: "number" },
+        { key: "eventId", label: "Event ID", cls: "mono", type: "number" },
+        { key: "contentPool", label: "Content Pool" },
+        { key: "vc", label: "VC", type: "number" },
+        { key: "owner", label: "User ID" },
+        { key: "name", label: "Session Name" },
+        { key: "demoId", label: "Demo ID", cls: "mono", type: "number" },
+        { key: "start", label: "Start", type: "date" },
+        { key: "stop", label: "End", type: "date" },
+        { key: "status", label: "Status" },
+        { key: "actions", label: "" },
+      ],
+    };
+    const unifiedSort = {
+      content: { key: "updated", dir: "desc" },
+      sessions: { key: "start", dir: "desc" },
+    };
+    const UNIFIED_SEARCH_STORE = "dcloud-content-manager-search-v1";
+    const UNIFIED_DATA_DB = "dcloud-content-manager-search-data";
+    const UNIFIED_DATA_STORE = "datasets";
+    let unifiedSavedDataReady = Promise.resolve();
     let caiVmSourceKey = "";
     let lastCaiIntegratedDcs = [];
     let dismissedErrorMessage = "";
     let lastLoggedErrorText = "";
     let dismissedAuthMessage = "";
     const DEFAULT_AUTH_PAUSE_MESSAGE =
-      "Token expired. Log in to dCloud or Import from browser in Step 1, then Continue with new token.";
+      "Token expired. Click Sign in to dCloud, log in or import from browser, then Continue with new token.";
 
     function setJobId(id) {
       jobId = id || null;
@@ -2022,49 +2500,6 @@
     }
 
     const DEFAULT_SAVE_DESCRIPTION = "Saved";
-
-    let saveNameFetchJob = null;
-
-    function contentNameFromJob(job) {
-      const top = (job?.contentName || "").trim();
-      if (top) return top;
-      for (const dc of job?.dcs || []) {
-        const name = (dc.name || "").trim();
-        if (name) return name;
-      }
-      return "";
-    }
-
-    function fillSaveDefaults(name) {
-      const nameEl = $("save-name");
-      const descEl = $("save-description");
-      const incoming = (name || "").trim();
-      if (incoming && !nameEl.value.trim()) nameEl.value = incoming;
-      if (!descEl.value.trim()) descEl.value = DEFAULT_SAVE_DESCRIPTION;
-    }
-
-    async function ensureContentSaveName(job) {
-      fillSaveDefaults(contentNameFromJob(job));
-      if (!job?.id || $("save-name").value.trim()) return;
-      if (saveNameFetchJob === job.id) return;
-      const dc = (job.dcs || []).find((row) => row.sessionId);
-      if (!dc) return;
-      saveNameFetchJob = job.id;
-      try {
-        const data = await api("/api/session", {
-          method: "POST",
-          quiet: true,
-          body: JSON.stringify({
-            ...tokenPayload(),
-            site: dc.site,
-            session_id: dc.sessionId,
-          }),
-        });
-        fillSaveDefaults((data.session && data.session.name) || "");
-      } catch {
-        saveNameFetchJob = null;
-      }
-    }
 
     function setLogText(text) {
       const el = $("log");
@@ -2151,15 +2586,15 @@
       const apiPath = String(path || "");
       if (res.status === 401 || res.status === 403) {
         if (apiPath.startsWith("/api/camgr")) {
-          return "Not signed in to Content Automation Manager. Open CAMGR in Chrome, finish Cisco/Duo, then click Connect to CAMGR.";
+          return "Keep Content Transfer open in Chrome, then click Connect to CAMGR.";
         }
         if (apiPath.startsWith("/api/cai")) {
           return "CAI is not reachable from this machine. Join the Cisco network and click Connect to CAI.";
         }
-        return "Your dCloud token is missing or expired. Import from Chrome or paste a fresh token in Step 1.";
+        return "Your dCloud sign-in is missing or expired. Click Sign in to dCloud to log in, import, or paste a fresh token.";
       }
       if (res.status >= 500) {
-        return "Server error — usually a missing or expired dCloud token. Import or paste a fresh token in Step 1. If it persists, restart the app (stop start.command and run it again).";
+        return "Server error — usually a missing or expired dCloud sign-in. Click Sign in to dCloud and import or paste a fresh token. If it persists, restart the app (stop start.command and run it again).";
       }
       return res.statusText || "Request failed.";
     }
@@ -2185,6 +2620,19 @@
       $("action-alert-goto")?.classList.add("hidden");
     }
 
+    // A sign-in pop-up from a moment ago should not sit on screen after the
+    // session connects on its own.
+    function dismissHubAuthAlert(service) {
+      const modal = $("action-alert");
+      if (!modal || modal.classList.contains("hidden")) return;
+      const text = $("action-alert-body")?.textContent || "";
+      if (!isHubAuthError(text)) return;
+      const aboutCamgr = text.toLowerCase().includes("camgr");
+      if (service === "camgr" ? !aboutCamgr : aboutCamgr) return;
+      lastActionAlertKey = "";
+      hideActionAlert();
+    }
+
     function hideConfirmAlert(result) {
       $("confirm-alert")?.classList.add("hidden");
       const resolve = confirmAlertResolver;
@@ -2199,21 +2647,43 @@
       if (resolve) resolve(value);
     }
 
-    // Text prompt used when one bulk save covers demos that need different names.
-    function promptText(message, { title = "Name", value = "", okLabel = "Save", cancelLabel = "Cancel" } = {}) {
+    function promptSaveValues() {
+      return {
+        name: String($("prompt-alert-input")?.value || ""),
+        description: String($("prompt-alert-description")?.value || ""),
+      };
+    }
+
+    function promptSaveDetails(
+      message,
+      {
+        title = "Save as",
+        name = "",
+        description = DEFAULT_SAVE_DESCRIPTION,
+        okLabel = "Save",
+        cancelLabel = "Cancel",
+        showDescription = true,
+        inputLabel = "Name",
+      } = {},
+    ) {
       return new Promise((resolve) => {
         const modal = $("prompt-alert");
         const input = $("prompt-alert-input");
+        const desc = $("prompt-alert-description");
         const body = $("prompt-alert-body");
         const titleEl = $("prompt-alert-title");
         if (!modal || !input || !body || !titleEl) {
-          resolve(window.prompt(String(message || ""), value));
+          const typed = window.prompt(String(message || ""), name);
+          resolve(typed === null ? null : { name: typed, description });
           return;
         }
         promptAlertResolver = resolve;
         titleEl.textContent = title;
         body.textContent = String(message || "");
-        input.value = value || "";
+        input.value = name || "";
+        if (desc) desc.value = description || DEFAULT_SAVE_DESCRIPTION;
+        if ($("prompt-alert-input-label")) $("prompt-alert-input-label").textContent = inputLabel;
+        desc?.closest(".prompt-field")?.classList.toggle("hidden", !showDescription);
         const okBtn = $("prompt-alert-ok");
         const cancelBtn = $("prompt-alert-cancel");
         if (okBtn) okBtn.textContent = okLabel;
@@ -2222,6 +2692,15 @@
         input.focus();
         input.select();
       });
+    }
+
+    async function promptText(message, options = {}) {
+      const result = await promptSaveDetails(message, {
+        ...options,
+        showDescription: false,
+        description: "",
+      });
+      return result === null ? null : result.name;
     }
 
     function confirmAction(message, { title = "Confirm", okLabel = "OK", cancelLabel = "Cancel" } = {}) {
@@ -2246,7 +2725,36 @@
     }
 
     function scrollToAuthPanel() {
-      document.querySelector(".auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      openDcloudAuth();
+    }
+
+    function openDcloudAuth() {
+      const panel = $("panel-step1");
+      if (!panel) return;
+      panel.classList.add("auth-panel-open");
+      panel.open = true;
+      $("auth-panel-backdrop")?.classList.remove("hidden");
+      requestAnimationFrame(() => $("btn-login")?.focus());
+    }
+
+    function closeDcloudAuth() {
+      $("panel-step1")?.classList.remove("auth-panel-open");
+      $("auth-panel-backdrop")?.classList.add("hidden");
+      $("btn-dcloud-authorize")?.focus();
+    }
+
+    function setDcloudAuthorizationState(authorized, label = "") {
+      const button = $("btn-dcloud-authorize");
+      if (!button) return;
+      button.classList.toggle("authorized", Boolean(authorized));
+      button.textContent = authorized ? "✓ Signed in to dCloud" : "Sign in to dCloud";
+      button.setAttribute("aria-pressed", authorized ? "true" : "false");
+      button.setAttribute(
+        "data-tip",
+        label || (authorized
+          ? "You are signed in to dCloud. Click to view login and token controls."
+          : "Sign in to dCloud so this tool can use your account."),
+      );
     }
 
     function isHubActionMessage(msg) {
@@ -2281,13 +2789,13 @@
       if (isHubActionMessage(msg)) return "Content Automation Hub";
       if (isTokenError(msg)) return "dCloud token needed";
       if (t.includes("session id") || t.includes("datacenter") || t.includes("active session")) {
-        return "Step 2 — session needed";
+        return "Load VMs — session needed";
       }
       if (t.includes("vm") && (t.includes("check") || t.includes("select"))) {
-        return "Step 2 — VMs needed";
+        return "Load VMs — VMs needed";
       }
       if (t.includes("schedule") || t.includes("stop time") || t.includes("demo") || t.includes("content id")) {
-        return "Step 3 — schedule info needed";
+        return "Schedule sessions — info needed";
       }
       if (t.includes("saved content") || t.includes("find saved") || t.includes("find sessions")) {
         return "Cleanup / attach";
@@ -2297,17 +2805,19 @@
 
     function scrollTargetForMessage(msg) {
       const t = String(msg).toLowerCase();
-      if (isHubAuthError(msg) || isHubActionMessage(msg)) {
-        if (t.includes("transfer") || t.includes("destination dc")) {
-          return "#btn-camgr-load-vms";
+      if (isHubAuthError(msg) && t.includes("camgr")) return "#camgr-task-group";
+      if (isHubAuthError(msg)) return "#cai-task-group";
+      if (isHubActionMessage(msg)) {
+        if (t.includes("transfer") || t.includes("destination dc") || t.includes("connect to camgr") || t.includes("vpod")) {
+          return "#camgr-task-group";
         }
         if (t.includes("one demo") || t.includes("different demo") || t.includes("spin-up")) {
           return "#saved-ids-table";
         }
-        if (t.includes("integrate") || t.includes("replace")) {
-          return "#btn-cai-load-vms";
+        if (t.includes("integrate") || t.includes("replace") || t.includes("connect to cai") || t.includes("template")) {
+          return "#cai-task-group";
         }
-        return "#saved-ids-panel";
+        return "#saved-ids-table";
       }
       if (isTokenError(msg)) return ".auth-panel";
       if (
@@ -2366,7 +2876,7 @@
     }
 
     function showTokenAlert(msg, { updateBanner = true } = {}) {
-      const text = String(msg || "Import or paste your dCloud token in Step 1.").trim();
+      const text = String(msg || "Click Sign in to dCloud to log in, import, or paste your dCloud token.").trim();
       const key = text.slice(0, 240);
       const modal = $("token-alert");
       const body = $("token-alert-body");
@@ -2426,7 +2936,7 @@
       if (source === "paste" && !$("dtoken").value.trim()) {
         const label = context ? ` before ${context}` : "";
         showTokenAlert(
-          `Paste your dCloud token in Step 1, or click Import from browser${label}.`
+          `Click Sign in to dCloud, paste your token, or click Import from browser${label}.`
         );
         scrollToAuthPanel();
         return false;
@@ -2439,6 +2949,920 @@
         dcloud_token: $("dtoken").value.trim() || null,
         dcloud_token_source: $("token-source").value,
       };
+    }
+
+    function selectedUnifiedSearchDcs() {
+      return [...document.querySelectorAll(".unified-search-dc:checked")].map((box) => box.value);
+    }
+
+    function saveUnifiedSearchSettings() {
+      try {
+        localStorage.setItem(UNIFIED_SEARCH_STORE, JSON.stringify({
+          query: $("unified-search-query").value,
+          filter: $("unified-search-filter").value,
+          sessionStatus: $("unified-search-status-filter")?.value || "",
+          sites: selectedUnifiedSearchDcs(),
+          exact: $("unified-search-exact").checked,
+        }));
+      } catch {}
+    }
+
+    function restoreUnifiedSearchSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(UNIFIED_SEARCH_STORE) || "{}");
+        if (typeof saved.query === "string") $("unified-search-query").value = saved.query;
+        if (typeof saved.filter === "string") $("unified-search-filter").value = saved.filter;
+        if (typeof saved.sessionStatus === "string" && $("unified-search-status-filter")) {
+          $("unified-search-status-filter").innerHTML =
+            `<option value="">All statuses</option>`
+            + (saved.sessionStatus
+              ? `<option value="${escapeHtml(saved.sessionStatus)}" selected>${escapeHtml(saved.sessionStatus)}</option>`
+              : "");
+        }
+        if (Array.isArray(saved.sites) && saved.sites.length) {
+          const wanted = new Set(saved.sites);
+          document.querySelectorAll(".unified-search-dc").forEach((box) => {
+            box.checked = wanted.has(box.value);
+          });
+        }
+        if (typeof saved.exact === "boolean") $("unified-search-exact").checked = saved.exact;
+      } catch {}
+    }
+
+    function openUnifiedDataDb() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+          reject(new Error("Browser data storage is unavailable."));
+          return;
+        }
+        const request = indexedDB.open(UNIFIED_DATA_DB, 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains(UNIFIED_DATA_STORE)) {
+            request.result.createObjectStore(UNIFIED_DATA_STORE, { keyPath: "key" });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Could not open browser data storage."));
+      });
+    }
+
+    async function readUnifiedSavedData() {
+      const db = await openUnifiedDataDb();
+      try {
+        return await new Promise((resolve, reject) => {
+          const request = db.transaction(UNIFIED_DATA_STORE, "readonly")
+            .objectStore(UNIFIED_DATA_STORE)
+            .getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+        });
+      } finally {
+        db.close();
+      }
+    }
+
+    async function saveUnifiedDataEntries(entries) {
+      if (!entries.length) return;
+      const db = await openUnifiedDataDb();
+      try {
+        await new Promise((resolve, reject) => {
+          const transaction = db.transaction(UNIFIED_DATA_STORE, "readwrite");
+          const store = transaction.objectStore(UNIFIED_DATA_STORE);
+          entries.forEach((entry) => store.put(entry));
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      } finally {
+        db.close();
+      }
+    }
+
+    function formatUnifiedDataAge(value) {
+      const timestamp = Number(value);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) return "time unknown";
+      const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+      if (seconds < 60) return "just now";
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes} min ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+      const days = Math.floor(hours / 24);
+      return `${days} day${days === 1 ? "" : "s"} ago`;
+    }
+
+    function updateUnifiedCacheStatus() {
+      const hasSavedData = ["content", "sessions"].some((source) =>
+        (unifiedSearchDcData.sites[source] || []).length
+      );
+      if (!hasSavedData) {
+        $("unified-search-cache-status").textContent = "No saved Content or Sessions data is available yet.";
+        return;
+      }
+      const lines = ["content", "sessions"].map((source) => {
+        const label = source === "content" ? "Content" : "Sessions";
+        const loadedSites = new Set(unifiedSearchDcData.sites[source] || []);
+        if (!loadedSites.size) return `${label}: not loaded`;
+        const available = SITE_ORDER
+          .filter((site) => loadedSites.has(site))
+          .map((site) => `${site.toUpperCase()} (${formatUnifiedDataAge(unifiedSearchDcData.fetchedAt[source][site])})`);
+        const missing = SITE_ORDER.filter((site) => !loadedSites.has(site)).map((site) => site.toUpperCase());
+        return `${label}: ${available.join(", ")}${missing.length ? `; not loaded: ${missing.join(", ")}` : "; all datacenters loaded"}`;
+      });
+      $("unified-search-cache-status").textContent = `Preloaded data — ${lines.join(". ")}.`;
+    }
+
+    async function restoreUnifiedSavedData() {
+      try {
+        const entries = await readUnifiedSavedData();
+        for (const entry of entries) {
+          const source = String(entry?.source || "").toLowerCase();
+          const site = String(entry?.site || "").toLowerCase();
+          if (!["content", "sessions"].includes(source) || !SITE_ORDER.includes(site) || !Array.isArray(entry.rows)) continue;
+          unifiedSearchDcData[source].push(...entry.rows);
+          if (!unifiedSearchDcData.sites[source].includes(site)) unifiedSearchDcData.sites[source].push(site);
+          unifiedSearchDcData.fetchedAt[source][site] = Number(entry.fetchedAt) || 0;
+        }
+        for (const source of ["content", "sessions"]) {
+          unifiedSearchDcData.sites[source] = SITE_ORDER.filter((site) => unifiedSearchDcData.sites[source].includes(site));
+          unifiedSearchDcData.loaded[source] = unifiedSearchDcData.sites[source].length > 0;
+        }
+      } catch {
+        // The tool still works normally when private browsing blocks IndexedDB.
+      }
+      renderUnifiedDcData();
+      updateUnifiedCacheStatus();
+    }
+
+    function unifiedSearchErrors(errors, source) {
+      return Object.entries(errors || {})
+        .filter(([key]) => key === source || key.startsWith(`${source}:`))
+        .map(([key, value]) => `${key.includes(":") ? key.split(":")[1].toUpperCase() + ": " : ""}${value}`)
+        .join(" ");
+    }
+
+    function searchResultTable(headers, rows, emptyText) {
+      if (!rows.length) return `<p class="hint">${escapeHtml(emptyText)}</p>`;
+      return `
+        <table>
+          <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
+      `;
+    }
+
+    function unifiedRowMatches(row, needle) {
+      if (!needle) return true;
+      return Object.entries(row || {}).some(([key, value]) => {
+        // Link fields all share the same hostnames, so they would match anything.
+        if (key.endsWith("Url")) return false;
+        if (value === null || value === undefined || typeof value === "object") return false;
+        return String(value).toLowerCase().includes(needle);
+      });
+    }
+
+    function unifiedSortRows(source, rows) {
+      const sort = unifiedSort[source];
+      const column = (UNIFIED_COLUMNS[source] || []).find((col) => col.key === sort.key);
+      if (!column) return rows;
+      const factor = sort.dir === "asc" ? 1 : -1;
+      return [...rows].sort((left, right) => {
+        const a = left[column.key];
+        const b = right[column.key];
+        if (column.type === "number") {
+          const an = Number.parseFloat(a);
+          const bn = Number.parseFloat(b);
+          return ((Number.isFinite(an) ? an : -Infinity) - (Number.isFinite(bn) ? bn : -Infinity)) * factor;
+        }
+        if (column.type === "date") {
+          return ((Date.parse(a || "") || 0) - (Date.parse(b || "") || 0)) * factor;
+        }
+        return String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true, sensitivity: "base" }) * factor;
+      });
+    }
+
+    function unifiedCell(source, column, row, site) {
+      if (column.key === "actions") {
+        const id = String(row.id || "");
+        let actions = "";
+        if (source === "content") {
+          actions = `
+            ${row.scheduleId ? `<button type="button" class="search-row-action" data-action="content-schedule">Schedule</button>` : ""}
+            ${row.topologyUrl ? `<a href="${escapeHtml(row.topologyUrl)}" target="_blank" rel="noopener noreferrer">Edit topology</a>` : ""}
+            <button type="button" class="search-row-action" data-action="content-filters">Filters</button>
+            <button type="button" class="search-row-action" data-action="content-permissions">Permissions</button>
+            <button type="button" class="search-row-action" data-action="content-resources">Content resources</button>
+          `;
+        } else {
+          const status = String(row.status || "").toLowerCase();
+          const scheduled = status === "scheduled";
+          const active = status === "active";
+          const terminal = ["cancelled", "canceled", "deleted"].includes(status);
+          const attachable = !terminal;
+          actions = `
+            <button type="button" class="search-row-action" data-action="session-info">Info</button>
+            ${attachable ? `<button type="button" class="search-row-action" data-action="session-workspace">Add to job workspace</button>` : ""}
+            ${attachable ? `<button type="button" class="search-row-action" data-action="session-monitor">Add to session monitoring</button>` : ""}
+            ${scheduled || active ? `<button type="button" class="search-row-action" data-action="session-edit">Edit…</button>` : ""}
+            ${scheduled || active ? `<button type="button" class="search-row-action" data-action="session-share">Share…</button>` : ""}
+            ${active ? `<button type="button" class="search-row-action" data-action="session-save">Save</button>` : ""}
+            ${active ? `<button type="button" class="search-row-action" data-action="session-reset">Reset</button>` : ""}
+            ${active || terminal ? `<button type="button" class="search-row-action" data-action="session-logs">Logs</button>` : ""}
+            ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
+            ${row.demoId ? `<a href="https://dcloud2-${escapeHtml(site)}.cisco.com/demo/${encodeURIComponent(row.demoId)}" target="_blank" rel="noopener noreferrer">Go to demo</a>` : ""}
+            ${scheduled ? `<button type="button" class="danger search-row-action" data-action="session-cancel">Cancel session</button>` : ""}
+            ${active ? `<button type="button" class="danger search-row-action" data-action="session-end">End session</button>` : ""}
+          `;
+        }
+        return `
+          <td>
+            <details class="vm-menu search-actions-menu" data-source="${escapeHtml(source)}" data-site="${escapeHtml(site)}" data-id="${escapeHtml(id)}">
+              <summary data-tip="Actions for this row.">Actions</summary>
+              <div class="vm-menu-list">${actions}</div>
+            </details>
+          </td>
+        `;
+      }
+      const raw = row[column.key];
+      const text = column.type === "date"
+        ? (formatSessionWhen(raw) || raw || "—")
+        : (raw === 0 || raw ? raw : "—");
+      return `<td class="${column.cls || ""}">${escapeHtml(String(text))}</td>`;
+    }
+
+    function unifiedDcTable(source, site, rows) {
+      if (!rows.length) return `<p class="hint">No rows.</p>`;
+      const key = `${source}:${site}`;
+      const limit = unifiedSearchLimits.get(key) || 100;
+      const sorted = unifiedSortRows(source, rows);
+      const visible = sorted.slice(0, limit);
+      const remaining = sorted.length - visible.length;
+      const columns = UNIFIED_COLUMNS[source] || [];
+      const head = columns.map((column) => {
+        if (column.key === "actions") return "<th></th>";
+        const active = unifiedSort[source].key === column.key;
+        const arrow = active ? (unifiedSort[source].dir === "asc" ? " ▲" : " ▼") : "";
+        return `<th class="sortable-col${active ? " sorted" : ""}" data-sort-source="${escapeHtml(source)}" data-sort-key="${escapeHtml(column.key)}" title="Sort by ${escapeHtml(column.label)}">${escapeHtml(column.label)}${arrow}</th>`;
+      }).join("");
+      const body = visible
+        .map((row) => `<tr>${columns.map((column) => unifiedCell(source, column, row, site)).join("")}</tr>`)
+        .join("");
+      return `
+        <table>
+          <thead><tr>${head}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      ` + (remaining > 0
+        ? `<button type="button" class="secondary btn-search-show-more" data-source="${escapeHtml(source)}" data-site="${escapeHtml(site)}">Show ${Math.min(100, remaining)} more</button>`
+        : "");
+    }
+
+    function unifiedGroupIsOpen(source, site) {
+      // Typing in the filter re-renders these groups, so keep whatever the user
+      // last had open or collapsed.
+      const key = `${source}:${site}`;
+      return unifiedGroupOpen.has(key) ? unifiedGroupOpen.get(key) : true;
+    }
+
+    function setUnifiedGroupsOpen(source, open) {
+      for (const site of SITE_ORDER) unifiedGroupOpen.set(`${source}:${site}`, open);
+      renderUnifiedDcData();
+    }
+
+    function setUnifiedSectionsOpen(open) {
+      for (const source of ["content", "sessions"]) {
+        unifiedSectionOpen.set(source, open);
+        for (const site of SITE_ORDER) unifiedGroupOpen.set(`${source}:${site}`, open);
+      }
+      renderUnifiedDcData();
+    }
+
+    function unifiedSessionStatuses() {
+      const seen = new Map();
+      for (const row of unifiedSearchDcData.sessions || []) {
+        const label = String(row.status || "").trim();
+        if (!label) continue;
+        const key = label.toLowerCase();
+        if (!seen.has(key)) seen.set(key, label);
+      }
+      const preferred = ["active", "starting", "scheduled", "ending", "ended", "cancelled", "canceled", "deleted", "saved"];
+      return [...seen.entries()].sort((a, b) => {
+        const ai = preferred.indexOf(a[0]);
+        const bi = preferred.indexOf(b[0]);
+        if (ai >= 0 || bi >= 0) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+        return a[1].localeCompare(b[1], undefined, { sensitivity: "base" });
+      }).map(([, label]) => label);
+    }
+
+    function selectedSessionStatusFilter() {
+      return String($("unified-search-status-filter")?.value || "").trim().toLowerCase();
+    }
+
+    function syncUnifiedSessionStatusFilter() {
+      const select = $("unified-search-status-filter");
+      if (!select) return;
+      const previous = String(select.value || "").trim();
+      const labels = unifiedSessionStatuses();
+      if (previous && !labels.some((label) => label.toLowerCase() === previous.toLowerCase())) {
+        labels.unshift(previous);
+      }
+      select.innerHTML = ["<option value=\"\">All statuses</option>"].concat(
+        labels.map((label) => {
+          const selected = previous && label.toLowerCase() === previous.toLowerCase() ? " selected" : "";
+          return `<option value="${escapeHtml(label)}"${selected}>${escapeHtml(label)}</option>`;
+        }),
+      ).join("");
+    }
+
+    function renderUnifiedDcData() {
+      syncUnifiedSessionStatusFilter();
+      const needle = $("unified-search-filter").value.trim().toLowerCase();
+      const statusFilter = selectedSessionStatusFilter();
+      const groups = [];
+      for (const source of ["content", "sessions"]) {
+        if (!unifiedSearchDcData.loaded[source]) continue;
+        const matches = (unifiedSearchDcData[source] || []).filter((row) => {
+          if (!unifiedRowMatches(row, needle)) return false;
+          if (source === "sessions" && statusFilter && String(row.status || "").toLowerCase() !== statusFilter) {
+            return false;
+          }
+          return true;
+        });
+        const dcGroups = groupRowsBySite(matches);
+        const label = source === "content" ? "Content" : "Sessions";
+        const error = unifiedSearchErrors(unifiedSearchDcData.errors, source);
+        const body = dcGroups.length
+          ? dcGroups.map(({ site, rows }) => `
+            <details class="dc-group" data-source="${escapeHtml(source)}" data-site="${escapeHtml(site)}" ${unifiedGroupIsOpen(source, site) ? "open" : ""}>
+              <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${rows.length})</span></summary>
+              ${unifiedDcTable(source, site, rows)}
+            </details>
+          `).join("")
+          : `<p class="hint">${escapeHtml(needle ? `No ${source} matches this filter.` : `No ${source} was returned.`)}</p>`;
+        groups.push(`
+          <details class="search-result-group search-source-group" data-source="${escapeHtml(source)}" ${unifiedSectionOpen.get(source) === false ? "" : "open"}>
+            <summary>
+              <span class="dc-group-title">${label} (${matches.length})${error ? ` — ${escapeHtml(error)}` : ""}</span>
+            </summary>
+            <div class="list-toolbar" style="align-items:center">
+              <button type="button" class="secondary btn-search-expand-all" data-source="${escapeHtml(source)}">Expand all DCs</button>
+              <button type="button" class="secondary btn-search-collapse-all" data-source="${escapeHtml(source)}">Collapse all DCs</button>
+            </div>
+            ${body}
+          </details>
+        `);
+      }
+      $("unified-search-results").innerHTML = groups.length
+        ? groups.join("")
+        : `<p class="hint">Choose datacenters, then load Content, Sessions, or both.</p>`;
+      $("unified-search-results").querySelectorAll("details.dc-group").forEach((group) => {
+        group.addEventListener("toggle", () => {
+          unifiedGroupOpen.set(`${group.dataset.source}:${group.dataset.site}`, group.open);
+        });
+      });
+      $("unified-search-results").querySelectorAll("details.search-source-group").forEach((section) => {
+        section.addEventListener("toggle", () => {
+          unifiedSectionOpen.set(section.dataset.source, section.open);
+        });
+      });
+      $("unified-search-results").querySelectorAll("details.search-actions-menu").forEach((menu) => {
+        menu.addEventListener("toggle", () => {
+          if (!menu.open) return;
+          closeSearchActionsMenus(menu);
+          positionSearchActionsMenu(menu);
+        });
+      });
+    }
+
+    function renderUnifiedCatalog(data) {
+      const catalog = data.catalog || [];
+      const errors = data.errors || {};
+      const catalogRows = catalog.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.name || "—")}</td>
+          <td class="mono">${escapeHtml(row.id || "—")}</td>
+          <td>${escapeHtml(row.contentType || "—")}</td>
+          <td>${escapeHtml(formatSessionWhen(row.updated) || row.updated || "—")}</td>
+          <td><div class="search-result-actions">
+            <button type="button" class="btn-search-catalog-schedule" data-name="${escapeHtml(row.name || "")}">Schedule</button>
+            ${row.profileUrl ? `<a class="secondary" href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer">Open catalog</a>` : ""}
+          </div></td>
+        </tr>
+      `);
+      $("unified-catalog-results").innerHTML = `
+        <section class="search-result-group">
+          <h3>Catalog (${catalog.length})${unifiedSearchErrors(errors, "catalog") ? ` — ${escapeHtml(unifiedSearchErrors(errors, "catalog"))}` : ""}</h3>
+          ${searchResultTable(["Name", "Catalog ID", "Type", "Updated", ""], catalogRows, "No catalog matches.")}
+        </section>
+      `;
+    }
+
+    function closeSearchActionsMenus(except = null) {
+      $("unified-search-results")?.querySelectorAll("details.search-actions-menu[open]").forEach((menu) => {
+        if (menu !== except) menu.open = false;
+      });
+    }
+
+    function positionSearchActionsMenu(menu) {
+      // The results tables scroll sideways, which would clip an absolutely
+      // positioned menu, so place it against the viewport instead.
+      const summary = menu.querySelector("summary");
+      const list = menu.querySelector(".vm-menu-list");
+      if (!summary || !list) return;
+      const rect = summary.getBoundingClientRect();
+      list.style.position = "fixed";
+      list.style.right = "auto";
+      list.style.top = `${rect.bottom + 4}px`;
+      const width = list.offsetWidth || 180;
+      const height = list.offsetHeight;
+      list.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`;
+      if (rect.bottom + 4 + height > window.innerHeight - 8) {
+        list.style.top = `${Math.max(8, rect.top - height - 4)}px`;
+      }
+    }
+
+    function findUnifiedRow(source, site, id) {
+      return (unifiedSearchDcData[source] || []).find(
+        (row) => String(row.site || "").toLowerCase() === String(site || "").toLowerCase()
+          && String(row.id || "") === String(id || ""),
+      ) || null;
+    }
+
+    function showDetailsModal(title, html, { wide = false } = {}) {
+      $("details-modal-title").textContent = title;
+      $("details-modal-body").innerHTML = html;
+      document.querySelector(".details-modal-card")
+        ?.classList.toggle("details-modal-wide", wide);
+      $("details-modal").classList.remove("hidden");
+    }
+
+    function detailsList(rows, emptyText) {
+      if (!rows.length) return `<p class="hint">${escapeHtml(emptyText)}</p>`;
+      return `<ul class="details-list">${rows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul>`;
+    }
+
+    async function loadContentActionDetails(row, panel) {
+      const site = String(row.site || "").toLowerCase();
+      const key = `${site}:${row.id}`;
+      let data = unifiedContentDetailsCache.get(key);
+      showDetailsModal(`${row.name || "Content"} — ${panel}`, `<p class="hint">Loading from dCloud…</p>`);
+      try {
+        if (!data) {
+          data = await api("/api/search/content-details", {
+            method: "POST",
+            quiet: true,
+            body: JSON.stringify({
+              ...tokenPayload(),
+              site,
+              content_id: row.id,
+            }),
+          });
+          unifiedContentDetailsCache.set(key, data);
+        }
+        const errors = data.errors || {};
+        if (panel === "Filters") {
+          const grouped = new Map();
+          for (const item of data.filters || []) {
+            const group = item.group || "Other";
+            if (!grouped.has(group)) grouped.set(group, []);
+            grouped.get(group).push(item.name || item.id);
+          }
+          const html = grouped.size
+            ? [...grouped.entries()].map(([group, names]) => `<section><h3>${escapeHtml(group)}</h3>${detailsList(names, "")}</section>`).join("")
+            : `<p class="hint">No filters are set on this content.</p>`;
+          showDetailsModal(`${row.name || "Content"} — Filters`, html + (errors.filters ? `<p class="err-box">${escapeHtml(errors.filters)}</p>` : ""));
+          return;
+        }
+        if (panel === "Permissions") {
+          const permissions = data.permissions || {};
+          const sections = [
+            ["Access levels", permissions.accessLevels || []],
+            ["User groups", permissions.userGroups || []],
+            ["SSO groups", permissions.ssoGroups || []],
+          ];
+          showDetailsModal(
+            `${row.name || "Content"} — Permissions`,
+            sections.map(([label, items]) => `<section><h3>${label}</h3>${detailsList(items.map((item) => item.name || item.id), `No ${label.toLowerCase()} are set.`)}</section>`).join("")
+              + (errors.permissions || errors.ssoGroups ? `<p class="err-box">${escapeHtml([errors.permissions, errors.ssoGroups].filter(Boolean).join(" "))}</p>` : ""),
+          );
+          return;
+        }
+        const resources = Object.entries(data.resources || {});
+        showDetailsModal(
+          `${row.name || "Content"} — Content resources`,
+          resources.length
+            ? `<dl class="details-kv">${resources.map(([name, value]) => `<dt>${escapeHtml(name)}</dt><dd>${escapeHtml(String(value))}</dd>`).join("")}</dl>`
+            : `<p class="hint">${escapeHtml(errors.resources || "No content resources were returned.")}</p>`,
+        );
+      } catch (err) {
+        showDetailsModal(`${row.name || "Content"} — ${panel}`, `<p class="err-box">${escapeHtml(err.message)}</p>`);
+      }
+    }
+
+    // Dates arrive as UTC stamps; show them the way the rest of the tool does.
+    const SESSION_INFO_DATE_LABELS = new Set(["Start Time", "End Time", "Last Modified"]);
+
+    function sessionInfoValueHtml(label, value) {
+      const text = String(value ?? "");
+      if (SESSION_INFO_DATE_LABELS.has(label)) {
+        return escapeHtml(formatSessionWhen(text) || text);
+      }
+      return escapeHtml(text);
+    }
+
+    function sessionInfoPanelHtml(panel) {
+      const title = `<h3>${escapeHtml(panel.title || "")}</h3>`;
+      if (panel.kind === "kv") {
+        const rows = Array.isArray(panel.rows) ? panel.rows : [];
+        // The VPN password is rendered hidden and is never cached or logged.
+        const password = panel.password
+          ? `<dt>Password</dt><dd><span class="secret-value" data-secret="${escapeHtml(panel.password)}">••••••</span>
+               <button type="button" class="secondary btn-reveal-secret" data-tip="Show the VPN password for this session.">Show</button></dd>`
+          : "";
+        if (!rows.length && !password) {
+          return `${title}<p class="hint">${escapeHtml(panel.empty || "Nothing configured")}</p>`;
+        }
+        return `${title}<dl class="details-kv">${rows
+          .map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${sessionInfoValueHtml(label, value)}</dd>`)
+          .join("")}${password}</dl>`;
+      }
+      const items = Array.isArray(panel.items) ? panel.items : [];
+      if (!items.length) {
+        return `${title}<p class="hint">${escapeHtml(panel.empty || "Nothing configured")}</p>`;
+      }
+      const columns = items[0].rows.map(([label]) => label);
+      const sameShape = items.every(
+        (item) => item.rows.length === columns.length
+          && item.rows.every(([label], index) => label === columns[index]),
+      );
+      if (!sameShape) {
+        return title + items
+          .map((item) => `<dl class="details-kv">${item.rows
+            .map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`)
+            .join("")}</dl>`)
+          .join("");
+      }
+      const head = columns.map((label) => `<th>${escapeHtml(label)}</th>`).join("");
+      const body = items.map((item) => {
+        const cells = item.rows.map(([, value], index) => {
+          const text = escapeHtml(String(value));
+          const linked = index === 0 && item.url
+            ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${text}</a>`
+            : text;
+          return `<td>${linked}</td>`;
+        }).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      return `${title}<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    async function showSessionInfo({ site, sessionId, label = "" }) {
+      const siteCode = String(site || "").toLowerCase();
+      const heading = `${siteCode.toUpperCase()} session ${sessionId}${label ? ` — ${label}` : ""}`;
+      showDetailsModal(heading, `<p class="hint">Loading session details from dCloud…</p>`, { wide: true });
+      try {
+        const data = await api("/api/session/info", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({ ...tokenPayload(), site: siteCode, session_id: String(sessionId || "") }),
+        });
+        const panels = Array.isArray(data.panels) ? data.panels : [];
+        const link = data.viewUrl
+          ? `<p class="hint"><a href="${escapeHtml(data.viewUrl)}" target="_blank" rel="noopener noreferrer">Open this session in dCloud</a></p>`
+          : "";
+        const note = data.note ? `<p class="hint">${escapeHtml(data.note)}</p>` : "";
+        showDetailsModal(
+          `${heading}${data.name ? ` — ${data.name}` : ""}`.slice(0, 160),
+          link + note + panels.map((panel) => sessionInfoPanelHtml(panel)).join(""),
+          { wide: true },
+        );
+      } catch (err) {
+        showDetailsModal(heading, `<p class="err-box">${escapeHtml(err.message)}</p>`, { wide: true });
+      }
+    }
+
+    function openSessionEditModal(row) {
+      sessionEditRow = row;
+      const start = row.start ? new Date(row.start) : null;
+      const stop = row.stop ? new Date(row.stop) : null;
+      $("session-edit-demo").textContent = row.demoId || "—";
+      $("session-edit-parent").textContent = row.name || "—";
+      $("session-edit-name").value = row.name || "";
+      $("session-edit-start").value = start && !Number.isNaN(start.getTime()) ? toLocalInput(start) : "";
+      $("session-edit-stop").value = stop && !Number.isNaN(stop.getTime()) ? toLocalInput(stop) : "";
+      $("session-edit-title").textContent = `Edit ${row.site} session ${row.id}`;
+      $("session-edit-status").textContent = "";
+      $("session-edit-modal").classList.remove("hidden");
+      $("session-edit-name").focus();
+    }
+
+    async function submitSessionEdit() {
+      const row = sessionEditRow;
+      if (!row) return;
+      const name = $("session-edit-name").value.trim();
+      const startValue = $("session-edit-start").value;
+      const stopValue = $("session-edit-stop").value;
+      const start = parseLocalInput(startValue);
+      const stop = parseLocalInput(stopValue);
+      if (startValue && !start) {
+        $("session-edit-status").textContent = "Start time could not be read.";
+        return;
+      }
+      if (stopValue && !stop) {
+        $("session-edit-status").textContent = "End time could not be read.";
+        return;
+      }
+      if (start && stop && stop <= start) {
+        $("session-edit-status").textContent = "End time must be after the start time.";
+        return;
+      }
+      const originalStart = row.start ? new Date(row.start) : null;
+      const originalStop = row.stop ? new Date(row.stop) : null;
+      const payload = {
+        ...tokenPayload(),
+        site: String(row.site || "").toLowerCase(),
+        session_id: row.id,
+        action: "edit",
+        name: name && name !== row.name ? name : "",
+        start_at: start && start.getTime() !== (originalStart?.getTime() ?? NaN) ? start.toISOString() : "",
+        stop_at: stop && stop.getTime() !== (originalStop?.getTime() ?? NaN) ? stop.toISOString() : "",
+      };
+      if (!payload.name && !payload.start_at && !payload.stop_at) {
+        $("session-edit-status").textContent = "Nothing changed.";
+        return;
+      }
+      $("session-edit-save").disabled = true;
+      $("session-edit-status").textContent = "Sending the change to dCloud…";
+      try {
+        const result = await api("/api/search/session-action", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify(payload),
+        });
+        $("session-edit-modal").classList.add("hidden");
+        sessionEditRow = null;
+        $("unified-search-status").textContent = result.message || `Session ${row.id} updated.`;
+        await loadUnifiedDcData(["sessions"], { refreshData: true });
+      } catch (err) {
+        $("session-edit-status").textContent = err.message;
+      } finally {
+        $("session-edit-save").disabled = false;
+      }
+    }
+
+    async function showSessionLog(row) {
+      const site = String(row.site || "").toLowerCase();
+      showDetailsModal(
+        `${row.site} session ${row.id} — Logs`,
+        `<p class="hint">Loading the session log from dCloud…</p>`,
+        { wide: true },
+      );
+      try {
+        const data = await api("/api/search/session-log", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({ ...tokenPayload(), site, session_id: row.id }),
+        });
+        showDetailsModal(
+          `${row.site} session ${row.id} — Logs`,
+          `<pre class="details-log">${escapeHtml(data.log || "")}</pre>`,
+          { wide: true },
+        );
+      } catch (err) {
+        showDetailsModal(
+          `${row.site} session ${row.id} — Logs`,
+          `<p class="err-box">${escapeHtml(err.message)}</p>`,
+          { wide: true },
+        );
+      }
+    }
+
+    async function runSearchSessionAction(row, action) {
+      const site = String(row.site || "").toLowerCase();
+      let name = "";
+      let description = "";
+      if (action === "save") {
+        const values = await promptSaveDetails("Name and describe the saved content.", {
+          title: "Save session",
+          name: row.name || "",
+        });
+        if (values === null) return;
+        name = values.name.trim();
+        description = values.description.trim();
+        if (!name) return;
+      }
+      if (["end", "cancel", "reset"].includes(action)) {
+        const labels = { end: "end", cancel: "cancel", reset: "reset" };
+        if (!await confirmAction(
+          `${labels[action][0].toUpperCase() + labels[action].slice(1)} ${row.site} session ${row.id} (${row.name})?`,
+          { title: `${labels[action][0].toUpperCase() + labels[action].slice(1)} session`, okLabel: labels[action][0].toUpperCase() + labels[action].slice(1) },
+        )) return;
+      }
+      const progressLabels = {
+        rename: "Updating",
+        edit: "Updating",
+        save: "Saving",
+        end: "Ending",
+        cancel: "Cancelling",
+        reset: "Resetting",
+      };
+      $("unified-search-status").textContent = `${progressLabels[action] || "Updating"} session ${row.id}…`;
+      try {
+        const result = await api("/api/search/session-action", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site,
+            session_id: row.id,
+            action,
+            name,
+            description,
+          }),
+        });
+        $("unified-search-status").textContent = result.message || `Session ${action} completed.`;
+        await loadUnifiedDcData(["sessions"], { refreshData: true });
+      } catch (err) {
+        $("unified-search-status").textContent = err.message;
+      }
+    }
+
+    async function attachSearchSession(row, { monitorOnly = false } = {}) {
+      const dest = monitorOnly ? "session monitoring" : "the job workspace";
+      if (!ensureTokenReady(`adding the session to ${dest}`)) return;
+      $("unified-search-status").textContent = `Adding ${row.site} session ${row.id} to ${dest}…`;
+      try {
+        const job = await api("/api/jobs/attach", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            job_id: jobId || "",
+            sessions: [{ site: String(row.site || "").toLowerCase(), session_id: row.id }],
+            selected_vms: [],
+            monitor_only: Boolean(monitorOnly),
+          }),
+        });
+        setJobId(job.id);
+        lastLogLen = 0;
+        applyJobToForm(job);
+        renderJob(job, { forceCards: true });
+        startPolling();
+        $("unified-search-status").textContent = `${row.site} session ${row.id} added to ${dest}.`;
+      } catch (err) {
+        $("unified-search-status").textContent = err.message;
+      }
+    }
+
+    function openScheduleWithIds(ids, message, statusId = "unified-catalog-status") {
+      document.querySelectorAll(".demo-id").forEach((input) => { input.value = ""; });
+      let count = 0;
+      for (const [site, demoId] of Object.entries(ids || {})) {
+        const input = document.querySelector(`.demo-id[data-dc="${String(site).toLowerCase()}"]`);
+        if (!input || !demoId) continue;
+        input.value = demoId;
+        count += 1;
+      }
+      if (!count) {
+        showError("No schedulable demo IDs were found.");
+        return;
+      }
+      const panel = $("panel-step3");
+      if (panel) panel.open = true;
+      syncRunButton();
+      showError("");
+      $(statusId).textContent = message;
+      panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function loadUnifiedDcData(sources, { refreshData = false } = {}) {
+      await unifiedSavedDataReady;
+      const sites = selectedUnifiedSearchDcs();
+      if (!sites.length) {
+        $("unified-search-status").textContent = "Select at least one datacenter.";
+        return;
+      }
+      if (!ensureTokenReady("loading dCloud data")) return;
+      const buttons = [
+        $("btn-unified-load-content"),
+        $("btn-unified-load-sessions"),
+        $("btn-unified-load-both"),
+        $("btn-unified-search-refresh"),
+      ];
+      buttons.forEach((button) => { button.disabled = true; });
+      $("unified-search-status").textContent =
+        `${refreshData ? "Refreshing" : "Loading"} ${sources.map((source) => source === "content" ? "Content" : "Sessions").join(" and ")} from ${sites.map((site) => site.toUpperCase()).join(", ")}…`;
+      try {
+        const data = await api("/api/search/dc-data", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({
+            ...tokenPayload(),
+            sites,
+            sources,
+            refresh_data: refreshData,
+          }),
+        });
+        const savedEntries = [];
+        for (const source of sources) {
+          const successfulSites = sites.filter((site) => !data.errors?.[`${source}:${site}`]);
+          const successfulSet = new Set(successfulSites);
+          const incoming = (data[source] || []).filter((row) => successfulSet.has(String(row.site || "").toLowerCase()));
+          unifiedSearchDcData[source] = [
+            ...unifiedSearchDcData[source].filter((row) => !successfulSet.has(String(row.site || "").toLowerCase())),
+            ...incoming,
+          ];
+          for (const site of successfulSites) {
+            const fetchedAt = Number(data.fetchedAt?.[`${source}:${site}`]);
+            unifiedSearchDcData.fetchedAt[source][site] =
+              Number.isFinite(fetchedAt) && fetchedAt > 0 ? fetchedAt * 1000 : Date.now();
+            savedEntries.push({
+              key: `${source}:${site}`,
+              source,
+              site,
+              fetchedAt: unifiedSearchDcData.fetchedAt[source][site],
+              rows: incoming.filter((row) => String(row.site || "").toLowerCase() === site),
+            });
+          }
+          unifiedSearchDcData.sites[source] = SITE_ORDER.filter((site) =>
+            (unifiedSearchDcData.sites[source] || []).includes(site) || successfulSet.has(site)
+          );
+          unifiedSearchDcData.loaded[source] = unifiedSearchDcData.sites[source].length > 0;
+          for (const site of sites) {
+            delete unifiedSearchDcData.errors[`${source}:${site}`];
+          }
+        }
+        Object.assign(unifiedSearchDcData.errors, data.errors || {});
+        try {
+          await saveUnifiedDataEntries(savedEntries);
+        } catch {
+          // Keep the downloaded data for this page even if browser storage is unavailable.
+        }
+        unifiedSearchLimits.clear();
+        renderUnifiedDcData();
+        updateUnifiedCacheStatus();
+        const count = sources.reduce((total, source) => total + (data[source] || []).length, 0);
+        $("unified-search-status").textContent =
+          `Loaded ${count} record(s) from ${sites.map((site) => site.toUpperCase()).join(", ")}. Type in the filter box to narrow the results instantly.`;
+        saveUnifiedSearchSettings();
+      } catch (err) {
+        $("unified-search-status").textContent = err.message;
+      } finally {
+        buttons.forEach((button) => { button.disabled = false; });
+      }
+    }
+
+    async function searchAllDcloud() {
+      const query = $("unified-search-query").value.trim();
+      if (!query) {
+        $("unified-catalog-status").textContent = "Enter a catalog name or ID.";
+        $("unified-search-query").focus();
+        return;
+      }
+      const sites = selectedUnifiedSearchDcs();
+      if (!ensureTokenReady("searching the dCloud Catalog")) return;
+      const button = $("btn-unified-search");
+      button.disabled = true;
+      const request = ++unifiedSearchRequest;
+      $("unified-catalog-status").textContent = "Searching Catalog…";
+      try {
+        const data = await api("/api/search/all", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({
+            ...tokenPayload(),
+            query,
+            sites: sites.length ? sites : ["rtp"],
+            sources: ["catalog"],
+            exact_catalog: $("unified-search-exact").checked,
+          }),
+        });
+        if (request !== unifiedSearchRequest) return;
+        unifiedSearchLastData = data;
+        renderUnifiedCatalog(data);
+        $("unified-catalog-status").textContent = `${(data.catalog || []).length} catalog result(s).`;
+        saveUnifiedSearchSettings();
+      } catch (err) {
+        if (request !== unifiedSearchRequest) return;
+        $("unified-catalog-status").textContent = err.message;
+      } finally {
+        if (request === unifiedSearchRequest) button.disabled = false;
+      }
+    }
+
+    async function scheduleCatalogSearchResult(name, button) {
+      button.disabled = true;
+      $("unified-catalog-status").textContent = `Finding schedulable demo IDs for ${name}…`;
+      try {
+        const data = await api("/api/search/catalog-ids", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), name }),
+        });
+        openScheduleWithIds(data.ids, `Loaded ${Object.keys(data.ids || {}).length} datacenter demo ID(s) into Schedule sessions.`);
+      } catch (err) {
+        $("unified-catalog-status").textContent = err.message;
+      } finally {
+        button.disabled = false;
+      }
     }
 
     async function api(path, opts = {}) {
@@ -2471,9 +3895,9 @@
         const box = document.querySelector(`input[data-vm="${i}"]`);
         return box && box.checked;
       }).map((vm) => ({
-        name: vm.displayName || vm.name,
-        displayName: vm.displayName || vm.name,
-        shortName: vm.shortName || vm.name || "",
+        name: vmDisplayName(vm),
+        displayName: vmDisplayName(vm),
+        shortName: vmShortName(vm),
         mor: vm.mor,
         uid: vm.uid,
       }));
@@ -2483,9 +3907,9 @@
       const fromForm = selectedVms();
       if (fromForm.length) return fromForm;
       return (lastRenderedJob?.selectedVms || []).map((vm) => ({
-        name: vm.displayName || vm.name || "",
-        displayName: vm.displayName || vm.name || "",
-        shortName: vm.shortName || vm.name || "",
+        name: vmDisplayName(vm),
+        displayName: vmDisplayName(vm),
+        shortName: vmShortName(vm),
         mor: vm.mor || "",
         uid: vm.uid || "",
       }));
@@ -2681,15 +4105,20 @@
         if (info.id) notes.push(`${site.toUpperCase()} ${info.id}`);
         else if (info.note) notes.push(`${site.toUpperCase()} —`);
       });
+      const filled = [...document.querySelectorAll(".demo-id")].filter((el) => el.value.trim());
+      // The catalog lookup just filled the per-DC IDs, so open the section and
+      // show them instead of leaving the result behind a collapsed header.
+      const schedulePanel = $("panel-step3");
+      if (filled.length && schedulePanel) schedulePanel.open = true;
       const status = $("lookup-status");
       if (!status) return;
       if (data.name && notes.length && !skipCatalog) {
         if (mismatches.length) {
           status.textContent =
-            `Looked up “${data.name}” (${notes.join(" · ")}) but Step 2 still has old IDs in `
+            `Looked up “${data.name}” (${notes.join(" · ")}) but these DCs still show old IDs: `
             + `${mismatches.join(", ")}. Restart start.command, reload this page, then Load VMs again.`;
         } else {
-          status.textContent = `Looked up “${data.name}” — Step 2 IDs updated: ${notes.join(" · ")}`;
+          status.textContent = `Looked up “${data.name}” — demo IDs filled in: ${notes.join(" · ")}.`;
         }
       } else if ($("skip-catalog").checked) {
         status.textContent = data.demoId
@@ -2699,6 +4128,13 @@
         status.textContent = `Filled ${source.toUpperCase()} from this session (${data.demoId}).`;
       } else {
         status.textContent = "";
+      }
+      const ready = filled.length > 0 && mismatches.length === 0;
+      status.classList.toggle("lookup-ready", ready);
+      if (ready) {
+        const dcs = filled.map((el) => String(el.dataset.dc || "").toUpperCase()).join(", ");
+        status.textContent +=
+          ` Ready to schedule ${dcs} — check the VMs to power on, set the dates, then Schedule.`;
       }
     }
 
@@ -2716,12 +4152,23 @@
         waiting: "scheduled",
         ending: "stopping",
         resetting: "resetting",
+        shutting_down: "shutting down",
+        saving: "saving",
       };
       return labels[phase] || phase || "";
     }
 
     // dCloud reports "2 / STARTING_UP"; show the readable half so the pill tracks the log.
     function cardStatusLabel(dc) {
+      if (["saving", "shutting_down"].includes(dc?.phase)) {
+        const parts = String(dc.status || "")
+          .split("/")
+          .map((part) => part.trim())
+          .filter((part) => part && !/^\d+$/.test(part));
+        const live = parts.pop();
+        if (live) return live.toLowerCase().replace(/_/g, " ");
+        return dc.phase === "shutting_down" ? "shutting down" : "saving";
+      }
       if (dc?.phase !== "waiting") return phaseLabel(dc?.phase);
       const parts = String(dc.status || "")
         .split("/")
@@ -2765,13 +4212,25 @@
       }
     }
 
+    function vmDisplayName(vm) {
+      if (vm == null) return "";
+      if (typeof vm === "string") return String(vm).trim();
+      return String(vm.displayName || vm.name || vm.shortName || "").trim();
+    }
+
+    function vmShortName(vm) {
+      if (vm == null) return "";
+      if (typeof vm === "string") return String(vm).trim();
+      return String(vm.shortName || vm.name || "").trim();
+    }
+
     function renderVms() {
       $("vm-wrap").classList.toggle("hidden", vms.length === 0);
       $("vm-body").innerHTML = vms.map((vm, i) => `
         <tr class="vm-row" data-i="${i}">
           <td><input type="checkbox" data-vm="${i}" /></td>
-          <td>${escapeHtml(vm.displayName || vm.name)}</td>
-          <td class="mono">${escapeHtml(vm.shortName || vm.name || "")}</td>
+          <td>${escapeHtml(vmDisplayName(vm))}</td>
+          <td class="mono">${escapeHtml(vmShortName(vm))}</td>
         </tr>
       `).join("");
       $("vm-count").textContent = `${vms.length} VM(s)`;
@@ -2793,7 +4252,9 @@
       const on = [];
       const off = [];
       for (const vm of vms || []) {
-        if (vmIsPoweredOn(vm)) on.push(vm);
+        // An accepted guest-shutdown request is not proof the VM is off.
+        // Keep it out of Powered off until the verifier confirms the state.
+        if (vm.shutdownPending || vmIsPoweredOn(vm)) on.push(vm);
         else off.push(vm);
       }
       return { on, off };
@@ -2820,15 +4281,22 @@
       if (!rdpOff && vm.webRdpUrl) links.push(`<a href="${vm.webRdpUrl}" target="_blank" rel="noopener noreferrer">WebRDP</a>`);
       else if (!rdpOff && vm.rdpUrl) links.push(`<a href="${vm.rdpUrl}" target="_blank" rel="noopener noreferrer">RDP</a>`);
       if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM console</a>`);
-      const canAct = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase) && (vm.mor || vm.uid);
+      const canAct = Boolean(dc.sessionId)
+        && !["ended", "saved"].includes(dc.phase)
+        && !vm.shutdownPending
+        && (vm.mor || vm.uid);
       const note = vm.lastAction ? `<div class="hint">${escapeHtml(vm.lastAction)}</div>` : "";
-      const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(vm.name || "")}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+      const label = vmDisplayName(vm);
+      const short = vmShortName(vm);
+      // Long display names get clipped by CSS — hover shows the full name plus the VM name.
+      const tip = short && short !== label ? `${label} · ${short}` : label;
+      const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
       const selectedBadge = vm.selected ? `<span class="badge ok vm-selected">selected</span>` : "";
       const powerHint = groupKey ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
       return `
             <div class="vm-line">
               <div class="vm-meta">
-                <span class="name" title="${escapeHtml(vm.name || "")}">${escapeHtml(vm.name || "")}</span>
+                <span class="name" title="${escapeHtml(tip)}">${escapeHtml(label)}</span>
                 ${selectedBadge}
                 ${powerHint}
                 ${note}
@@ -3064,23 +4532,36 @@
 
     function markFoundSessionsOnCards(job) {
       const keys = jobSessionKeys(job);
-      const boxes = [...document.querySelectorAll(".found-session")];
+      const boxes = [...document.querySelectorAll(".found-session, .workspace-found-session")];
       if (!boxes.length) return;
       boxes.forEach((box) => {
         const onCard = keys.has(sessionKey(box.dataset.site, box.dataset.session));
         const row = box.closest("tr");
+        // Each row's own Add button follows the same state as its checkbox.
+        const addBtn = row?.querySelector(".btn-add-found-session, .btn-add-workspace-session");
         if (onCard) {
           box.checked = false;
           box.disabled = true;
           box.title = "Already on monitoring or job cards";
           row?.classList.add("found-session-attached");
+          if (addBtn) {
+            addBtn.disabled = true;
+            addBtn.title = "Already on monitoring or job cards";
+            addBtn.textContent = "Added";
+          }
         } else {
           box.disabled = false;
           box.title = "";
           row?.classList.remove("found-session-attached");
+          if (addBtn && !addBtn.classList.contains("is-busy")) {
+            addBtn.disabled = false;
+            addBtn.title = "";
+            addBtn.textContent = "Add";
+          }
         }
       });
       syncFoundAll();
+      syncWorkspaceFoundAll();
     }
 
     function selectedAttachableSessions() {
@@ -3117,10 +4598,13 @@
         ownedByMe: dc.ownedByMe,
         vms: (dc.vms || []).map((vm) => ({
           name: vm.name,
+          displayName: vm.displayName || vm.name,
+          shortName: vm.shortName || "",
           mor: vm.mor,
           uid: vm.uid,
           powerState: vm.powerState,
           lastAction: vm.lastAction,
+          shutdownPending: Boolean(vm.shutdownPending),
           selected: vm.selected,
         })),
       })));
@@ -3240,12 +4724,15 @@
       const canEnd = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase);
       const notMine = dc.ownedByMe === false;
       const ownerLine = notMine
-        ? `<div class="hint" style="color:var(--warn)">Owned by ${escapeHtml(dc.owner || "someone else")} — not yours. Shutdown &amp; save is not available. End still works, with a warning.</div>`
+        ? `<div class="hint" style="color:var(--warn)" data-tip="Shutdown &amp; save is not available on someone else's session. End still works, with a warning.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
         : "";
       const staleLine = isStaleCard(dc)
-        ? `<div class="hint" style="color:var(--warn)">Left over from an earlier run — Save all and End all skip it. Use this card's own buttons.</div>`
+        ? `<div class="hint" style="color:var(--warn)" data-tip="Left over from an earlier run — Save all and End all skip it. Use this card's own buttons.">Earlier run</div>`
         : "";
       const canReset = canResetSession(dc);
+      // dCloud reports canReset on healthy sessions too, so only a failed card
+      // gets the loud button; everything else keeps Reset in Card actions.
+      const showResetInline = canReset && ["error", "cancelled"].includes(dc.phase);
       const resetTip = canReset
         ? "Same as Reset in the dCloud dashboard — rebuilds this session under the same demo and session ID."
         : "Reset is offered when dCloud says the session failed or can be reset.";
@@ -3309,12 +4796,13 @@
             ${sharedLine}
             <div style="margin-top:0.35rem">${escapeHtml(dc.message || "")}</div>
             ${view}
-            ${canReset ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset session</button></div>` : ""}
+            ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset session</button></div>` : ""}
             ${vmsHtml}
             <div class="card-actions-row">
               <details class="vm-menu card-actions-menu">
                 <summary data-tip="Save, extend, end, or move this card.">Card actions</summary>
                 <div class="vm-menu-list">
+                  ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
                   ${shareBtn}
                   <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
                   ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
@@ -3348,7 +4836,7 @@
           authPauseAlertShown = true;
           showTokenAlert(
             job.authMessage
-              || "Your dCloud token expired. Log in or Import in Step 1, then Continue with new token."
+              || "Your dCloud token expired. Click Sign in to dCloud, log in or import, then Continue with new token."
           );
         }
       } else {
@@ -3404,7 +4892,6 @@
       lastLogLen = lines.length;
       if (job?.error) showError(job.error, { bannerOnly: true });
       renderSavedIds(job);
-      ensureContentSaveName(job).catch(() => {});
       maybeFlushPendingSchedules(job).catch(() => {});
       if (job && jobId && jobNeedsVmRefresh(job) && !pollTimer) {
         startPolling();
@@ -3419,7 +4906,12 @@
     const CAI_PENDING = ["submitted", "queuing", "processing"];
 
     function caiRowNeedsPoll(row) {
+      if (row.autoBurnIn && ["", "pending", "waiting_id", "waiting_auth"].includes(String(row.burnInStatus || ""))) {
+        return true;
+      }
       if (CAI_PENDING.includes(String(row.replaceStatus || ""))) return true;
+      const vmChips = row.replaceVmStatus || [];
+      if (vmChips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")))) return true;
       if (CAI_PENDING.includes(String(row.integrateStatus || ""))) return true;
       const chips = row.integrateDcStatus || [];
       if (chips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")))) return true;
@@ -3440,8 +4932,6 @@
     let camgrTransferPollTimer = null;
     let camgrDestSourceGuids = [];
     let camgrDevServers = [];
-    const CAI_HOME_URL = "https://dcloud-cai.cisco.com/";
-    const CAMGR_HOME_URL = "https://dcloud-camgr.cisco.com/#/cas";
     const CAMGR_PENDING = ["ready", "exporting", "exported", "xfring", "xfred", "importing", "submitted"];
 
     const HUB_HELP_KEY = "dcloud-hub-help-v1";
@@ -3474,24 +4964,60 @@
       btn.textContent = connected ? connectedLabel : idleLabel;
     }
 
+    // dCloud, CAI, and CAMGR are internal-only hosts, so a DNS/connect failure
+    // almost always means the VPN is off.
+    const OFF_NETWORK_MARKERS = [
+      "failed to resolve",
+      "nameresolution",
+      "nodename nor servname",
+      "name or service not known",
+      "max retries exceeded",
+      "connection refused",
+      "network is unreachable",
+      "no route to host",
+      "not on the cisco network",
+    ];
+
+    function looksOffNetwork(text) {
+      const lowered = String(text || "").toLowerCase();
+      return OFF_NETWORK_MARKERS.some((marker) => lowered.includes(marker));
+    }
+
+    function setConnectStatus(el, message) {
+      if (!el) return;
+      const text = String(message || "");
+      el.textContent = text;
+      if (!looksOffNetwork(text)) return;
+      // A <span> because these status lines are <p> elements.
+      const note = document.createElement("span");
+      note.className = "warn-box";
+      note.style.display = "block";
+      note.style.margin = "0.4rem 0 0";
+      note.textContent =
+        "Connect to the Cisco VPN (or an office network) — this tool can only reach "
+        + "dCloud, CAI, and CAMGR from inside Cisco. Then click Connect again.";
+      el.appendChild(note);
+    }
+
     function updateCamgrStatus(info) {
       const el = $("camgr-status");
       if (!el) return;
       markConnectButton("btn-camgr-connect", info?.loggedIn, "CAMGR connected ✓", "Connect to CAMGR");
       syncCamgrWatch(Boolean(info?.loggedIn));
       if (!info) {
-        el.textContent = "CAMGR: first time, Open CAMGR, finish Cisco/Duo in Chrome, then Connect to CAMGR. If CAMGR is already signed in, Connect is enough.";
+        setConnectStatus(el, "Keep Content Transfer open in Chrome, then Connect.");
         return;
       }
       if (info.loggedIn) {
-        el.textContent = info.message || "CAMGR: connected.";
+        setConnectStatus(el, info.message || "CAMGR: connected.");
+        dismissHubAuthAlert("camgr");
         return;
       }
       if (info.configured) {
-        el.textContent = info.message || "CAMGR: session saved locally — Connect to confirm.";
+        setConnectStatus(el, info.message || "CAMGR: session saved locally — Connect to confirm.");
         return;
       }
-      el.textContent = info.message || "CAMGR: first time, Open CAMGR, finish Cisco/Duo in Chrome, then Connect to CAMGR. If CAMGR is already signed in, Connect is enough.";
+      setConnectStatus(el, info.message || "Keep Content Transfer open in Chrome, then Connect.");
     }
 
     function updateCaiStatus(info) {
@@ -3499,18 +5025,19 @@
       if (!el) return;
       markConnectButton("btn-cai-connect", info?.loggedIn, "CAI connected ✓", "Connect to CAI");
       if (!info) {
-        el.textContent = "CAI: on the Cisco network, click Connect to CAI.";
+        setConnectStatus(el, "CAI: on the Cisco network, click Connect to CAI.");
         return;
       }
       if (info.loggedIn) {
-        el.textContent = info.message || "CAI: connected.";
+        setConnectStatus(el, info.message || "CAI: connected.");
+        dismissHubAuthAlert("cai");
         return;
       }
       if (info.configured) {
-        el.textContent = info.message || "CAI: session saved locally — Load VMs to confirm.";
+        setConnectStatus(el, info.message || "CAI: session saved locally — Load VMs to confirm.");
         return;
       }
-      el.textContent = info.message || "CAI: on the Cisco network, click Connect to CAI.";
+      setConnectStatus(el, info.message || "CAI: on the Cisco network, click Connect to CAI.");
     }
 
     function selectedSavedIdRows() {
@@ -4000,7 +5527,13 @@
         }
         return;
       }
-      if (data.job) renderJob(data.job);
+      if (data.job) {
+        if (data.burnInScheduled && data.job.id) {
+          setJobId(data.job.id);
+          noteLog(`Scheduled ${data.burnInScheduled} post-integration burn-in session(s).`);
+        }
+        renderJob(data.job);
+      }
       else if (data.savedIds) applySavedIds(data.savedIds);
       const pending = (data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || []).some(
         (row) => caiRowNeedsPoll(row)
@@ -4452,6 +5985,7 @@
       }).join("");
       $("camgr-dest-toolbar")?.classList.toggle("hidden", !items.length);
       $("camgr-auto-integrate-wrap")?.classList.toggle("hidden", !items.length);
+      $("camgr-burn-in-wrap")?.classList.toggle("hidden", !items.length);
       syncCamgrVpodSelects();
       syncCamgrIntegrateOption();
     }
@@ -4459,6 +5993,9 @@
     function syncCamgrIntegrateOption() {
       const box = $("camgr-auto-integrate");
       const wrap = $("camgr-auto-integrate-wrap");
+      const burnBox = $("camgr-burn-in");
+      const burnDays = $("camgr-burn-in-days");
+      const burnWrap = $("camgr-burn-in-wrap");
       if (!box || !wrap) return;
       const dests = selectedCamgrDests();
       // A dev vPod is not a CAI Integrate destination, so Integrate is only offered for real DCs.
@@ -4466,7 +6003,13 @@
       const devOnly = dests.length > 0 && integratable.length === 0;
       box.disabled = devOnly;
       if (devOnly) box.checked = false;
+      if (burnBox) {
+        burnBox.disabled = devOnly || !box.checked;
+        if (burnBox.disabled) burnBox.checked = false;
+      }
+      if (burnDays) burnDays.disabled = !burnBox?.checked;
       wrap.classList.toggle("dev-dest-only", devOnly);
+      burnWrap?.classList.toggle("dev-dest-only", devOnly || !box.checked);
       wrap.title = devOnly
         ? "ContentDEV is not a CAI Integrate destination, so there is nothing to integrate."
         : "";
@@ -4634,9 +6177,11 @@
       try {
         const data = await api("/api/camgr/vpod-transfer", {
           method: "POST",
-          body: JSON.stringify({ guid: server.guid, vpod, vm_names: vms, dcs: [home] }),
+          body: JSON.stringify({ guid: server.guid, vpod, vm_names: vms, dcs: [home], job_id: jobId || "" }),
         });
+        if (data.savedIds) applySavedIds(data.savedIds);
         noteLog(`CAMGR dev transfer submitted: ${label} vPod ${vpod} → ${home} (${vms.join(", ")}).`);
+        noteLog("Track it in the saved content list under CAMGR status.");
         if (data.guid) noteLog(`CAMGR job ${data.guid} is ${data.statusRaw || data.status || "READY"}.`);
         // The VMs land in this folder, which is what the template form needs next.
         const folder = `CDEV.${home.toUpperCase()}/vPod-${String(vpod).replace(/\D/g, "")}`;
@@ -4680,8 +6225,11 @@
 
     async function connectCamgr() {
       $("btn-camgr-connect").disabled = true;
+      const status = $("camgr-status");
+      if (status) status.textContent = "Using your open CAMGR tab…";
       try {
-        const data = await api("/api/camgr/connect", { method: "POST", body: "{}" });
+        // quiet: the reason belongs under the button, not in a pop-up.
+        const data = await api("/api/camgr/connect", { method: "POST", body: "{}", quiet: true });
         updateCamgrStatus(data);
         noteLog(data.message || "Connected to CAMGR.");
         if (data.loggedIn) {
@@ -4690,6 +6238,7 @@
         }
       } catch (err) {
         updateCamgrStatus({ loggedIn: false, message: err.message });
+        noteLog(err.message || "Could not connect to CAMGR.");
       } finally {
         $("btn-camgr-connect").disabled = false;
       }
@@ -4755,11 +6304,14 @@
         return;
       }
       const autoIntegrate = $("camgr-auto-integrate")?.checked || false;
+      const autoBurnIn = autoIntegrate && ($("camgr-burn-in")?.checked || false);
+      const burnInDays = Math.max(1, Number.parseInt($("camgr-burn-in-days")?.value || "1", 10) || 1);
       const vmLabel = vms.length ? vms.join(", ") : "all VMs";
       const preview = rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id} → ${dcs.join(", ")} (${vmLabel})`).join("\n");
       if (!await confirmAction(
         `Submit CAMGR transfer for ${rows.length} saved content item(s)?\n\n${preview}`
-        + (autoIntegrate ? `\n\nWhen CAMGR is COMPLETE, automatically Submit CAI Integrate to the same DCs (${dcs.join(", ")}).` : ""),
+        + (autoIntegrate ? `\n\nWhen CAMGR is COMPLETE, automatically Submit CAI Integrate to the same DCs (${dcs.join(", ")}).` : "")
+        + (autoBurnIn ? `\n\nWhen integration finishes, schedule each new demo for a ${burnInDays}-day burn-in at the next available time.` : ""),
         { title: "Submit transfer" }
       )) {
         return;
@@ -4773,6 +6325,8 @@
             vm_names: vms,
             dcs,
             auto_integrate: autoIntegrate,
+            auto_burn_in: autoBurnIn,
+            burn_in_days: burnInDays,
             items: rows,
           }),
         });
@@ -4781,6 +6335,7 @@
         if (data.errors?.length) showError(data.errors.join(" "));
         noteLog(`CAMGR transfer submitted for ${data.submitted?.length || 0} row(s).`);
         if (autoIntegrate) noteLog("CAI Integrate will submit to those same DCs when CAMGR is COMPLETE.");
+        if (autoBurnIn) noteLog(`Each new integrated demo will be scheduled as a regular ${burnInDays}-day burn-in session at its next available time.`);
         startCamgrTransferPoll();
       } catch (err) {
         showError(err.message);
@@ -4904,7 +6459,22 @@
       }${chipHtml ? `<div class="camgr-dc-chips">${chipHtml}</div>` : ""}</div>`;
     }
 
+    function caiVmChipsHtml(row) {
+      const chips = Array.isArray(row?.replaceVmStatus) ? row.replaceVmStatus : [];
+      if (!chips.length) return "";
+      const done = chips.filter((chip) => chip.done).length;
+      const pills = chips.map((chip) => {
+        const phase = escapeHtml(chip.phase || chip.status || "");
+        return `<span class="camgr-dc-chip${chip.done ? " done" : ""} ${phase}" data-tip="${escapeHtml(chip.tip || chip.label || "")}">${escapeHtml(chip.label || chip.vm || "")}</span>`;
+      }).join("");
+      // CAI queues one task per VM, so each VM gets its own pill.
+      const tip = String(row.replaceMessage || "").trim() || `${done} of ${chips.length} VM(s) done`;
+      const count = `<span class="hint replace-vm-count" data-tip="${escapeHtml(tip)}">VM replacement ${done}/${chips.length}</span>`;
+      return `<div class="camgr-dc-chips replace-vm-chips">${count}${pills}</div>`;
+    }
+
     function caiStatusCellHtml(row, line, caiClass) {
+      const vmHtml = caiVmChipsHtml(row);
       const chips = Array.isArray(row?.integrateDcStatus) ? row.integrateDcStatus : [];
       const chipHtml = chips.map((chip) => {
         const done = chip.done ? " done" : "";
@@ -4917,10 +6487,10 @@
         }
         return `<span class="${cls}" data-tip="${tip}">${label}</span>`;
       }).join("");
-      if (!line && !chipHtml) return `<span class="hint">—</span>`;
+      if (!line && !chipHtml && !vmHtml) return `<span class="hint">—</span>`;
       return `<div class="camgr-status-cell">${
         line ? `<span class="replace-status ${escapeHtml(caiClass)}">${escapeHtml(line)}</span>` : ""
-      }${chipHtml ? `<div class="camgr-dc-chips">${chipHtml}</div>` : ""}</div>`;
+      }${vmHtml}${chipHtml ? `<div class="camgr-dc-chips">${chipHtml}</div>` : ""}</div>`;
     }
 
     function renderSavedIdRows(rows) {
@@ -5012,6 +6582,11 @@
 
     let loginPollTimer = null;
     let loginPopup = null;
+    // A slow poll tick can land after login already succeeded; these keep it
+    // from putting "waiting for the popup" back over "Logged in".
+    let loginSettled = false;
+    let loginPollBusy = false;
+    let manualDcloudTokenValidated = false;
     let attachSessionsBusy = false;
     const ATTACH_SESSIONS_LABEL = "Add to monitoring";
 
@@ -5030,6 +6605,7 @@
 
     function applyImportedToken(data) {
       if (!data || !data.ok || !data.token) return false;
+      manualDcloudTokenValidated = false;
       showTokenInField(data.token);
       $("token-source").value = "browser";
       lastTokenAlertKey = "";
@@ -5053,6 +6629,7 @@
     let hubKeepAliveWatching = false;
     let hubCheckedAt = 0;
     let camgrWatchTimer = null;
+    let camgrCatchupTimer = null;
     const HUB_KEEPALIVE_MS = 3 * 60 * 1000;
     const CAMGR_WATCH_MS = 15 * 1000;
 
@@ -5062,6 +6639,10 @@
       if (loggedIn) {
         if (camgrWatchTimer) clearInterval(camgrWatchTimer);
         camgrWatchTimer = null;
+        if (camgrCatchupTimer) {
+          clearInterval(camgrCatchupTimer);
+          camgrCatchupTimer = null;
+        }
         return;
       }
       if (camgrWatchTimer) return;
@@ -5069,6 +6650,20 @@
         if (document.hidden) return;
         refreshCamgrStatus().catch(() => {});
       }, CAMGR_WATCH_MS);
+    }
+
+    function startCamgrCatchup() {
+      if (camgrCatchupTimer) clearInterval(camgrCatchupTimer);
+      let tries = 0;
+      camgrCatchupTimer = setInterval(() => {
+        tries += 1;
+        if (tries > 30) {
+          clearInterval(camgrCatchupTimer);
+          camgrCatchupTimer = null;
+          return;
+        }
+        refreshCamgrStatus().catch(() => {});
+      }, 3000);
     }
 
     async function checkHubSessions() {
@@ -5144,6 +6739,14 @@
         $("dtoken").value = "";
       }
       $("auth-status").textContent = status;
+      const authorized = Boolean(
+        (data.sessionLoggedIn && data.accessToken)
+        || (manualDcloudTokenValidated && $("dtoken").value.trim()),
+      );
+      setDcloudAuthorizationState(authorized, status);
+      if (data.version) {
+        $("app-version").textContent = `Version ${data.version}`;
+      }
       updateCaiStatus(data.cai);
       updateCamgrStatus(data.camgr);
       if (data.camgr?.loggedIn && !camgrDevServers.length) loadCamgrDevSources();
@@ -5154,6 +6757,18 @@
         clearInterval(loginPollTimer);
         loginPollTimer = null;
       }
+    }
+
+    function setLoginStatus(text) {
+      if (loginSettled) return;
+      $("auth-status").textContent = text;
+    }
+
+    function settleLogin() {
+      loginSettled = true;
+      stopLoginPoll();
+      if (loginPopup && !loginPopup.closed) loginPopup.close();
+      loginPopup = null;
     }
 
     async function pollLoginStorage(site, { requireNew = false, baselineToken = "" } = {}) {
@@ -5168,9 +6783,7 @@
             return false;
           }
           if (applyImportedToken(data)) {
-            stopLoginPoll();
-            if (loginPopup && !loginPopup.closed) loginPopup.close();
-            loginPopup = null;
+            settleLogin();
             $("auth-status").textContent = data.message || "Logged in.";
             await refreshAuth();
             return true;
@@ -5191,16 +6804,14 @@
         const data = await res.json().catch(() => ({}));
         if (data.ok && data.token) {
           if (applyImportedToken(data)) {
-            stopLoginPoll();
-            if (loginPopup && !loginPopup.closed) loginPopup.close();
-            loginPopup = null;
+            settleLogin();
             $("auth-status").textContent = data.message || "Logged in via SSO.";
             await refreshAuth();
             return true;
           }
         }
         if (data.message) {
-          $("auth-status").textContent = data.message;
+          setLoginStatus(data.message);
         }
       } catch {
         // Still waiting for SSO redirect in Chrome history.
@@ -5214,39 +6825,55 @@
         const data = await api(`/api/dcloud/token/import-from-browser${q}`, { method: "POST", body: "{}" });
         if (data.ok && data.token) {
           if (requireNew && baselineToken && data.token === baselineToken) {
-            $("auth-status").textContent = "Complete sign-in in the popup — waiting for a new token in Chrome…";
+            setLoginStatus("Complete sign-in in the popup — waiting for a new token in Chrome…");
             return false;
           }
           if (applyImportedToken(data)) {
-            stopLoginPoll();
-            if (loginPopup && !loginPopup.closed) loginPopup.close();
-            loginPopup = null;
+            settleLogin();
             $("auth-status").textContent = data.message || "Logged in.";
             await refreshAuth();
             return true;
           }
         }
-        if (data.message) $("auth-status").textContent = data.message;
+        if (data.message) setLoginStatus(data.message);
       } catch (err) {
-        $("auth-status").textContent = err.message || "Waiting for login…";
+        setLoginStatus(err.message || "Waiting for login…");
       }
       return false;
     }
 
     async function snapshotChromeToken() {
       try {
-        const data = await api("/api/dcloud/token/import-from-browser?dry_run=1", {
-          method: "POST",
-          body: "{}",
-        });
+        // Local Storage only: a full Chrome scan here would stall the click.
+        const data = await api(
+          "/api/dcloud/token/import-from-browser?dry_run=1&full_scan=0&storage_only=1",
+          { method: "POST", body: "{}" },
+        );
         return (data.ok && data.token) ? data.token : "";
       } catch {
         return "";
       }
     }
 
+    // The tool is logged in the moment any path (storage import, SSO exchange, or
+    // a background import) stores a session, so ask the server instead of
+    // waiting for one specific poll to report success.
+    async function finishLoginIfSessionReady(sessionBaseline = "") {
+      try {
+        const status = await api("/api/auth/status", { quiet: true });
+        if (!status.sessionLoggedIn || !status.accessToken) return false;
+        if (sessionBaseline && status.accessToken === sessionBaseline) return false;
+      } catch {
+        return false;
+      }
+      settleLogin();
+      await refreshAuth();
+      return true;
+    }
+
     async function clearLoginSession() {
       await api("/api/auth/session/clear", { method: "POST", body: "{}" });
+      manualDcloudTokenValidated = false;
       $("dtoken").value = "";
       $("token-source").value = "browser";
       lastTokenAlertKey = "";
@@ -5262,8 +6889,16 @@
       btn.disabled = true;
       showError("");
       stopLoginPoll();
+      loginSettled = false;
+      loginPollBusy = false;
       try {
+        // Straight to SSO. Scanning Chrome first took seconds and the popup
+        // finishes on its own when Chrome already has a dCloud login.
+        $("auth-status").textContent = "Opening dCloud sign-in…";
         const site = ($("src-site") && $("src-site").value) || "rtp";
+        // Token this tool holds right now, so an older session is not mistaken
+        // for the login being started here.
+        const sessionBaseline = ($("dtoken").value || "").trim();
         const baselineToken = await snapshotChromeToken();
         const { url } = await api(`/api/auth/login/url?site=${encodeURIComponent(site)}`);
         loginPopup = window.open(
@@ -5280,31 +6915,45 @@
           "Sign in via the popup — waiting for dCloud to finish (do not close yet)…";
         let attempts = 0;
         loginPollTimer = setInterval(async () => {
-          attempts += 1;
-          const popupOpen = loginPopup && !loginPopup.closed;
+          if (loginPollBusy || loginSettled) return;
+          loginPollBusy = true;
+          try {
+            attempts += 1;
+            const popupOpen = loginPopup && !loginPopup.closed;
 
-          if (popupOpen) {
-            const stored = await pollLoginStorage(site, pollOpts);
-            if (stored) return;
-            if (attempts === 20) {
-              $("auth-status").textContent =
-                "Still waiting on dCloud popup… If it stays on “Logging you in”, close the popup — the tool will finish login.";
-            }
-            if (attempts > 120) {
-              stopLoginPoll();
-              $("auth-status").textContent =
-                "Login timed out — close the popup if open, then click Import or try again.";
-            }
-            return;
-          }
+            // Any path may have stored the session already — ask the server
+            // instead of waiting on one specific poll to report success.
+            if (await finishLoginIfSessionReady(sessionBaseline)) return;
 
-          // Popup closed — OAuth exchange first (refresh token), then Chrome fallback.
-          if (await pollLoginExchange(site)) return;
-          const ok = await pollLoginImport({ ...pollOpts, fullScan: true });
-          stopLoginPoll();
-          if (!ok) {
-            $("auth-status").textContent =
-              "Could not finish login — click Import from browser or try Log in again.";
+            if (popupOpen) {
+              const stored = await pollLoginStorage(site, pollOpts);
+              if (stored) return;
+              // dCloud often sits on “Logging you in…” after SSO. Grab the code from
+              // Chrome history and finish the exchange without waiting for that page.
+              if (attempts >= 3 && await pollLoginExchange(site)) return;
+              if (attempts === 20) {
+                setLoginStatus(
+                  "Still waiting on dCloud popup… If it stays on “Logging you in”, close the popup — the tool will finish login.",
+                );
+              }
+              if (attempts > 120) {
+                stopLoginPoll();
+                setLoginStatus("Login timed out — close the popup if open, then click Import or try again.");
+              }
+              return;
+            }
+
+            // Popup closed — OAuth exchange first (refresh token), then Chrome
+            // fallback. Any usable token counts now, even if Chrome still holds
+            // the one from before this login.
+            if (await pollLoginExchange(site)) return;
+            const ok = await pollLoginImport({ ...pollOpts, requireNew: false, fullScan: true });
+            stopLoginPoll();
+            if (!ok) {
+              setLoginStatus("Could not finish login — click Import from browser or try Log in again.");
+            }
+          } finally {
+            loginPollBusy = false;
           }
         }, 1000);
       } finally {
@@ -5346,10 +6995,16 @@
       });
       $("auth-status").textContent = data.message;
       if (data.ok) {
+        manualDcloudTokenValidated = true;
         lastTokenAlertKey = "";
         hideTokenAlert();
         showError("");
-      } else if (!data.ok) showError(data.message);
+        setDcloudAuthorizationState(true, data.message || "dCloud token validated.");
+      } else if (!data.ok) {
+        manualDcloudTokenValidated = false;
+        setDcloudAuthorizationState(false, data.message);
+        showError(data.message);
+      }
     }
 
     async function loadVms() {
@@ -5389,7 +7044,6 @@
         renderVms();
         $("session-meta").textContent = "";
         applyLookups(data);
-        fillSaveDefaults(data.name);
         syncJobAppendHint();
         lastVmCatalogLookup = {
           name: data.name || "",
@@ -5690,9 +7344,11 @@
       if (!ensureTokenReady("scheduling sessions")) return;
       showError("");
       const selected = selectedVms();
-      const skipPowerOn = !selected.length;
-      if (skipPowerOn) {
-        // Scheduling without a power-on is allowed; make sure it was on purpose.
+      const exported = $("export-sessions").checked;
+      // Regular sessions power every VM themselves. Exported sessions only start
+      // the VMs checked in Load VMs, so an empty list needs a confirmation.
+      const skipPowerOn = !exported || !selected.length;
+      if (exported && !selected.length) {
         if (!await confirmAction(
           "No VMs are checked, so nothing will power on. Schedule anyway?",
           { title: "No VMs checked", okLabel: "Schedule anyway", cancelLabel: "Go back" }
@@ -5714,7 +7370,7 @@
         if (stale.length) {
           showError(
             `${stale.join(", ")} still use the same content ID as an existing session card. `
-            + "Load VMs from the new demo in Step 1 so catalog lookup refreshes every DC in Step 2, then schedule again."
+            + "Load VMs from the new demo so catalog lookup refreshes every DC, then schedule again."
           );
           $("btn-run").disabled = false;
           return;
@@ -5729,7 +7385,7 @@
             ...tokenPayload(),
             job_id: addToJob ? jobId : "",
             demo_ids: demoIds(),
-            selected_vms: selected,
+            selected_vms: skipPowerOn ? [] : selected,
             skip_power_on: skipPowerOn,
             days: Number($("days").value || 1),
             start_at: $("sched-start").value ? new Date($("sched-start").value).toISOString() : "",
@@ -5883,8 +7539,8 @@
     async function askSaveNamesPerDemo(targets) {
       const groups = groupTargetsByDemo(targets);
       if (!groups.length) return [];
-      const typed = $("save-name").value.trim();
       const names = [];
+      let lastDescription = DEFAULT_SAVE_DESCRIPTION;
       for (let i = 0; i < groups.length; i += 1) {
         const group = groups[i];
         const label = group.name || `demo ${group.demoId}`;
@@ -5893,20 +7549,20 @@
           .join(", ");
         const count = `${group.rows.length} session${group.rows.length === 1 ? "" : "s"}`;
         const single = groups.length === 1;
-        // With one demo the typed name is the intent; with several it is ambiguous,
-        // so each demo starts from its own name.
-        const answer = await promptText(
+        const answer = await promptSaveDetails(
           single
             ? `Name the saved content for ${label} (${count}: ${where}).\n\nThis is what the new content is called in dCloud. Edit it now if it should differ.`
             : `Save name for ${label} (${count}: ${where}).`,
           {
             title: single ? "Confirm save name" : `Name ${i + 1} of ${groups.length}`,
-            value: single ? typed || group.name : group.name || typed,
+            name: group.name || "",
+            description: lastDescription,
             okLabel: single ? "Save" : i + 1 === groups.length ? "Save all" : "Next",
           }
         );
         if (answer === null) return null;
-        const clean = String(answer).trim();
+        const clean = String(answer.name || "").trim();
+        const description = String(answer.description || "").trim() || DEFAULT_SAVE_DESCRIPTION;
         if (!clean) {
           showActionAlert(
             groups.length > 1
@@ -5916,8 +7572,9 @@
           );
           return null;
         }
+        lastDescription = description;
         group.rows.forEach((row) => {
-          names.push({ site: row.site, session_id: row.session_id, name: clean });
+          names.push({ site: row.site, session_id: row.session_id, name: clean, description });
         });
       }
       return names;
@@ -5965,9 +7622,9 @@
             session_id: "",
             sessions: targets,
             single_card: singleCard,
-            save_name: $("save-name").value.trim(),
+            save_name: saveNames[0]?.name || "",
             save_names: saveNames,
-            save_description: $("save-description").value.trim(),
+            save_description: saveNames[0]?.description || DEFAULT_SAVE_DESCRIPTION,
           }),
         });
         renderJob(job);
@@ -6008,7 +7665,6 @@
           await api(`/api/jobs/${id}/dismiss`, { method: "POST", body: "{}" });
           stopPolling();
           setJobId(null);
-          saveNameFetchJob = null;
           lastSavedIdRows = [];
           renderJob(null);
           clearLog();
@@ -6050,9 +7706,6 @@
       $("auth-pause-banner").classList.add("hidden");
       dismissedAuthMessage = "";
       $("btn-continue-auth").classList.add("hidden");
-      $("save-name").value = "";
-      $("save-description").value = "";
-      saveNameFetchJob = null;
     }
 
     function resetMonitoringUi() {
@@ -6116,6 +7769,7 @@
       try { localStorage.removeItem(UI_STATE_KEY); } catch {}
       try { localStorage.removeItem(LEGACY_UI_STATE_KEY); } catch {}
       try { localStorage.removeItem(HUB_HELP_KEY); } catch {}
+      applySectionOrder(DEFAULT_SECTION_ORDER);
       document.querySelectorAll(PERSIST_PANEL_SELECTOR).forEach((el) => {
         if (el.id && DEFAULT_PANEL_OPEN.has(el.id)) el.open = DEFAULT_PANEL_OPEN.get(el.id);
       });
@@ -6128,17 +7782,17 @@
     const FRESH_SCOPES = [
       {
         id: "token",
-        label: "Step 1 — dCloud token",
-        hint: "Drops the token this tool holds, so Step 1 starts at Log in.",
+        label: "dCloud sign-in",
+        hint: "Drops the token this tool holds, so Sign in to dCloud returns to the login controls.",
       },
       {
         id: "step2",
-        label: "Step 2 — Load VMs",
+        label: "Load VMs (for content exports and VM power-ons)",
         hint: "Datacenter, source ID, and the loaded VM list.",
       },
       {
         id: "step3",
-        label: "Step 3 — Demo IDs and schedule",
+        label: "Schedule sessions — demo IDs and schedule",
         hint: "Per-DC IDs, catalog hints, duration, and dates.",
       },
       {
@@ -6425,7 +8079,7 @@
       const hasLiveSessions = dcs.some(
         (dc) => dc.sessionId && !["saved", "ended"].includes(dc.phase)
       );
-      // Step 2 is for the *next* demo to schedule. Don't clobber it from existing cards
+      // Load VMs is for the *next* demo to schedule. Don't clobber it from existing cards
       // when this job already has running sessions (typical "add another demo" flow).
       if (!hasLiveSessions && !lastVmCatalogLookup) {
         const bySite = new Map();
@@ -6444,7 +8098,6 @@
         $("src-site").value = first.site;
         $("src-session").value = first.sessionId;
       }
-      ensureContentSaveName(job).catch(() => {});
     }
 
     async function refreshJobStatus() {
@@ -6570,6 +8223,15 @@
     const DCLOUD_CATALOG_EOL_URL = "https://dcloud-camgr.cisco.com/#/catalogue";
     const UI_STATE_KEY = "dcloud-content-manager-ui-v1";
     const LEGACY_UI_STATE_KEY = "dcloud-session-manager-ui-v1";
+    const DEFAULT_SECTION_ORDER = [
+      "panel-step2",
+      "panel-step3",
+      "panel-job-cards",
+      "panel-monitoring",
+      "saved-ids-panel",
+      "panel-unified-search",
+      "panel-log",
+    ];
     const PERSIST_PANEL_SELECTOR = [
       "details.panel-collapse",
       "details.advanced",
@@ -6579,9 +8241,10 @@
       "details#saved-promoted-group",
       "details#saved-ids-promoted-group",
     ].join(", ");
+    const TOP_LEVEL_PANEL_SELECTOR = "details.panel-collapse";
     const DEFAULT_PANEL_OPEN = new Map();
     const PERSIST_VM_MORE_SELECTOR = "#cards details.vm-more, #monitor-cards details.vm-more";
-    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-saved details.dc-group, #saved-ids-found details.dc-group";
+    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #found-saved details.dc-group, #saved-ids-found details.dc-group";
 
     function readUiState() {
       try {
@@ -6615,7 +8278,15 @@
           if (el.dataset.site) dcGroups[containerId][el.dataset.site] = el.open;
         });
       }
-      return { panels, vmMore, dcGroups };
+      const sectionOrder = DEFAULT_SECTION_ORDER
+        .map((id) => $(id))
+        .filter(Boolean)
+        .sort((a, b) => {
+          const pos = a.compareDocumentPosition(b);
+          return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+        })
+        .map((el) => el.id);
+      return { panels, vmMore, dcGroups, sectionOrder };
     }
 
     function saveUiStateFromDom() {
@@ -6626,8 +8297,13 @@
       const panels = readUiState().panels || {};
       for (const [id, open] of Object.entries(panels)) {
         const el = $(id);
-        if (el && "open" in el) el.open = Boolean(open);
+        if (!el || !("open" in el)) continue;
+        // Every load starts with the page collapsed, so only the inner panels
+        // (found sessions, found content, DC groups) restore their saved state.
+        if (el.matches(TOP_LEVEL_PANEL_SELECTOR)) continue;
+        el.open = Boolean(open);
       }
+      document.querySelectorAll(TOP_LEVEL_PANEL_SELECTOR).forEach((el) => { el.open = false; });
     }
 
     function persistedPanelOpen(id, fallback = true) {
@@ -6689,6 +8365,145 @@
       }, true);
       $("btn-collapse-all-ui")?.addEventListener("click", () => setAllUiSectionsOpen(false));
       $("btn-expand-all-ui")?.addEventListener("click", () => setAllUiSectionsOpen(true));
+    }
+
+    function applySectionOrder(order) {
+      const anchor = $("panel-start-fresh");
+      if (!anchor?.parentElement) return;
+      const valid = Array.isArray(order)
+        ? order.filter((id) => DEFAULT_SECTION_ORDER.includes(id) && $(id))
+        : [];
+      for (const id of DEFAULT_SECTION_ORDER) {
+        if (!valid.includes(id) && $(id)) valid.push(id);
+      }
+      for (const id of valid) anchor.parentElement.insertBefore($(id), anchor);
+      updateSectionOrderButtons();
+    }
+
+    function currentSectionOrder() {
+      return DEFAULT_SECTION_ORDER
+        .map((id) => $(id))
+        .filter(Boolean)
+        .sort((a, b) => {
+          const pos = a.compareDocumentPosition(b);
+          return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+        })
+        .map((el) => el.id);
+    }
+
+    function moveSection(id, direction) {
+      const order = currentSectionOrder();
+      const index = order.indexOf(id);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= order.length) return;
+      [order[index], order[next]] = [order[next], order[index]];
+      applySectionOrder(order);
+      saveUiStateFromDom();
+      $(id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function updateSectionOrderButtons() {
+      const order = currentSectionOrder();
+      order.forEach((id, index) => {
+        const panel = $(id);
+        const up = panel?.querySelector(".section-move-up");
+        const down = panel?.querySelector(".section-move-down");
+        if (up) up.disabled = index === 0;
+        if (down) down.disabled = index === order.length - 1;
+      });
+    }
+
+    let draggingSectionId = "";
+
+    function clearSectionDropMarkers() {
+      document.querySelectorAll(".section-drop-before, .section-drop-after").forEach((el) => {
+        el.classList.remove("section-drop-before", "section-drop-after");
+      });
+    }
+
+    function dropSectionOn(draggedId, targetId, after) {
+      if (!draggedId || draggedId === targetId) return;
+      const order = currentSectionOrder().filter((id) => id !== draggedId);
+      const index = order.indexOf(targetId);
+      if (index < 0) return;
+      order.splice(after ? index + 1 : index, 0, draggedId);
+      applySectionOrder(order);
+      saveUiStateFromDom();
+    }
+
+    function wireSectionDrag(panel, id, grip) {
+      // The grip is the drag source, so text selection and the summary's own
+      // click-to-collapse keep working everywhere else in the header.
+      grip.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      grip.addEventListener("dragstart", (ev) => {
+        draggingSectionId = id;
+        panel.classList.add("section-dragging");
+        ev.dataTransfer.effectAllowed = "move";
+        // Firefox refuses to start a drag without payload.
+        ev.dataTransfer.setData("text/plain", id);
+        ev.dataTransfer.setDragImage(panel, 24, 18);
+      });
+      grip.addEventListener("dragend", () => {
+        panel.classList.remove("section-dragging");
+        draggingSectionId = "";
+        clearSectionDropMarkers();
+      });
+      panel.addEventListener("dragover", (ev) => {
+        if (!draggingSectionId || draggingSectionId === id) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "move";
+        const rect = panel.getBoundingClientRect();
+        const after = ev.clientY > rect.top + rect.height / 2;
+        clearSectionDropMarkers();
+        panel.classList.add(after ? "section-drop-after" : "section-drop-before");
+      });
+      panel.addEventListener("dragleave", (ev) => {
+        if (!panel.contains(ev.relatedTarget)) {
+          panel.classList.remove("section-drop-before", "section-drop-after");
+        }
+      });
+      panel.addEventListener("drop", (ev) => {
+        if (!draggingSectionId || draggingSectionId === id) return;
+        ev.preventDefault();
+        const after = panel.classList.contains("section-drop-after");
+        const dragged = draggingSectionId;
+        clearSectionDropMarkers();
+        dropSectionOn(dragged, id, after);
+      });
+    }
+
+    function initSectionOrdering() {
+      applySectionOrder(readUiState().sectionOrder);
+      for (const id of DEFAULT_SECTION_ORDER) {
+        const panel = $(id);
+        const summary = panel?.querySelector(":scope > summary.panel-collapse-summary");
+        if (!summary || summary.querySelector(".section-order-controls")) continue;
+        const name = summary.textContent.trim();
+        const controls = document.createElement("span");
+        controls.className = "section-order-controls";
+        controls.innerHTML = `
+          <span class="section-drag-handle" draggable="true" aria-hidden="true" data-tip="Drag to move this section, or use the arrows.">⠿</span>
+          <button type="button" class="secondary section-move-up" aria-label="Move ${escapeHtml(name)} up" title="Move section up">↑</button>
+          <button type="button" class="secondary section-move-down" aria-label="Move ${escapeHtml(name)} down" title="Move section down">↓</button>
+        `;
+        controls.addEventListener("click", (ev) => {
+          const button = ev.target.closest("button");
+          if (!button) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          moveSection(id, button.classList.contains("section-move-up") ? -1 : 1);
+        });
+        summary.appendChild(controls);
+        wireSectionDrag(panel, id, controls.querySelector(".section-drag-handle"));
+      }
+      updateSectionOrderButtons();
+      $("btn-reset-section-order")?.addEventListener("click", () => {
+        applySectionOrder(DEFAULT_SECTION_ORDER);
+        saveUiStateFromDom();
+      });
     }
 
     function groupRowsBySite(rows) {
@@ -6808,7 +8623,7 @@
             <thead>
               <tr>
                 <th><input type="checkbox" class="found-session-dc-head" data-site="${escapeHtml(site)}" title="Select all in ${escapeHtml(site.toUpperCase())}" /></th>
-                <th>Session</th><th>Name</th><th>Status</th>
+                <th>Session</th><th>Name</th><th>Status</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -6818,6 +8633,9 @@
                   <td class="mono">${escapeHtml(row.sessionId)}</td>
                   <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
                   <td>${escapeHtml(row.status)}</td>
+                  <td class="saved-actions">
+                    <button type="button" class="secondary btn-add-found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" data-tip="Add just this session as a monitoring card.">Add</button>
+                  </td>
                 </tr>
               `).join("")}
             </tbody>
@@ -7326,11 +9144,11 @@
       const site = String($("hub-manual-site")?.value || "").trim().toLowerCase();
       const savedId = String($("hub-manual-id")?.value || "").trim();
       if (!site || !savedId) {
-        showError("Choose a DC and enter a demo or saved-content ID.", { scrollTo: "#hub-manual-id" });
+        showError("Choose a DC and enter a demo ID.", { scrollTo: "#hub-manual-id" });
         return;
       }
       if (!/^\d+$/.test(savedId)) {
-        showError("Demo or saved-content ID must be numeric.", { scrollTo: "#hub-manual-id" });
+        showError("Demo ID must be numeric.", { scrollTo: "#hub-manual-id" });
         return;
       }
       const btn = $("btn-hub-manual-add");
@@ -7423,7 +9241,7 @@
       }
       const selectedVms = selectedVmsForSchedule();
       if (!selectedVms.length) {
-        showError("Select VMs in Step 2, or restore a job that already has selected VMs.");
+        showError("Select VMs in Load VMs, or restore a job that already has selected VMs.");
         return;
       }
       if (!validateScheduleWindow()) return;
@@ -7493,6 +9311,223 @@
         setFoundSessionsPanelVisible(false);
         showError(err.message);
       }
+    }
+
+    function syncWorkspaceFoundAll() {
+      const boxes = [...document.querySelectorAll(".workspace-found-session:not(:disabled)")];
+      const checked = boxes.filter((box) => box.checked).length;
+      for (const site of SITE_ORDER) {
+        const dcBoxes = boxes.filter((box) => box.dataset.site === site);
+        const head = document.querySelector(`.workspace-found-session-dc-head[data-site="${site}"]`);
+        if (!head) continue;
+        head.checked = dcBoxes.length > 0 && dcBoxes.every((box) => box.checked);
+        head.indeterminate = dcBoxes.some((box) => box.checked) && !head.checked;
+      }
+      const button = $("btn-attach-workspace-sessions");
+      if (button && !button.classList.contains("is-busy")) button.disabled = checked === 0;
+    }
+
+    function setWorkspaceFoundChecks(checked) {
+      document.querySelectorAll(".workspace-found-session:not(:disabled)").forEach((box) => {
+        box.checked = checked;
+      });
+      syncWorkspaceFoundAll();
+    }
+
+    function renderFoundWorkspaceSessions(data) {
+      const rows = data.sessions || [];
+      const onCards = jobSessionKeys(lastRenderedJob);
+      const groups = groupRowsBySite(rows);
+      const body = renderDcGroupedList(
+        groups,
+        "No active sessions on your dCloud dashboard.",
+        (site, siteRows) => `
+          <table class="dc-list">
+            <thead><tr>
+              <th><input type="checkbox" class="workspace-found-session-dc-head" data-site="${escapeHtml(site)}" title="Select all in ${escapeHtml(site.toUpperCase())}" /></th>
+              <th>Session</th><th>Name</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>${siteRows.map((row) => {
+              const attached = onCards.has(sessionKey(row.site, row.sessionId));
+              return `<tr class="${attached ? "found-session-attached" : ""}">
+                <td><input type="checkbox" class="workspace-found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" ${attached ? 'disabled title="Already on a card"' : ""} /></td>
+                <td class="mono">${escapeHtml(row.sessionId)}</td>
+                <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
+                <td>${escapeHtml(row.status)}</td>
+                <td class="saved-actions">
+                  <button type="button" class="secondary btn-add-workspace-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" ${attached ? 'disabled title="Already on a card"' : ""} data-tip="Add just this session as a job workspace card.">Add</button>
+                </td>
+              </tr>`;
+            }).join("")}</tbody>
+          </table>`,
+        "found-workspace-sessions",
+      );
+      $("found-workspace-sessions").innerHTML = `${renderErrorHints(data.errors)}${body}`;
+      const panel = $("found-workspace-sessions-panel");
+      panel.classList.toggle("hidden", rows.length === 0);
+      if (rows.length) {
+        panel.open = true;
+        $("found-workspace-sessions-summary").textContent =
+          `Your active dCloud sessions (${rows.length}) — click to expand or collapse`;
+      }
+      syncWorkspaceFoundAll();
+    }
+
+    async function findWorkspaceSessions() {
+      if (!ensureTokenReady("finding sessions")) return;
+      const button = $("btn-find-workspace-sessions");
+      button.disabled = true;
+      button.textContent = "Finding…";
+      $("found-workspace-sessions-panel").classList.add("hidden");
+      try {
+        const data = await api("/api/sessions/mine", {
+          method: "POST",
+          body: JSON.stringify(tokenPayload()),
+        });
+        renderFoundWorkspaceSessions(data);
+        noteLog(`Found ${(data.sessions || []).length} session(s) for the job workspace picker.`);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Find my sessions";
+      }
+    }
+
+    async function attachWorkspaceSessions(sessions, button, successMessage) {
+      if (!sessions.length) return;
+      button.disabled = true;
+      button.classList.add("is-busy");
+      const oldText = button.textContent;
+      button.textContent = "Adding…";
+      $("attach-workspace-status").textContent =
+        `Adding ${sessions.length} session(s). Cards appear first; VM power and access details finish in the background.`;
+      $("attach-workspace-status").classList.remove("hidden");
+      try {
+        const job = await api("/api/jobs/attach", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            job_id: jobId || "",
+            sessions,
+            selected_vms: [],
+            monitor_only: false,
+          }),
+        });
+        setJobId(job.id);
+        lastLogLen = 0;
+        applyJobToForm(job);
+        renderJob(job, { forceCards: true });
+        markFoundSessionsOnCards(job);
+        startPolling();
+        noteLog(successMessage);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        button.classList.remove("is-busy");
+        // A row button that just became "Added" keeps that label.
+        if (button.textContent === "Adding…") button.textContent = oldText;
+        $("attach-workspace-status").classList.add("hidden");
+        syncWorkspaceFoundAll();
+      }
+    }
+
+    async function addManualWorkspaceSession() {
+      if (!ensureTokenReady("adding a session to the job workspace")) return;
+      const site = String($("workspace-manual-site").value || "").toLowerCase();
+      const identifier = String($("workspace-manual-id").value || "").trim();
+      if (!/^\d+$/.test(identifier)) {
+        showError("Choose a DC and enter a numeric demo ID or session ID.", { scrollTo: "#workspace-manual-id" });
+        return;
+      }
+      const button = $("btn-workspace-manual");
+      button.disabled = true;
+      button.textContent = "Looking up…";
+      try {
+        const resolved = await api("/api/sessions/resolve-monitor", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), site, identifier }),
+        });
+        const sessions = (resolved.sessions || [])
+          .map((row) => ({ site: row.site || site, session_id: row.sessionId }))
+          .filter((row) => row.session_id);
+        button.disabled = false;
+        button.textContent = "Add to job workspace";
+        await attachWorkspaceSessions(
+          sessions,
+          button,
+          `Added ${sessions.length} session(s) to the job workspace.`,
+        );
+        $("workspace-manual-id").value = "";
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Add to job workspace";
+      }
+    }
+
+    async function attachOneMonitorSession(button) {
+      if (!ensureTokenReady("adding the session to monitoring")) return;
+      const site = String(button.dataset.site || "").toLowerCase();
+      const sessionId = String(button.dataset.session || "");
+      if (!site || !sessionId) return;
+      button.disabled = true;
+      button.classList.add("is-busy");
+      button.textContent = "Adding…";
+      showError("");
+      noteLog(`Adding ${site.toUpperCase()} session ${sessionId} to monitoring…`);
+      try {
+        const job = await api("/api/jobs/attach", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            job_id: jobId || "",
+            sessions: [{ site, session_id: sessionId }],
+            selected_vms: selectedVms(),
+            monitor_only: true,
+          }),
+        });
+        setJobId(job.id);
+        lastLogLen = 0;
+        applyJobToForm(job);
+        renderJob(job, { forceCards: true });
+        button.classList.remove("is-busy");
+        markFoundSessionsOnCards(job);
+        startPolling();
+        noteLog(`${site.toUpperCase()}: session ${sessionId} added to monitoring.`);
+      } catch (err) {
+        button.classList.remove("is-busy");
+        button.disabled = false;
+        button.textContent = "Add";
+        showError(err.message);
+      } finally {
+        button.classList.remove("is-busy");
+        syncFoundAll();
+      }
+    }
+
+    async function attachOneWorkspaceSession(button) {
+      if (!ensureTokenReady("adding the session to the job workspace")) return;
+      const site = String(button.dataset.site || "").toLowerCase();
+      const sessionId = String(button.dataset.session || "");
+      if (!site || !sessionId) return;
+      await attachWorkspaceSessions(
+        [{ site, session_id: sessionId }],
+        button,
+        `${site.toUpperCase()}: session ${sessionId} added to the job workspace.`,
+      );
+    }
+
+    async function attachSelectedWorkspaceSessions() {
+      const sessions = [...document.querySelectorAll(".workspace-found-session:checked:not(:disabled)")]
+        .map((box) => ({ site: box.dataset.site, session_id: box.dataset.session }));
+      if (!sessions.length) return;
+      await attachWorkspaceSessions(
+        sessions,
+        $("btn-attach-workspace-sessions"),
+        `Added ${sessions.length} session(s) to the job workspace.`,
+      );
     }
 
     async function addManualMonitoring() {
@@ -7933,6 +9968,18 @@
         openShareModal(shareBtn).catch((err) => showError(err.message));
         return;
       }
+      const infoBtn = ev.target.closest(".btn-card-info");
+      if (infoBtn) {
+        ev.preventDefault();
+        const card = infoBtn.closest(".card");
+        showSessionInfo({
+          site: infoBtn.dataset.site,
+          sessionId: infoBtn.dataset.session,
+          label: card?.querySelector(".card-name-btn, .card-name")?.textContent?.trim() || "",
+        });
+        closeVmMenuFrom(infoBtn);
+        return;
+      }
       const menuAction = ev.target.closest(".vm-menu-list button");
       const moveBtn = ev.target.closest(".btn-move-card");
       if (moveBtn) {
@@ -8061,6 +10108,13 @@
       if (ev.target.closest("details.vm-menu")) return;
       closeAllVmMenus();
     });
+    document.addEventListener("click", (ev) => {
+      const menu = ev.target.closest("details.search-actions-menu");
+      if (menu && !ev.target.closest(".search-actions-menu a")) return;
+      closeSearchActionsMenus();
+    });
+    document.addEventListener("scroll", () => closeSearchActionsMenus(), true);
+    window.addEventListener("resize", () => closeSearchActionsMenus());
     $("btn-import").addEventListener("click", () => importToken().catch((err) => showError(err.message)));
     $("btn-login").addEventListener("click", () => loginToDcloud().catch((err) => showError(err.message)));
     $("btn-clear-session").addEventListener("click", () => clearLoginSession().catch((err) => showError(err.message)));
@@ -8226,6 +10280,25 @@
     $("monitor-manual-id").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") addManualMonitoring().catch((err) => showError(err.message));
     });
+    $("btn-find-workspace-sessions").addEventListener("click", () => findWorkspaceSessions().catch((err) => showError(err.message)));
+    $("btn-workspace-manual").addEventListener("click", () => addManualWorkspaceSession().catch((err) => showError(err.message)));
+    $("workspace-manual-id").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") addManualWorkspaceSession().catch((err) => showError(err.message));
+    });
+    $("btn-workspace-check-all").addEventListener("click", () => setWorkspaceFoundChecks(true));
+    $("btn-workspace-uncheck-all").addEventListener("click", () => setWorkspaceFoundChecks(false));
+    $("btn-workspace-expand-sessions").addEventListener("click", () => setDcGroupsOpen("found-workspace-sessions", true));
+    $("btn-workspace-collapse-sessions").addEventListener("click", () => setDcGroupsOpen("found-workspace-sessions", false));
+    $("btn-attach-workspace-sessions").addEventListener("click", () => attachSelectedWorkspaceSessions().catch((err) => showError(err.message)));
+    $("found-workspace-sessions").addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("workspace-found-session-dc-head")) {
+        const site = ev.target.dataset.site;
+        document.querySelectorAll(`.workspace-found-session[data-site="${site}"]:not(:disabled)`).forEach((box) => {
+          box.checked = ev.target.checked;
+        });
+      }
+      syncWorkspaceFoundAll();
+    });
     $("btn-decline-all-surveys").addEventListener("click", () => declineAllSurveys().catch((err) => showError(err.message)));
     $("btn-find-saved").addEventListener("click", () => findSavedContents("cleanup").catch((err) => showError(err.message)));
     $("btn-delete-saved").addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
@@ -8241,6 +10314,18 @@
     $("btn-uncheck-all-saved").addEventListener("click", () => setFoundSavedChecks(false));
     $("btn-recheck-saved-ids").addEventListener("click", () => recheckSavedIdsOnFoundContent());
     $("btn-attach-sessions").addEventListener("click", () => attachSelectedSessions().catch((err) => showError(err.message)));
+    $("found-sessions").addEventListener("click", (ev) => {
+      const addBtn = ev.target.closest(".btn-add-found-session");
+      if (!addBtn || addBtn.disabled) return;
+      ev.preventDefault();
+      attachOneMonitorSession(addBtn).catch((err) => showError(err.message));
+    });
+    $("found-workspace-sessions").addEventListener("click", (ev) => {
+      const addBtn = ev.target.closest(".btn-add-workspace-session");
+      if (!addBtn || addBtn.disabled) return;
+      ev.preventDefault();
+      attachOneWorkspaceSession(addBtn).catch((err) => showError(err.message));
+    });
     $("found-sessions").addEventListener("change", (ev) => {
       if (ev.target.classList.contains("found-session-dc-head")) {
         const site = ev.target.dataset.site;
@@ -8284,9 +10369,6 @@
       hideSavedIdRows([{ site: btn.dataset.site, saved_id: btn.dataset.savedId }]).catch((err) => showError(err.message));
     });
     $("btn-cai-connect").addEventListener("click", () => connectCai().catch((err) => showError(err.message)));
-    $("btn-cai-open").addEventListener("click", () => {
-      window.open(CAI_HOME_URL, "_blank", "noopener,noreferrer");
-    });
     $("btn-cai-load-vms").addEventListener("click", () => loadCaiVms().catch((err) => showError(err.message)));
     $("btn-cai-replace").addEventListener("click", () => submitCaiReplace().catch((err) => showError(err.message)));
     $("btn-cai-integrate").addEventListener("click", () => submitCaiIntegrate().catch((err) => showError(err.message)));
@@ -8305,9 +10387,6 @@
     $("btn-cai-template-refresh").addEventListener("click", () => refreshCaiTemplates().catch((err) => showError(err.message)));
     $("btn-cai-template-clear").addEventListener("click", () => clearCaiTemplates().catch((err) => showError(err.message)));
     $("btn-camgr-connect").addEventListener("click", () => connectCamgr().catch((err) => showError(err.message)));
-    $("btn-camgr-open").addEventListener("click", () => {
-      window.open(CAMGR_HOME_URL, "_blank", "noopener,noreferrer");
-    });
     $("btn-camgr-load-vms").addEventListener("click", () => loadCamgrVms().catch((err) => showError(err.message)));
     $("btn-camgr-transfer").addEventListener("click", () => submitCamgrTransfer().catch((err) => showError(err.message)));
     $("btn-camgr-vms-check-all").addEventListener("click", () => setCamgrVmChecks(true));
@@ -8328,6 +10407,196 @@
       if (ev.target.classList.contains("camgr-dest-box")) syncCamgrVpodSelects();
       syncCamgrIntegrateOption();
     });
+    $("camgr-auto-integrate").addEventListener("change", () => syncCamgrIntegrateOption());
+    $("camgr-burn-in").addEventListener("change", () => syncCamgrIntegrateOption());
+    $("camgr-burn-in-days").addEventListener("change", () => {
+      $("camgr-burn-in-days").value = String(
+        Math.max(1, Number.parseInt($("camgr-burn-in-days").value || "1", 10) || 1),
+      );
+    });
+    restoreUnifiedSearchSettings();
+    unifiedSavedDataReady = restoreUnifiedSavedData();
+    window.setInterval(updateUnifiedCacheStatus, 60 * 1000);
+    $("btn-unified-search").addEventListener("click", () => searchAllDcloud());
+    $("btn-unified-load-content").addEventListener("click", () => loadUnifiedDcData(["content"]));
+    $("btn-unified-load-sessions").addEventListener("click", () => loadUnifiedDcData(["sessions"]));
+    $("btn-unified-load-both").addEventListener("click", () => loadUnifiedDcData(["content", "sessions"]));
+    $("btn-unified-search-refresh").addEventListener("click", () => {
+      const sources = ["content", "sessions"].filter((source) => unifiedSearchDcData.loaded[source]);
+      if (!sources.length) {
+        $("unified-search-status").textContent = "Load Content or Sessions first.";
+        return;
+      }
+      loadUnifiedDcData(sources, { refreshData: true });
+    });
+    $("btn-unified-search-all-dcs").addEventListener("click", () => {
+      document.querySelectorAll(".unified-search-dc").forEach((box) => { box.checked = true; });
+      saveUnifiedSearchSettings();
+    });
+    $("btn-unified-search-no-dcs").addEventListener("click", () => {
+      document.querySelectorAll(".unified-search-dc").forEach((box) => { box.checked = false; });
+      saveUnifiedSearchSettings();
+    });
+    document.querySelectorAll(".unified-search-dc").forEach((box) => {
+      box.addEventListener("change", () => {
+        saveUnifiedSearchSettings();
+      });
+    });
+    $("unified-search-exact").addEventListener("change", () => {
+      saveUnifiedSearchSettings();
+      if (unifiedSearchLastData) searchAllDcloud();
+    });
+    $("unified-search-filter").addEventListener("input", () => {
+      unifiedSearchLimits.clear();
+      saveUnifiedSearchSettings();
+      renderUnifiedDcData();
+    });
+    $("unified-search-status-filter")?.addEventListener("change", () => {
+      unifiedSearchLimits.clear();
+      saveUnifiedSearchSettings();
+      renderUnifiedDcData();
+    });
+    $("unified-search-query").addEventListener("input", () => saveUnifiedSearchSettings());
+    $("unified-search-query").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        searchAllDcloud();
+      }
+    });
+    $("btn-unified-expand-all").addEventListener("click", () => setUnifiedSectionsOpen(true));
+    $("btn-unified-collapse-all").addEventListener("click", () => setUnifiedSectionsOpen(false));
+    $("unified-search-results").addEventListener("click", (ev) => {
+      const header = ev.target.closest("th.sortable-col");
+      if (header) {
+        const source = header.dataset.sortSource || "";
+        const key = header.dataset.sortKey || "";
+        const sort = unifiedSort[source];
+        if (sort) {
+          sort.dir = sort.key === key && sort.dir === "asc" ? "desc" : sort.key === key ? "asc" : "asc";
+          sort.key = key;
+          renderUnifiedDcData();
+        }
+        return;
+      }
+      const expandButton = ev.target.closest(".btn-search-expand-all");
+      if (expandButton) {
+        setUnifiedGroupsOpen(expandButton.dataset.source || "", true);
+        return;
+      }
+      const collapseButton = ev.target.closest(".btn-search-collapse-all");
+      if (collapseButton) {
+        setUnifiedGroupsOpen(collapseButton.dataset.source || "", false);
+        return;
+      }
+      const moreButton = ev.target.closest(".btn-search-show-more");
+      if (moreButton) {
+        const key = `${moreButton.dataset.source || ""}:${moreButton.dataset.site || ""}`;
+        unifiedSearchLimits.set(key, (unifiedSearchLimits.get(key) || 100) + 100);
+        renderUnifiedDcData();
+        return;
+      }
+      const actionButton = ev.target.closest(".search-row-action");
+      if (actionButton) {
+        const menu = actionButton.closest(".search-actions-menu");
+        const source = menu?.dataset.source || "";
+        const site = menu?.dataset.site || "";
+        const id = menu?.dataset.id || "";
+        const row = findUnifiedRow(source, site, id);
+        if (!row) return;
+        menu.open = false;
+        const action = actionButton.dataset.action || "";
+        if (action === "content-schedule") {
+          openScheduleWithIds(
+            { [site]: row.scheduleId || row.id },
+            `Loaded ${site.toUpperCase()} content ${row.id} into Schedule sessions.`,
+            "unified-search-status",
+          );
+          return;
+        }
+        if (action.startsWith("content-")) {
+          if (!ensureTokenReady(`loading content ${action.slice(8)}`)) return;
+          const labels = {
+            "content-filters": "Filters",
+            "content-permissions": "Permissions",
+            "content-resources": "Content resources",
+          };
+          loadContentActionDetails(row, labels[action] || "Details");
+          return;
+        }
+        if (action === "session-info") {
+          showSessionInfo({ site: row.site, sessionId: row.id, label: row.name });
+          return;
+        }
+        if (action === "session-workspace") {
+          attachSearchSession(row, { monitorOnly: false });
+          return;
+        }
+        if (action === "session-monitor") {
+          attachSearchSession(row, { monitorOnly: true });
+          return;
+        }
+        if (action === "session-edit") {
+          if (!ensureTokenReady("editing the session")) return;
+          openSessionEditModal(row);
+          return;
+        }
+        if (action === "session-logs") {
+          if (!ensureTokenReady("loading the session log")) return;
+          showSessionLog(row);
+          return;
+        }
+        if (action === "session-share") {
+          actionButton.dataset.site = site;
+          actionButton.dataset.shareKind = "session";
+          actionButton.dataset.session = row.id;
+          actionButton.dataset.name = row.name || "";
+          openShareModal(actionButton);
+          return;
+        }
+        const sessionActions = {
+          "session-cancel": "cancel",
+          "session-end": "end",
+          "session-save": "save",
+          "session-reset": "reset",
+        };
+        if (sessionActions[action]) runSearchSessionAction(row, sessionActions[action]);
+        return;
+      }
+      const contentButton = ev.target.closest(".btn-search-content-schedule");
+      if (contentButton) {
+        openScheduleWithIds(
+          { [contentButton.dataset.site || ""]: contentButton.dataset.id || "" },
+          `Loaded ${String(contentButton.dataset.site || "").toUpperCase()} content ${contentButton.dataset.id || ""} into Schedule sessions.`,
+          "unified-search-status",
+        );
+      }
+    });
+    $("unified-catalog-results").addEventListener("click", (ev) => {
+      const catalogButton = ev.target.closest(".btn-search-catalog-schedule");
+      if (catalogButton) scheduleCatalogSearchResult(catalogButton.dataset.name || "", catalogButton);
+    });
+    $("details-modal-body").addEventListener("click", (ev) => {
+      const reveal = ev.target.closest(".btn-reveal-secret");
+      if (!reveal) return;
+      ev.preventDefault();
+      const holder = reveal.parentElement?.querySelector(".secret-value");
+      if (!holder) return;
+      const shown = holder.dataset.shown === "1";
+      holder.textContent = shown ? "••••••" : (holder.dataset.secret || "");
+      holder.dataset.shown = shown ? "0" : "1";
+      reveal.textContent = shown ? "Show" : "Hide";
+    });
+    $("details-modal-close").addEventListener("click", () => $("details-modal").classList.add("hidden"));
+    $("details-modal-backdrop").addEventListener("click", () => $("details-modal").classList.add("hidden"));
+    $("session-edit-save").addEventListener("click", () => submitSessionEdit());
+    $("session-edit-cancel").addEventListener("click", () => {
+      $("session-edit-modal").classList.add("hidden");
+      sessionEditRow = null;
+    });
+    $("session-edit-backdrop").addEventListener("click", () => {
+      $("session-edit-modal").classList.add("hidden");
+      sessionEditRow = null;
+    });
     $("vm-all").addEventListener("change", (ev) => {
       document.querySelectorAll("input[data-vm]").forEach((box) => { box.checked = ev.target.checked; });
     });
@@ -8336,6 +10605,15 @@
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape") return;
+      if (!$("details-modal")?.classList.contains("hidden")) {
+        $("details-modal").classList.add("hidden");
+        return;
+      }
+      if (!$("session-edit-modal")?.classList.contains("hidden")) {
+        $("session-edit-modal").classList.add("hidden");
+        sessionEditRow = null;
+        return;
+      }
       if (!$("fresh-modal")?.classList.contains("hidden")) {
         closeFreshModal(null);
         return;
@@ -8361,36 +10639,71 @@
     $("confirm-alert-cancel")?.addEventListener("click", () => hideConfirmAlert(false));
     $("confirm-alert-backdrop")?.addEventListener("click", () => hideConfirmAlert(false));
 
-    $("prompt-alert-ok")?.addEventListener("click", () => hidePromptAlert($("prompt-alert-input")?.value ?? ""));
+    $("prompt-alert-ok")?.addEventListener("click", () => hidePromptAlert(promptSaveValues()));
     $("prompt-alert-cancel")?.addEventListener("click", () => hidePromptAlert(null));
     $("prompt-alert-backdrop")?.addEventListener("click", () => hidePromptAlert(null));
     $("prompt-alert-input")?.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") {
         ev.preventDefault();
-        hidePromptAlert($("prompt-alert-input")?.value ?? "");
+        hidePromptAlert(promptSaveValues());
       }
     });
+    $("prompt-alert-description")?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        hidePromptAlert(promptSaveValues());
+      }
+    });
+
+    function isHubScrollTarget(target) {
+      return [
+        "#btn-camgr-load-vms",
+        "#btn-cai-load-vms",
+        "#btn-camgr-connect",
+        "#btn-cai-connect",
+        "#cai-task-group",
+        "#camgr-task-group",
+        "#saved-ids-panel",
+        "#saved-ids-table",
+        "#camgr-dev-vpod",
+        "#camgr-dev-vm-list",
+        "#camgr-dest-list",
+        "#cai-template-mode",
+        "#cai-template-vm",
+        "#cai-template-dests",
+      ].includes(target);
+    }
+
+    function goToPageTarget(target) {
+      if (!target) return;
+      const selector = target.startsWith("#") || target.startsWith(".") ? target : null;
+      const el = selector ? document.querySelector(selector) : null;
+      if (isHubScrollTarget(target)) {
+        const hub = $("saved-ids-panel");
+        hub?.classList.remove("hidden");
+        if (hub) hub.open = true;
+      }
+      if (el && el.tagName === "DETAILS") el.open = true;
+      if (target === "#panel-recovery" || target === "#panel-cleanup") {
+        if (el) el.open = true;
+      }
+      const scroll = () => {
+        const node = selector ? document.querySelector(selector) : null;
+        if (!node) return;
+        node.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      // Opening <details> jumps to the hub summary. Wait a tick, then scroll to the section.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setTimeout(scroll, 40));
+      });
+    }
 
     $("action-alert-ok").addEventListener("click", () => hideActionAlert());
     $("action-alert-backdrop").addEventListener("click", () => hideActionAlert());
     $("action-alert-goto").addEventListener("click", () => {
       const target = actionAlertScrollTarget;
       hideActionAlert();
-      if (target) {
-        const el = target.startsWith("#") || target.startsWith(".")
-          ? document.querySelector(target)
-          : null;
-        if (target === "#btn-camgr-load-vms" || target === "#btn-cai-load-vms" || target === "#saved-ids-panel" || target === "#saved-ids-table") {
-          const hub = $("saved-ids-panel");
-          hub?.classList.remove("hidden");
-          if (hub) hub.open = true;
-        }
-        if (el && "open" in el) el.open = true;
-        if (target === "#panel-recovery" || target === "#panel-cleanup") {
-          el && (el.open = true);
-        }
-        el?.scrollIntoView({ behavior: "smooth", block: el && el.tagName === "BUTTON" ? "center" : "start" });
-      }
+      goToPageTarget(target);
     });
 
     $("schedule-conflict-use-next")?.addEventListener("click", () => {
@@ -8422,6 +10735,24 @@
     });
     $("token-alert-dismiss").addEventListener("click", () => hideTokenAlert());
     $("token-alert-backdrop").addEventListener("click", () => hideTokenAlert());
+    $("btn-dcloud-authorize")?.addEventListener("click", openDcloudAuth);
+    $("btn-close-dcloud-auth")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeDcloudAuth();
+    });
+    $("auth-panel-backdrop")?.addEventListener("click", closeDcloudAuth);
+    $("dtoken")?.addEventListener("input", () => {
+      manualDcloudTokenValidated = false;
+      if ($("token-source").value === "paste") {
+        setDcloudAuthorizationState(false, "Validate the pasted token to sign in to dCloud.");
+      }
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && $("panel-step1")?.classList.contains("auth-panel-open")) {
+        closeDcloudAuth();
+      }
+    });
 
     const HOVER_TIP_DELAY_MS = 1500;
     let hoverTipEl = null;
@@ -8510,10 +10841,15 @@
       }
     }, true);
 
+    initSectionOrdering();
     initUiStatePersistence();
     initHubHelpToggle();
     bootstrapPage().catch(() => {});
     fillTimeOptions();
+    // Chrome restores number inputs across a refresh, so a long duration from the
+    // last schedule would silently come back. Every refresh starts at 1 day.
+    $("days").value = "1";
+    if ($("saved-days")) $("saved-days").value = "1";
     fillScheduleFromNow();
     syncMainScheduleToSaved();
     syncRunButton();

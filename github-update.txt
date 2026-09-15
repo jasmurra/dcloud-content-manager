@@ -1,0 +1,4 @@
+# GitHub source used by start.command. HTTPS, no SSH keys, no tokens in this file.
+# Coworkers do not log into this repo if it is public.
+repo=jasmurra/dcloud-content-manager
+branch=main

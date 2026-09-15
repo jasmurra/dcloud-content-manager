@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -11,6 +13,13 @@ import requests
 import urllib3
 
 from browser_auth.chrome_profiles import chrome_cookie_files, chrome_cookie_snapshot
+from net_errors import describe_request_error
+from camgr_tab import (
+    chrome_tab_request,
+    connect_camgr_via_chrome_tab,
+    probe_camgr_via_chrome_tab,
+    using_chrome_tab,
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -38,6 +47,7 @@ TERMINAL_STATUSES = frozenset({"COMPLETE", "ERROR"})
 _SESSION_COOKIE_HINTS = ("mod_auth_openidc", "openidc", "session")
 # One per login attempt; leftovers from extra tabs, useless for staying signed in.
 _STATE_COOKIE_PREFIX = "mod_auth_openidc_state"
+CAMGR_LOGIN_HINT = "Click Connect to CAMGR while Content Transfer is open in Chrome."
 _cookie_sink: Any = None
 
 
@@ -114,6 +124,8 @@ def _path_candidates(site: str) -> list[tuple[str, str]]:
 
 
 def _session(cookie_header: str) -> requests.Session:
+    if using_chrome_tab(cookie_header):
+        raise RuntimeError("CAMGR Chrome tab session cannot be sent as an HTTP Cookie header.")
     sess = requests.Session()
     sess.headers.update(
         {
@@ -185,31 +197,36 @@ def _auth_error(message: str) -> dict[str, Any]:
 
 
 def probe_camgr_login(cookie_header: str) -> dict[str, Any]:
-    sess = _session(cookie_header)
-    try:
-        resp = sess.get(f"{CAMGR_API}/users/current", timeout=30, allow_redirects=True)
-    except requests.RequestException as exc:
-        return _auth_error(str(exc) or "Could not reach Content Automation Manager.")
-    if _looks_sso(resp) or resp.status_code in {401, 403}:
-        return _auth_error(
-            "Not signed in to Content Automation Manager. Open CAMGR in Chrome, "
-            "finish Cisco/Duo login, then click Connect to CAMGR."
-        )
-    body = _json_body(resp)
-    if resp.status_code >= 400 or not isinstance(body, dict) or not str(body.get("id") or "").strip():
-        return _auth_error(
-            "Not signed in to Content Automation Manager. Open CAMGR in Chrome, "
-            "finish Cisco/Duo login, then click Connect to CAMGR."
-        )
-    user = str(body.get("id") or "").strip()
-    return {
-        "ok": True,
-        "loggedIn": True,
-        "user": user,
-        "access": body.get("access") if isinstance(body.get("access"), dict) else {},
-        "jobs": body.get("jobs"),
-        "message": f"CAMGR session is active ({user}).",
-    }
+    header = (cookie_header or "").strip()
+    if using_chrome_tab(header):
+        return probe_camgr_via_chrome_tab()
+    if header:
+        sess = _session(header)
+        try:
+            resp = sess.get(f"{CAMGR_API}/users/current", timeout=30, allow_redirects=True)
+        except requests.RequestException as exc:
+            return _auth_error(describe_request_error(exc, "CAMGR") or "Could not reach CAMGR.")
+        if "dcloud-camgr.cisco.com" in str(resp.url or "").lower():
+            body = _json_body(resp)
+            user = ""
+            if isinstance(body, dict):
+                for key in ("id", "username", "user", "userId"):
+                    user = str(body.get(key) or "").strip()
+                    if user:
+                        break
+            if resp.status_code < 400 and user:
+                return {
+                    "ok": True,
+                    "loggedIn": True,
+                    "user": user,
+                    "access": body.get("access") if isinstance(body, dict) and isinstance(body.get("access"), dict) else {},
+                    "jobs": body.get("jobs") if isinstance(body, dict) else None,
+                    "message": f"CAMGR session is active ({user}).",
+                }
+    tab = probe_camgr_via_chrome_tab()
+    if tab.get("loggedIn"):
+        return tab
+    return _auth_error(tab.get("message") or CAMGR_LOGIN_HINT)
 
 
 def _camgr_cookies_from_jar(jar) -> dict[str, str]:
@@ -238,67 +255,125 @@ def _cookie_score(cookies: dict[str, str]) -> int:
     return score
 
 
-def _camgr_chrome_candidates() -> tuple[list[tuple[str, dict[str, str]]], list[str]]:
-    """Every Chrome profile that holds dcloud-camgr cookies, best-looking first."""
+def _decrypt_cookie_variants(browser: Any, encrypted_value: bytes, plain: str) -> list[str]:
+    """Chrome v24 cookies prepend a domain hash; older rows in the same DB do not."""
+    values: list[str] = []
+    seen: set[str] = set()
+    if plain:
+        seen.add(plain)
+        values.append(plain)
+    decrypt = getattr(browser, "_decrypt", None)
+    if not decrypt or not encrypted_value:
+        return values
+    for strip_domain_hash in (True, False):
+        try:
+            decoded = decrypt(b"", encrypted_value, strip_domain_hash)
+        except Exception:
+            continue
+        text = str(decoded or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            values.append(text)
+    return values
+
+
+def _camgr_headers_from_snapshot(snapshot: Path) -> list[str]:
     try:
         import browser_cookie3
+        import sqlite3
     except ImportError:
-        return [], ["Install browser-cookie3 to import the CAMGR session from Chrome."]
-
-    files = chrome_cookie_files()
-    if not files:
-        return [], ["Chrome cookie database not found."]
-
-    found: list[tuple[int, str, dict[str, str]]] = []
-    notes: list[str] = []
-    for cookie_file in files:
-        profile = cookie_file.parent.name
-        try:
-            with chrome_cookie_snapshot(cookie_file) as snapshot:
-                jar = browser_cookie3.chrome(
-                    cookie_file=str(snapshot),
-                    domain_name="dcloud-camgr.cisco.com",
-                )
-                cookies = _camgr_cookies_from_jar(jar)
-        except Exception as exc:
-            err = str(exc).strip().split("\n")[0]
-            notes.append(f"{profile}: {err[:120]}")
+        return []
+    try:
+        browser = browser_cookie3.Chrome(
+            cookie_file=str(snapshot),
+            domain_name="dcloud-camgr.cisco.com",
+        )
+    except Exception:
+        return []
+    try:
+        con = sqlite3.connect(str(snapshot))
+        rows = con.execute(
+            "select name, value, encrypted_value from cookies "
+            "where host_key like '%dcloud-camgr.cisco.com%'"
+        ).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return []
+    variants: list[dict[str, str]] = [{}]
+    for name, value, encrypted in rows:
+        cookie_name = str(name or "")
+        if not cookie_name or _is_state_cookie(cookie_name):
             continue
-        if cookies:
-            found.append((_cookie_score(cookies), profile, cookies))
-    found.sort(key=lambda row: row[0], reverse=True)
-    return [(profile, cookies) for _score, profile, cookies in found], notes
+        enc = bytes(encrypted) if encrypted else b""
+        options = _decrypt_cookie_variants(browser, enc, str(value or "").strip())
+        if not options:
+            continue
+        next_variants: list[dict[str, str]] = []
+        for base in variants:
+            for option in options:
+                merged = dict(base)
+                merged[cookie_name] = option
+                next_variants.append(merged)
+        variants = next_variants[:4]
+    headers: list[str] = []
+    seen: set[str] = set()
+    for cookies in variants:
+        header = build_cookie_header(cookies)
+        if header and header not in seen:
+            seen.add(header)
+            headers.append(header)
+    return headers
 
 
 def import_camgr_cookies_from_chrome() -> tuple[str | None, str]:
-    candidates, notes = _camgr_chrome_candidates()
-    fallback = ""
-    fallback_count = 0
-    for profile, cookies in candidates:
-        header = "; ".join(f"{name}={value}" for name, value in cookies.items())
-        if not fallback:
-            fallback, fallback_count = header, len(cookies)
-        # Several profiles can hold camgr cookies; only one is the live login.
-        if probe_camgr_login(header).get("loggedIn"):
-            return header, f"Imported {len(cookies)} CAMGR cookie(s) from Chrome ({profile})."
-    if fallback:
-        return fallback, f"Imported {fallback_count} CAMGR cookie(s) from Chrome."
-    extra = notes[0] if notes else "Chrome has not written a dcloud-camgr.cisco.com login cookie to disk"
-    return (
-        None,
-        f"{extra}. Chrome keeps the CAMGR login in memory unless it is set to reopen tabs on startup "
-        "(chrome://settings/onStartup → Continue where you left off). Either turn that on and sign in "
-        "again, or copy the Cookie header from the CAMGR tab (DevTools → Network → any /ca/api request → "
-        "Request Headers → Cookie) and paste it below.",
-    )
+    files = chrome_cookie_files()
+    notes: list[str] = []
+    if not files:
+        return None, "Chrome cookie database not found."
+    for cookie_file in files:
+        profile = cookie_file.parent.parent.name if cookie_file.parent.name == "Network" else cookie_file.parent.name
+        try:
+            with chrome_cookie_snapshot(cookie_file) as snapshot:
+                headers = _camgr_headers_from_snapshot(snapshot)
+                if not headers:
+                    # Fall back to browser_cookie3's single decrypt.
+                    try:
+                        import browser_cookie3
+                        jar = browser_cookie3.chrome(
+                            cookie_file=str(snapshot),
+                            domain_name="dcloud-camgr.cisco.com",
+                        )
+                        cookies = _camgr_cookies_from_jar(jar)
+                        header = build_cookie_header(cookies)
+                        if header:
+                            headers = [header]
+                    except Exception:
+                        headers = []
+        except Exception as exc:
+            notes.append(f"{profile}: {str(exc).strip().split(chr(10))[0][:120]}")
+            continue
+        for header in headers:
+            if probe_camgr_login(header).get("loggedIn"):
+                return header, f"Imported CAMGR session from Chrome ({profile})."
+    extra = notes[0] if notes else "Could not read CAMGR session from Chrome"
+    return None, f"{extra}. Open CAMGR, then Connect."
 
 
 def _get_json(cookie_header: str, url: str) -> tuple[Any, requests.Response | None, str]:
+    if using_chrome_tab(cookie_header):
+        status, body, err = chrome_tab_request("GET", url)
+        if err:
+            return None, None, err
+        if status in {401, 403} or status == 0:
+            return None, None, "CAMGR session expired."
+        if status >= 400:
+            return None, None, f"CAMGR HTTP {status}"
+        return body, None, ""
     sess = _session(cookie_header)
     try:
         resp = sess.get(url, timeout=45, allow_redirects=True)
     except requests.RequestException as exc:
-        return None, None, str(exc)
+        return None, None, describe_request_error(exc, "CAMGR")
     if _looks_sso(resp) or resp.status_code in {401, 403}:
         return None, resp, "CAMGR session expired."
     body = _json_body(resp)
@@ -872,24 +947,40 @@ def submit_camgr_transfer(
         payload["name"] = str(integrate_name or "").strip()
         if not payload["name"]:
             return {"ok": False, "loggedIn": True, "message": "Content Integration requires a name."}
-    sess = _session(cookie_header)
-    sess.headers["Content-Type"] = "application/json"
-    try:
-        resp = sess.post(f"{CAMGR_API}/jobs", json=payload, timeout=60, allow_redirects=True)
-    except requests.RequestException as exc:
-        return {"ok": False, "loggedIn": True, "message": str(exc)}
-    if _looks_sso(resp) or resp.status_code in {401, 403}:
-        return _auth_error("CAMGR session expired.")
-    if resp.status_code not in {200, 201}:
-        body = _json_body(resp)
-        detail = ""
-        if isinstance(body, dict):
-            detail = str(body.get("message") or body.get("error") or body.get("detail") or "")
-        return {
-            "ok": False,
-            "loggedIn": True,
-            "message": detail or f"CAMGR transfer failed (HTTP {resp.status_code}).",
-        }
+    if using_chrome_tab(cookie_header):
+        status, body, err = chrome_tab_request("POST", f"{CAMGR_API}/jobs", payload)
+        if err:
+            return {"ok": False, "loggedIn": True, "message": err}
+        if status in {401, 403} or status == 0:
+            return _auth_error("CAMGR session expired.")
+        if status not in {200, 201}:
+            detail = ""
+            if isinstance(body, dict):
+                detail = str(body.get("message") or body.get("error") or body.get("detail") or "")
+            return {
+                "ok": False,
+                "loggedIn": True,
+                "message": detail or f"CAMGR transfer failed (HTTP {status}).",
+            }
+    else:
+        sess = _session(cookie_header)
+        sess.headers["Content-Type"] = "application/json"
+        try:
+            resp = sess.post(f"{CAMGR_API}/jobs", json=payload, timeout=60, allow_redirects=True)
+        except requests.RequestException as exc:
+            return {"ok": False, "loggedIn": True, "message": describe_request_error(exc, "CAMGR")}
+        if _looks_sso(resp) or resp.status_code in {401, 403}:
+            return _auth_error("CAMGR session expired.")
+        if resp.status_code not in {200, 201}:
+            body = _json_body(resp)
+            detail = ""
+            if isinstance(body, dict):
+                detail = str(body.get("message") or body.get("error") or body.get("detail") or "")
+            return {
+                "ok": False,
+                "loggedIn": True,
+                "message": detail or f"CAMGR transfer failed (HTTP {resp.status_code}).",
+            }
     listed = list_camgr_jobs(cookie_header)
     if listed.get("loggedIn") is False:
         return listed
@@ -953,25 +1044,42 @@ def submit_camgr_vpod_transfer(
         "servers": [str(server_id) for server_id in server_ids],
         "dcs": dests,
     }
-    sess = _session(cookie_header)
-    sess.headers["Content-Type"] = "application/json"
-    try:
-        resp = sess.post(f"{CAMGR_API}/jobs", json=payload, timeout=60, allow_redirects=True)
-    except requests.RequestException as exc:
-        return {"ok": False, "loggedIn": True, "message": str(exc)}
-    if _looks_sso(resp) or resp.status_code in {401, 403}:
-        return _auth_error("CAMGR session expired.")
-    if resp.status_code not in {200, 201}:
-        body = _json_body(resp)
-        detail = ""
-        if isinstance(body, dict):
-            detail = str(body.get("message") or body.get("error") or body.get("detail") or "")
-        return {
-            "ok": False,
-            "loggedIn": True,
-            "message": detail or f"CAMGR transfer failed (HTTP {resp.status_code}).",
-            "payload": payload,
-        }
+    if using_chrome_tab(cookie_header):
+        status, body, err = chrome_tab_request("POST", f"{CAMGR_API}/jobs", payload)
+        if err:
+            return {"ok": False, "loggedIn": True, "message": err}
+        if status in {401, 403} or status == 0:
+            return _auth_error("CAMGR session expired.")
+        if status not in {200, 201}:
+            detail = ""
+            if isinstance(body, dict):
+                detail = str(body.get("message") or body.get("error") or body.get("detail") or "")
+            return {
+                "ok": False,
+                "loggedIn": True,
+                "message": detail or f"CAMGR transfer failed (HTTP {status}).",
+                "payload": payload,
+            }
+    else:
+        sess = _session(cookie_header)
+        sess.headers["Content-Type"] = "application/json"
+        try:
+            resp = sess.post(f"{CAMGR_API}/jobs", json=payload, timeout=60, allow_redirects=True)
+        except requests.RequestException as exc:
+            return {"ok": False, "loggedIn": True, "message": describe_request_error(exc, "CAMGR")}
+        if _looks_sso(resp) or resp.status_code in {401, 403}:
+            return _auth_error("CAMGR session expired.")
+        if resp.status_code not in {200, 201}:
+            body = _json_body(resp)
+            detail = ""
+            if isinstance(body, dict):
+                detail = str(body.get("message") or body.get("error") or body.get("detail") or "")
+            return {
+                "ok": False,
+                "loggedIn": True,
+                "message": detail or f"CAMGR transfer failed (HTTP {resp.status_code}).",
+                "payload": payload,
+            }
     listed = list_camgr_jobs(cookie_header)
     if listed.get("loggedIn") is False:
         return listed

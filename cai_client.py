@@ -8,6 +8,8 @@ from html.parser import HTMLParser
 from typing import Any
 
 import requests
+
+from net_errors import describe_request_error
 import urllib3
 
 from browser_auth.chrome_profiles import chrome_cookie_files, chrome_cookie_snapshot
@@ -173,6 +175,26 @@ def _session(cookie_header: str) -> requests.Session:
     return sess
 
 
+_SSO_HOST_HINTS = ("duosecurity", "id.cisco.com", "cloudsso", "login.cisco.com", "sso.cisco.com")
+
+
+def _looks_signed_out(html: str, status: int, final_url: str) -> bool:
+    """Only an SSO bounce or a login form means signed out.
+
+    A demo page can load fine and still have no replace/integrate form, which is a
+    wrong Target ID rather than an auth problem.
+    """
+    host = (final_url or "").lower()
+    if any(hint in host for hint in _SSO_HOST_HINTS):
+        return True
+    if status in {401, 403}:
+        return True
+    text = (html or "").lower()
+    if "dcloud-cai" in host:
+        return False
+    return "single sign-on" in text or 'name="pf.username"' in text
+
+
 def _looks_logged_in(html: str, status: int, final_url: str) -> bool:
     if status >= 400:
         return False
@@ -196,7 +218,7 @@ def probe_cai_login(cookie_header: str) -> dict[str, Any]:
     try:
         resp = sess.get(CAI_HOME, timeout=30, allow_redirects=True)
     except requests.RequestException as exc:
-        return {"ok": False, "loggedIn": False, "message": str(exc)}
+        return {"ok": False, "loggedIn": False, "message": describe_request_error(exc, "CAI")}
     html = resp.text or ""
     logged = _looks_logged_in(html, resp.status_code, str(resp.url))
     if logged:
@@ -320,7 +342,7 @@ def _get_html(cookie_header: str, url: str) -> tuple[requests.Response | None, s
     try:
         resp = sess.get(url, timeout=30, allow_redirects=True)
     except requests.RequestException as exc:
-        return None, str(exc)
+        return None, describe_request_error(exc, "CAI")
     return resp, ""
 
 
@@ -337,7 +359,7 @@ def fetch_demo_page(cookie_header: str, site: str, saved_id: str) -> dict[str, A
             continue
         if resp is None:
             continue
-        if not _looks_logged_in(resp.text or "", resp.status_code, str(resp.url)):
+        if _looks_signed_out(resp.text or "", resp.status_code, str(resp.url)):
             return {
                 "ok": False,
                 "loggedIn": False,
@@ -346,7 +368,7 @@ def fetch_demo_page(cookie_header: str, site: str, saved_id: str) -> dict[str, A
                 ),
             }
         if resp.status_code == 404:
-            last_err = f"{dc.upper()}: demo {saved} not found."
+            last_err = f"{dc.upper()}: demo {saved} not found in CAI."
             continue
         if resp.status_code >= 400:
             last_err = f"{dc.upper()}: HTTP {resp.status_code}"
@@ -357,7 +379,10 @@ def fetch_demo_page(cookie_header: str, site: str, saved_id: str) -> dict[str, A
         has_replace = bool(parser.vms) or "replaceRequest" in html
         has_integrate = bool(parser.integrate_dcs) or 'id="integrate"' in html
         if not has_replace and not has_integrate:
-            last_err = f"{dc.upper()}: no CAI replace/integrate form for {saved}."
+            last_err = (
+                f"{dc.upper()}: CAI has no replace/integrate form for {saved}. "
+                "Check the Target ID — it must be the saved content ID, not the parent demo."
+            )
             continue
         return {
             "ok": True,
@@ -401,7 +426,7 @@ def submit_vm_replace(
     try:
         resp = sess.post(url, data=data, timeout=60, allow_redirects=True)
     except requests.RequestException as exc:
-        return {"ok": False, "message": str(exc)}
+        return {"ok": False, "message": describe_request_error(exc, "CAI")}
     html = resp.text or ""
     if not _looks_logged_in(html, resp.status_code, str(resp.url)) and "Request Submitted" not in html:
         return {
@@ -510,6 +535,7 @@ def submit_integrate(
     *,
     dest_dcs: list[str],
     cai_dc: str = "",
+    dest_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     saved = str(saved_id or "").strip()
     dests = []
@@ -526,7 +552,14 @@ def submit_integrate(
         return {"ok": False, "message": "Select at least one destination DC to integrate."}
     dc = (cai_dc or "").strip().lower() or _dc_candidates(site)[0]
     url = f"{CAI_BASE}/integrate/{dc}/{saved}"
-    data: list[tuple[str, str]] = [(name, "on") for name in dests]
+    # CAI's own checkbox names win: its EMEA box is "lon", which our canonical
+    # "emea" code would never match, so that dest silently never submitted.
+    fields: list[str] = []
+    for raw in dest_fields or dests:
+        name = str(raw or "").strip()
+        if name and name not in fields:
+            fields.append(name)
+    data: list[tuple[str, str]] = [(name, "on") for name in fields]
     sess = _session(cookie_header)
     sess.headers["Referer"] = f"{CAI_BASE}/demo/{dc}/{saved}/"
     sess.headers["Origin"] = CAI_BASE
@@ -534,7 +567,7 @@ def submit_integrate(
     try:
         resp = sess.post(url, data=data, timeout=60, allow_redirects=True)
     except requests.RequestException as exc:
-        return {"ok": False, "message": str(exc)}
+        return {"ok": False, "message": describe_request_error(exc, "CAI")}
     html = resp.text or ""
     if not _looks_logged_in(html, resp.status_code, str(resp.url)) and "Request Submitted" not in html:
         return {
@@ -649,7 +682,7 @@ def submit_template(
     try:
         resp = sess.post(url, data=data, timeout=60, allow_redirects=True)
     except requests.RequestException as exc:
-        return {"ok": False, "message": str(exc)}
+        return {"ok": False, "message": describe_request_error(exc, "CAI")}
     html = resp.text or ""
     if not _looks_logged_in(html, resp.status_code, str(resp.url)) and "Request Submitted" not in html:
         return {
@@ -754,7 +787,9 @@ def normalize_task_status(raw: str) -> str:
         return "queuing"
     if "process" in text:
         return "processing"
-    return text or "unknown"
+    # Empty stays empty so callers can fall back to the request's own status
+    # instead of showing a dest as "Unknown" before CAI lists a task for it.
+    return text
 
 
 _INTEGRATE_STATUS_LABELS = {
@@ -862,6 +897,15 @@ def cai_integrate_dc_chips(
     return chips
 
 
+def parse_cai_task_server(raw: str) -> tuple[str, str]:
+    """CAI Tasks Server cell: `480730 || UCCX150SUB` → ("480730", "UCCX150SUB")."""
+    text = str(raw or "").strip()
+    if "||" in text:
+        demo, vm = text.split("||", 1)
+        return demo.strip(), vm.strip()
+    return "", text
+
+
 def match_replace_task(
     tasks: list[dict[str, str]],
     *,
@@ -872,7 +916,10 @@ def match_replace_task(
     saved = str(saved_id).strip()
     vm = str(vm_name).strip().lower()
     target = str(target_id).strip()
-    hits: list[dict[str, str]] = []
+    # An exact VM-name match must win: a substring match would let UCCX150
+    # pick up the UCCX150SUB row and report one VM's status for both.
+    exact: list[dict[str, str]] = []
+    loose: list[dict[str, str]] = []
     for task in tasks:
         if "replacement" not in str(task.get("type") or "").lower():
             continue
@@ -881,19 +928,117 @@ def match_replace_task(
         if demo and demo != saved:
             # Demo-page tasks often have empty demo; homepage has it.
             continue
-        if vm and vm not in server.lower():
-            continue
         if target and target not in server and demo != saved:
             continue
-        hits.append(task)
+        if not vm:
+            exact.append(task)
+            continue
+        _server_demo, server_vm = parse_cai_task_server(server)
+        if server_vm.strip().lower() == vm:
+            exact.append(task)
+        elif vm in server.lower():
+            loose.append(task)
+    hits = exact or loose
     if not hits:
         for task in tasks:
             if "replacement" not in str(task.get("type") or "").lower():
                 continue
             server = str(task.get("server") or "")
-            if vm and vm in server.lower() and (not target or target in server):
-                hits.append(task)
+            if target and target not in server:
+                continue
+            _server_demo, server_vm = parse_cai_task_server(server)
+            if vm and server_vm.strip().lower() == vm:
+                exact.append(task)
+            elif vm and vm in server.lower():
+                loose.append(task)
+        hits = exact or loose
     if not hits:
         return None
     # Prefer the newest-looking row (homepage lists newest first).
     return hits[0]
+
+
+_REPLACE_STATUS_LABELS = {
+    "completed": "Completed",
+    "processing": "Processing",
+    "queuing": "Queued",
+    "submitted": "Submitted",
+    "error": "Error",
+}
+
+
+def cai_replace_vm_chips(
+    vms: list[str] | tuple[str, ...] | None,
+    tasks: list[dict[str, str]] | None,
+    *,
+    saved_id: str,
+    target_id: str = "",
+    overall: str = "",
+    previous: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Per-VM pills for a replacement: CAI queues one task per VM, each with its own status."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw in vms or []:
+        name = str(raw or "").strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        names.append(name)
+    prev_by_vm: dict[str, dict[str, Any]] = {}
+    for chip in previous or []:
+        if not isinstance(chip, dict):
+            continue
+        key = str(chip.get("vm") or "").strip().lower()
+        if key:
+            prev_by_vm[key] = chip
+    fallback = normalize_task_status(overall) if overall else ""
+    chips: list[dict[str, Any]] = []
+    for name in names:
+        old = prev_by_vm.get(name.lower()) or {}
+        task = match_replace_task(
+            tasks or [],
+            saved_id=saved_id,
+            vm_name=name,
+            target_id=target_id,
+        )
+        status = normalize_task_status(str((task or {}).get("status") or ""))
+        old_status = normalize_task_status(str(old.get("status") or old.get("phase") or ""))
+        if not status:
+            # A finished task drops off the CAI homepage, so a missing row must not
+            # walk a VM backwards from Completed/Error to Queued.
+            status = old_status if old_status in {"completed", "error"} else (old_status or fallback or "queuing")
+        new_id = parse_cai_new_id(str((task or {}).get("newId") or ""))
+        if not new_id:
+            new_id = str(old.get("newId") or "").strip()
+        source, dest = parse_cai_task_dc(str((task or {}).get("dc") or ""))
+        server = str((task or {}).get("server") or "").strip() or str(old.get("server") or "").strip()
+        updated = str((task or {}).get("updated") or "").strip() or str(old.get("updated") or "").strip()
+        done = status == "completed"
+        pretty = _REPLACE_STATUS_LABELS.get(status, status.replace("_", " ").title() or "Queued")
+        label = f"{name} ✓" if done else f"{name} {pretty}"
+        tip_parts = [f"{name} · {pretty}"]
+        if source or dest:
+            tip_parts.append(f"{source} => {dest}" if source else dest)
+        if server:
+            tip_parts.append(server)
+        if new_id:
+            tip_parts.append(f"new ID {new_id}")
+        if updated:
+            tip_parts.append(f"updated {updated}")
+        chips.append(
+            {
+                "vm": name,
+                "phase": status,
+                "status": status,
+                "done": done,
+                "newId": new_id,
+                "server": server,
+                "updated": updated,
+                "dc": dest,
+                "source": source,
+                "label": label,
+                "tip": " · ".join(tip_parts),
+            }
+        )
+    return chips

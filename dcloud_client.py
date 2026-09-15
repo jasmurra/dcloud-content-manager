@@ -6,15 +6,18 @@ import base64
 import binascii
 import json
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from html import unescape
 from typing import Any, Callable
 from urllib.parse import quote, urlencode, urljoin, urlparse
 
 import requests
 import urllib3
 
+from net_errors import describe_request_error, looks_off_network
 from browser_auth.dcloud_token import (
     DEFAULT_TIMEOUT,
     dcloud_auth_header,
@@ -25,6 +28,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SITES = ("sjc", "rtp", "lon", "sng", "syd")
 KNOWN_SITES = frozenset(SITES)
+_ADMIN_SEARCH_CACHE_SECONDS = 15 * 60
+_admin_search_cache_lock = threading.Lock()
+_admin_search_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 
 # Same Dev Pool IDs the dCloud bot /sch command uses.
 DEV_POOLS = {
@@ -34,7 +40,6 @@ DEV_POOLS = {
     "sng": "8oaulypgb7540ffe81epjd17b",
 }
 CORE_POOL = "core-content-pool"
-RTP_BLOCK6_POOL = "bea0vjzsnoj7jhks1svt2f5vl"
 
 # Bot /sch ID,days,min,exp sets contentExport to the JSON string "true".
 # Regular /sch ID,days,min uses "false".
@@ -45,9 +50,12 @@ CONTENT_REGULAR = "false"
 # Public /api/public/checkSession returns names: ACTIVE, STARTING_UP, …
 ACTIVE_STATUSES = {"active", "available", "4"}
 ACTIVE_NUMERIC = {4}
-# v2 numeric: 10 = PRESERVE/saving, 12 = SAVED. Same IDs as session.activeId / activeDemoId.
-SAVED_STATUSES = {"saved", "preserve", "preserving", "saving", "10", "12"}
-SAVED_NUMERIC = {10, 12}
+# Numeric codes seen alongside the public names: 10 = PRESERVE and 12 = SAVING are
+# still in progress, 13 = SAVED is the last status dCloud reports for a save.
+SAVING_IN_PROGRESS_STATUSES = {"saving", "preserve", "preserving", "10", "12"}
+SAVING_IN_PROGRESS_NUMERIC = {10, 12}
+SAVED_STATUSES = {"saved", "13"}
+SAVED_NUMERIC = {13}
 FAILED_STATUSES = {
     "failed",
     "error",
@@ -64,6 +72,19 @@ FAILED_STATUSES = {
 }
 STOPPING_STATUSES = {"stopping", "5"}
 STOPPING_NUMERIC = {5}
+# Words dCloud shows for the numeric session codes. Unlisted codes stay numeric
+# rather than guessing a label.
+SESSION_STATUS_LABELS = {
+    "1": "Scheduled",
+    "2": "Starting",
+    "4": "Active",
+    "5": "Stopping",
+    "7": "Cancelled",
+    "9": "Deleted",
+    "10": "Preserve",
+    "12": "Saving",
+    "13": "Saved",
+}
 POWER_ON_STATES = {"poweredon", "powered_on", "power_on", "poweron", "on", "running"}
 POWER_OFF_STATES = {"poweredoff", "powered_off", "power_off", "poweroff", "off", "notrunning"}
 
@@ -278,15 +299,24 @@ def _request(
     current_json = json_body
     last: requests.Response | None = None
     for _ in range(5):
-        last = requests.request(
-            current_method,
-            current_url,
-            headers=headers,
-            json=current_json,
-            verify=False,
-            timeout=timeout,
-            allow_redirects=False,
-        )
+        try:
+            last = requests.request(
+                current_method,
+                current_url,
+                headers=headers,
+                json=current_json,
+                verify=False,
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        except requests.RequestException as exc:
+            # Callers turn these into UI text, so say "get on the VPN" rather
+            # than pasting urllib3's NameResolutionError at the user.
+            if looks_off_network(exc):
+                raise requests.ConnectionError(
+                    describe_request_error(exc, "dCloud")
+                ) from exc
+            raise
         if last.status_code not in (301, 302, 303, 307, 308):
             return last
         location = last.headers.get("Location") or last.headers.get("location") or ""
@@ -396,6 +426,12 @@ def _status_text(raw: Any) -> str:
     return str(raw).strip()
 
 
+def _status_label(raw: Any) -> str:
+    """The session and admin APIs report status as a bare number; show the word."""
+    text = _status_text(raw)
+    return SESSION_STATUS_LABELS.get(text, text)
+
+
 def _status_key(raw: Any) -> str:
     return _status_text(raw).lower().replace(" ", "")
 
@@ -431,7 +467,21 @@ def is_stopping_status(raw: Any) -> bool:
         return False
 
 
+def is_saving_in_progress_status(raw: Any) -> bool:
+    """True while dCloud is still writing the save (session is usually still listed)."""
+    if isinstance(raw, int):
+        return raw in SAVING_IN_PROGRESS_NUMERIC
+    key = _status_key(raw)
+    if key in SAVING_IN_PROGRESS_STATUSES:
+        return True
+    try:
+        return int(key) in SAVING_IN_PROGRESS_NUMERIC
+    except ValueError:
+        return False
+
+
 def is_saved_status(raw: Any) -> bool:
+    """True when dCloud reports SAVED, its terminal status for a save."""
     if isinstance(raw, int):
         return raw in SAVED_NUMERIC
     key = _status_key(raw)
@@ -464,7 +514,7 @@ def format_status(*parts: Any) -> str:
     labels: list[str] = []
     seen: set[str] = set()
     for part in parts:
-        text = _status_text(part)
+        text = _status_label(part)
         if not text:
             continue
         key = text.lower()
@@ -554,6 +604,8 @@ def _vm_short_name_from_raw(raw: dict[str, Any]) -> str:
 
 
 def _vm_display_name_from_raw(raw: dict[str, Any], short_name: str = "") -> str:
+    # Never use description here — Topology Builder keeps notes/IPs/creds in
+    # Description, and the session card should show Name (Jumphost, rwkst2).
     preset = str(raw.get("displayName") or "").strip()
     if preset:
         return preset
@@ -561,11 +613,7 @@ def _vm_display_name_from_raw(raw: dict[str, Any], short_name: str = "") -> str:
         text = str(raw.get(key) or "").strip()
         if text:
             return text
-    short = short_name or _vm_short_name_from_raw(raw)
-    description = str(raw.get("description") or "").strip()
-    if description and description.lower() != short.lower():
-        return description
-    return short
+    return short_name or _vm_short_name_from_raw(raw)
 
 
 def summarize_vm(vm: dict[str, Any]) -> dict[str, Any]:
@@ -708,19 +756,28 @@ def apply_tbv3_power_states(
             return list(vms), err
         topo = extract_topology_uid(details)
         session = details or session
-    updated: list[dict[str, Any]] = []
-    for vm in vms:
+    def enrich(vm: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
         item = dict(vm)
         mor = str(item.get("mor") or "")
         runtime, err = fetch_vm_runtime_details(token, site, session_id, mor, topo)
-        if is_auth_error(err):
-            return updated or list(vms), err
         for key in ("powerState", "guestState", "guestToolsState", "os"):
             value = str(runtime.get(key) or "").strip()
             if value:
                 item[key] = value
-        updated.append(item)
-    return updated, None
+        return item, err
+
+    # Each VM requires runtime and server-detail calls. Running those serially
+    # made a 12-VM card wait on roughly 24 round trips.
+    updated: list[dict[str, Any]] = [dict(vm) for vm in vms]
+    auth_error: str | None = None
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(vms)))) as pool:
+        futures = {pool.submit(enrich, vm): index for index, vm in enumerate(vms)}
+        for future in as_completed(futures):
+            item, err = future.result()
+            updated[futures[future]] = item
+            if is_auth_error(err):
+                auth_error = err
+    return updated, auth_error
 
 
 def fetch_session(
@@ -754,6 +811,238 @@ def fetch_session(
     if not isinstance(body, dict):
         return None, "Unexpected session response."
     return body, None
+
+
+def _session_info_text(value: Any) -> str:
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("value") or value.get("href") or ""
+    if isinstance(value, list):
+        value = ", ".join(
+            str(part.get("name") or part.get("value") or part) if isinstance(part, dict) else str(part)
+            for part in value
+        )
+    return str(value if value is not None else "").strip()
+
+
+def _session_record_panel(
+    title: str,
+    records: Any,
+    empty: str,
+    fields: tuple[tuple[str, str], ...],
+    *,
+    link_key: str = "",
+) -> dict[str, Any]:
+    """One repeating panel (NAT, DNS, phone numbers) in dCloud's own column order."""
+    items: list[dict[str, Any]] = []
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict):
+            continue
+        rows = [
+            [label, _session_info_text(record.get(key))]
+            for key, label in fields
+            if _session_info_text(record.get(key))
+        ]
+        if not rows:
+            continue
+        item: dict[str, Any] = {"rows": rows}
+        if link_key:
+            href = _session_info_text(record.get(link_key))
+            if href.startswith("https://") or href.startswith("http://"):
+                item["url"] = href
+        items.append(item)
+    return {"title": title, "kind": "records", "items": items, "empty": empty}
+
+
+def fetch_tbv3_session_details(
+    token: str,
+    session_id: str,
+    version_uid: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """sessionDetails from the same tbv3 call the session view page makes."""
+    sid = (session_id or "").strip()
+    version = (version_uid or "").strip()
+    if not sid or not version:
+        return None, None
+    query = urlencode({"versionUid": version})
+    url = f"{TBV3_API}/api/sessions/{sid}?{query}"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException as exc:
+        return None, describe_request_error(exc, "dCloud")
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if not isinstance(body, dict) or response.status_code >= 400:
+        return None, api_message(body) or f"HTTP {response.status_code}"
+    detail = body.get("sessionDetails")
+    return (detail if isinstance(detail, dict) else None), None
+
+
+def session_info_panels(
+    token: str,
+    site: str,
+    session_id: str,
+) -> tuple[dict[str, Any], str | None]:
+    """Build the Session Details panels dCloud shows on its own session page."""
+    details, error = fetch_session(token, site, session_id, expand="all")
+    if error or not isinstance(details, dict):
+        return {}, error or "Could not load session details."
+
+    expand = details.get("expand") if isinstance(details.get("expand"), dict) else {}
+    event = details.get("event") if isinstance(details.get("event"), dict) else {}
+    v2_network = expand.get("network") if isinstance(expand.get("network"), dict) else {}
+
+    # The session page reads these panels from tbv3; the v2 session payload is
+    # the fallback for sessions that have no topology version.
+    detail, detail_error = fetch_tbv3_session_details(
+        token,
+        str(details.get("uid") or session_id),
+        str(details.get("topologyVersionUid") or ""),
+    )
+    source = detail if isinstance(detail, dict) else {}
+    any_connect = source.get("anyConnect") if isinstance(source.get("anyConnect"), dict) else {}
+
+    def pick(*values: Any) -> str:
+        for value in values:
+            text = _session_info_text(value)
+            if text:
+                return text
+        return ""
+
+    licenses = source.get("sessionLicenses")
+    license_text = (
+        pick(licenses)
+        if isinstance(licenses, list) and licenses
+        else "There are no session Licenses configured in this demo."
+    )
+    vpn_server = pick(any_connect.get("vpnServer"), v2_network.get("vpnServer"))
+    vpn_user = pick(any_connect.get("vpnUserIds"), v2_network.get("vpnUserIds"))
+    vpn_password = pick(any_connect.get("vpnPassword"), v2_network.get("vpnPassword"))
+    vpn_available = pick(
+        "Yes" if vpn_server else "",
+        v2_network.get("vpnEnabled"),
+        details.get("anyconnectAllowed"),
+    )
+
+    summary = [
+        ["Parent Demo", pick(source.get("parentDemoName"), details.get("parentDemoName"))],
+        ["Session Name", pick(source.get("name"), details.get("name"))],
+        ["Owner", pick(source.get("owner"), details.get("owner"))],
+        ["Session Id", pick(source.get("id"), details.get("uid"), session_id)],
+        ["Datacenter", pick(source.get("datacenter"), str(site or "").upper())],
+        ["Status", pick(format_status(details.get("status"), ""), source.get("status"))],
+        ["Demo ID", pick(source.get("parentDemoId"), details.get("parentId"))],
+        ["Saved Content ID", pick(source.get("activeDemoId"), details.get("activeId"))],
+        ["Content Pool", pick(details.get("contentPoolName"))],
+        ["Event", pick(source.get("eventName"), event.get("name"))],
+        ["Start Time", pick(source.get("start"), details.get("start"))],
+        ["End Time", pick(source.get("stop"), details.get("stop"))],
+        ["Last Modified", pick(source.get("updated"), details.get("updated"))],
+        ["VPN Available", vpn_available or "No"],
+        ["Virtual Center", pick(source.get("virtualCenterId"), details.get("virtualCenter"))],
+        ["Session Licenses", license_text],
+    ]
+
+    # Shown for display only, exactly as dCloud's session page does. Nothing
+    # here is logged or written to disk.
+    vpn_rows = [row for row in (["VPN", vpn_server], ["User", vpn_user]) if row[1]]
+
+    panels: list[dict[str, Any]] = [
+        {
+            "title": "Session Information",
+            "kind": "kv",
+            "rows": [row for row in summary if row[1]],
+            "empty": "No session information returned.",
+        },
+        {
+            "title": "Cisco Secure Client Credentials",
+            "kind": "kv",
+            "rows": vpn_rows,
+            "empty": "No VPN credentials configured",
+            "password": vpn_password,
+        },
+        _session_record_panel(
+            "Endpoint Kits",
+            source.get("endpoints") if source else expand.get("endpoints"),
+            "No Endpoint Kits configured",
+            (("name", "Name"), ("description", "Description"), ("type", "Type")),
+        ),
+        _session_record_panel(
+            "Public NAT IP",
+            source.get("sessionPublicAddresses") if source else v2_network.get("sessionPublicAddresses"),
+            "No Public NAT IP configured",
+            (
+                ("publicAddress", "Public IP Address"),
+                ("privateAddress", "Private IP Address"),
+                ("description", "Target"),
+            ),
+        ),
+        _session_record_panel(
+            "Internal NAT IP",
+            source.get("sessionInternalAddresses") if source else v2_network.get("sessionInternalAddresses"),
+            "No Internal NAT IP configured",
+            (
+                ("publicAddress", "Public IP Address"),
+                ("privateAddress", "Private IP Address"),
+                ("description", "Target"),
+            ),
+        ),
+        _session_record_panel(
+            "Proxy",
+            source.get("sessionProxyAddresses"),
+            "No Proxy configured",
+            (
+                ("publicAddress", "Public IP Address"),
+                ("privateAddress", "Private IP Address"),
+                ("description", "Target"),
+            ),
+        ),
+        _session_record_panel(
+            "Phone Numbers",
+            source.get("sessionDids") if source else v2_network.get("sessionDids"),
+            "No Phone Numbers configured",
+            (
+                ("did", "External (DID)"),
+                ("dn", "Internal (DN)"),
+                ("description", "Description"),
+            ),
+        ),
+        _session_record_panel(
+            "DNS",
+            source.get("sessionDnsEntries") if source else v2_network.get("sessionDnsEntries"),
+            "No DNS entries configured",
+            (("type", "Type"), ("name", "DNS Name")),
+        ),
+        _session_record_panel(
+            "DNS Assets",
+            source.get("sessionDnsAssets") if source else v2_network.get("sessionDnsAssets"),
+            "No DNS assets configured",
+            (("name", "DNS Name"),),
+        ),
+        _session_record_panel(
+            "Documents",
+            source.get("documents") if source else expand.get("documents"),
+            "No documents configured",
+            (("name", "Name"), ("mimeType", "Type")),
+            link_key="documentLink",
+        ),
+        _session_record_panel(
+            "Shared With",
+            source.get("sharedWith") if source else expand.get("sharedWith"),
+            "Not shared with anyone",
+            (("fullName", "Name"), ("userId", "User ID"), ("email", "Email")),
+        ),
+    ]
+    return {
+        "site": str(site or "").upper(),
+        "sessionId": pick(source.get("id"), details.get("uid"), session_id),
+        "name": pick(source.get("name"), details.get("name")),
+        "viewUrl": session_view_url(site, str(session_id), session=details),
+        "panels": panels,
+        "note": detail_error or "",
+    }, None
 
 
 def _session_server_list(details: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -962,11 +1251,7 @@ def _topology_vmware_name(vm: dict[str, Any]) -> str:
         hypervisor = str(advanced.get("nameInHypervisor") or "").strip()
         if hypervisor:
             return hypervisor
-    description = str(vm.get("description") or "").strip()
-    display = _topology_vm_display_name(vm)
-    if description and description.lower() != display.lower():
-        return description
-    return description or display
+    return _topology_vm_display_name(vm)
 
 
 def enrich_vms_with_topology_names(
@@ -999,13 +1284,12 @@ def enrich_vms_with_topology_names(
         vmware = str(row.get("shortName") or row.get("name") or "").strip()
         mor = str(row.get("mor") or "").strip()
         display = str(row.get("displayName") or "").strip()
-        if not display or display.lower() == vmware.lower():
-            display = (
-                by_vmware.get(vmware.lower())
-                or by_inventory.get(mor)
-                or display
-                or vmware
-            )
+        # Topology Builder's Name is the label drawn on the topology, so it wins.
+        topology_name = by_vmware.get(vmware.lower()) or by_inventory.get(mor) or ""
+        if topology_name:
+            display = topology_name
+        elif not display:
+            display = vmware
         if not vmware or vmware.lower() == display.lower():
             vmware = vmware_by_inventory.get(mor) or vmware or display
         row["displayName"] = display
@@ -1235,6 +1519,234 @@ def catalog_search(
     return [item for item in items if isinstance(item, dict)], None
 
 
+def _admin_search_value(item: dict[str, Any], *keys: str) -> str:
+    values: list[str] = []
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, dict):
+            value = value.get("href") or value.get("id") or ""
+        if isinstance(value, list):
+            values.extend(str(part) for part in value if part is not None)
+        elif value is not None:
+            values.append(str(value))
+    return " ".join(values)
+
+
+def fetch_admin_records(
+    token: str,
+    site: str,
+    *,
+    resource: str,
+    refresh: bool = False,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Load one complete DC-local Content or Sessions list, with a short server cache."""
+    if resource not in {"demos", "sessions"}:
+        return [], "Unsupported dCloud admin search resource."
+    cache_key = (str(site or "").lower(), resource)
+    now = time.time()
+    with _admin_search_cache_lock:
+        cached = _admin_search_cache.get(cache_key)
+        if cached and not refresh and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
+            return list(cached[1]), None
+    try:
+        response = _request(
+            "GET",
+            f"{site_base(site)}/api/admin/{resource}",
+            token,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        return [], describe_request_error(exc, "dCloud")
+    if response.status_code == 401:
+        return [], "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if response.status_code >= 400:
+        return [], api_message(body) or f"HTTP {response.status_code}"
+    records = body.get("content") if isinstance(body, dict) else []
+    if not isinstance(records, list):
+        return [], None
+    records = [item for item in records if isinstance(item, dict)]
+    with _admin_search_cache_lock:
+        _admin_search_cache[cache_key] = (now, records)
+    return list(records), None
+
+
+def admin_records_cached_at(site: str, *, resource: str) -> float | None:
+    """Return when a DC-local admin list was downloaded from dCloud."""
+    cache_key = (str(site or "").lower(), resource)
+    with _admin_search_cache_lock:
+        cached = _admin_search_cache.get(cache_key)
+        return cached[0] if cached else None
+
+
+def fetch_admin_content_panels(
+    token: str,
+    site: str,
+    content_id: str,
+    *,
+    selected_filter_ids: list[Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Read the non-editing Content panels exposed by dCloud admin APIs."""
+    site_code = str(site or "").strip().lower()
+    cid = str(content_id or "").strip()
+    if site_code not in KNOWN_SITES or not cid:
+        return {}, {"content": "Invalid datacenter or content ID."}
+
+    def get_json(path: str) -> tuple[dict[str, Any], str | None]:
+        try:
+            response = _request(
+                "GET",
+                f"{site_base(site_code)}{path}",
+                token,
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            return {}, describe_request_error(exc, "dCloud")
+        body = _json_or_text(response)
+        if response.status_code == 401:
+            return {}, "dCloud token was rejected (401)."
+        if response.status_code >= 400:
+            return {}, api_message(body) or f"HTTP {response.status_code}"
+        return (body if isinstance(body, dict) else {}), None
+
+    paths = {
+        "permissions": f"/api/admin/demos/{quote(cid)}/usergroups",
+        "ssoGroups": f"/api/admin/demos/{quote(cid)}/ssogroups",
+        "filters": "/api/admin/demos/filters",
+        "resources": f"/api/admin/demos/{quote(cid)}/resource-usage",
+    }
+    payloads: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
+    for key, path in paths.items():
+        payload, error = get_json(path)
+        payloads[key] = payload
+        if error:
+            errors[key] = error
+
+    access_levels: list[dict[str, str]] = []
+    user_groups: list[dict[str, str]] = []
+    permission_rows = payloads["permissions"].get("content") or []
+    for row in permission_rows if isinstance(permission_rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        normalized = {
+            "id": str(row.get("uid") or ""),
+            "name": str(row.get("name") or row.get("uid") or ""),
+        }
+        if str(row.get("type") or "").lower() == "special":
+            access_levels.append(normalized)
+        else:
+            user_groups.append(normalized)
+
+    sso_groups: list[dict[str, str]] = []
+    raw_sso = payloads["ssoGroups"].get("ssoGroups") or []
+    for row in raw_sso if isinstance(raw_sso, list) else []:
+        if isinstance(row, dict):
+            sso_groups.append(
+                {
+                    "id": str(row.get("uid") or row.get("id") or ""),
+                    "name": str(row.get("name") or row.get("uid") or row.get("id") or ""),
+                }
+            )
+        elif row:
+            sso_groups.append({"id": str(row), "name": str(row)})
+
+    selected_ids = {str(value) for value in (selected_filter_ids or [])}
+    selected_filters: list[dict[str, str]] = []
+
+    def walk_filters(rows: Any, group: str) -> None:
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            uid = str(row.get("uid") or "")
+            if uid and uid in selected_ids:
+                selected_filters.append(
+                    {
+                        "id": uid,
+                        "name": str(row.get("name") or uid).strip(),
+                        "group": group,
+                    }
+                )
+            walk_filters(row.get("children"), group)
+
+    filter_groups = payloads["filters"].get("filterGroups") or []
+    for group in filter_groups if isinstance(filter_groups, list) else []:
+        if not isinstance(group, dict):
+            continue
+        walk_filters(group.get("filters"), str(group.get("name") or "Other").strip())
+
+    resources = payloads["resources"].get("resources") or {}
+    return {
+        "permissions": {
+            "accessLevels": access_levels,
+            "userGroups": user_groups,
+            "ssoGroups": sso_groups,
+        },
+        "filters": selected_filters,
+        "resources": resources if isinstance(resources, dict) else {},
+    }, errors
+
+
+def search_admin_records(
+    token: str,
+    site: str,
+    query: str,
+    *,
+    resource: str,
+    limit: int = 50,
+    refresh: bool = False,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Search the DC-local admin Content or Sessions table, which the UI filters client-side."""
+    records, error = fetch_admin_records(
+        token,
+        site,
+        resource=resource,
+        refresh=refresh,
+    )
+    if error:
+        return [], error
+    needle = str(query or "").strip().casefold()
+    if not needle:
+        return [], None
+    keys = (
+        ("name", "uid", "guid", "demoId", "owner", "description", "state", "type")
+        if resource == "demos"
+        else (
+            "name",
+            "uid",
+            "guid",
+            "parentId",
+            "activeId",
+            "owner",
+            "parentDemoName",
+            "status",
+            "contentPoolName",
+        )
+    )
+    matches: list[dict[str, Any]] = []
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        haystack = _admin_search_value(item, *keys).casefold()
+        if needle in haystack:
+            matches.append(item)
+
+    def exact_rank(item: dict[str, Any]) -> int:
+        name = str(item.get("name") or "").strip().casefold()
+        ids = {
+            str(item.get(key) or "").strip().casefold()
+            for key in ("uid", "demoId", "parentId", "activeId", "guid")
+        }
+        return 0 if needle == name or needle in ids else 1
+
+    matches.sort(
+        key=lambda item: str(item.get("updated") or item.get("published") or ""),
+        reverse=True,
+    )
+    matches.sort(key=exact_rank)
+    return matches[: max(1, int(limit))], None
+
+
 def fetch_catalog_item(token: str, site: str, item: dict[str, Any]) -> dict[str, Any] | None:
     slug = str(item.get("id") or "").strip()
     href = ""
@@ -1424,6 +1936,67 @@ def lookup_demo_ids_across_sites(
     source_site: str = "",
     source_demo_id: str = "",
 ) -> dict[str, dict[str, Any]]:
+    """Resolve every DC ID from one global-catalog item, with legacy fallback."""
+    source_code = (source_site or "").strip().lower()
+    catalog_site = source_code if source_code in KNOWN_SITES else "rtp"
+
+    items: list[dict[str, Any]] = []
+    last_err: str | None = None
+    for strategy in ("SUBSTRING", "EXACT"):
+        found, err = catalog_search(token, catalog_site, name, strategy)
+        last_err = err or last_err
+        if found:
+            items = found
+            break
+    exact = [item for item in items if _norm_name(item.get("name")) == _norm_name(name)]
+    exact.sort(key=lambda item: 0 if str(item.get("contentType") or "").upper() == "DEMO" else 1)
+
+    if exact:
+        item = exact[0]
+        detail = fetch_catalog_item(token, catalog_site, item)
+        availability = (detail or {}).get("availability")
+        if isinstance(availability, list) and availability:
+            results: dict[str, dict[str, Any]] = {
+                site: {
+                    "site": site,
+                    "id": "",
+                    "name": name,
+                    "source": "not_found",
+                    "owner": "",
+                    "state": "",
+                    "catalogId": str(item.get("id") or ""),
+                    "note": "not available in global catalog",
+                }
+                for site in SITES
+            }
+            for available in availability:
+                if not isinstance(available, dict):
+                    continue
+                site = str(available.get("datacenter") or "").strip().lower()
+                numeric = extract_demo_numeric_id(available)
+                if site not in KNOWN_SITES or not numeric:
+                    continue
+                results[site].update(
+                    {
+                        "id": numeric,
+                        "source": "global_catalog",
+                        "note": "global catalog availability",
+                    }
+                )
+            # Preserve the authoritative ID from the session/content that was loaded.
+            source_id = str(source_demo_id or "").strip()
+            if source_code in KNOWN_SITES and source_id:
+                results[source_code].update(
+                    {
+                        "id": source_id,
+                        "source": "session",
+                        "note": "from this session",
+                    }
+                )
+            return results
+
+    # Older catalog responses may not expose availability. Keep the established
+    # per-DC lookup so those demos still work.
     results: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
         futures = {
@@ -1449,6 +2022,10 @@ def lookup_demo_ids_across_sites(
                     "source": "error",
                     "note": str(exc),
                 }
+    if last_err and all(not row.get("id") for row in results.values()):
+        for row in results.values():
+            if not row.get("note"):
+                row["note"] = last_err
     return results
 
 
@@ -1617,8 +2194,70 @@ def _pool_attempts(site: str) -> list[tuple[str, str | None]]:
     if site in DEV_POOLS:
         attempts.append(("Dev Pool", DEV_POOLS[site]))
     attempts.append(("Public / Core Pool", CORE_POOL))
-    if site == "rtp":
-        attempts.append(("Block 6 RTP", RTP_BLOCK6_POOL))
+    return attempts
+
+
+def fetch_content_pool_options(
+    token: str,
+    site: str,
+    demo_id: str,
+) -> tuple[list[tuple[str, str]], str]:
+    """GET /dCloudAPI/demos/{id}/content-pool-scheduling-options — pools this content allows."""
+    site_code = (site or "").strip().lower()
+    demo = str(demo_id or "").strip()
+    if site_code not in KNOWN_SITES or not demo:
+        return [], "Unknown datacenter or missing demo ID."
+    url = f"{site_base(site_code)}/dCloudAPI/demos/{demo}/content-pool-scheduling-options"
+    try:
+        response = _request("GET", url, token, timeout=30)
+    except requests.RequestException as exc:
+        return [], str(exc)
+    body = _json_or_text(response)
+    if response.status_code >= 400:
+        return [], api_message(body) or f"HTTP {response.status_code}"
+    embedded = body.get("_embedded") if isinstance(body, dict) else None
+    rows = embedded.get("contentPoolSchedulingOptions") if isinstance(embedded, dict) else None
+    if not isinstance(rows, list):
+        return [], "Unexpected content pool response."
+    options: list[tuple[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pool_id = str(row.get("id") or "").strip()
+        if pool_id:
+            options.append((str(row.get("title") or pool_id).strip(), pool_id))
+    if not options:
+        return [], "No content pools are available for this content."
+    return options, ""
+
+
+def _pool_rank(title: str, pool_id: str, site: str) -> int:
+    """Dev pool always first, Core last, anything else in between."""
+    if pool_id == DEV_POOLS.get(site) or "content_dev" in title.lower().replace(" ", "_"):
+        return 0
+    if pool_id == CORE_POOL:
+        return 2
+    return 1
+
+
+def _pool_attempts_for_demo(
+    token: str,
+    site: str,
+    demo_id: str,
+    *,
+    progress: Progress | None = None,
+) -> list[tuple[str, str | None]]:
+    """Ask dCloud which pools this content can use; guessing wrong yields a confusing error."""
+    options, err = fetch_content_pool_options(token, site, demo_id)
+    if err or not options:
+        if progress and err:
+            progress(f"{site.upper()}: could not list content pools ({err}); using defaults.")
+        return _pool_attempts(site)
+    ordered = sorted(options, key=lambda row: _pool_rank(row[0], row[1], site))
+    attempts: list[tuple[str, str | None]] = [(name, pool_id) for name, pool_id in ordered]
+    if site == "syd":
+        # SYD has always scheduled without a pool id, so keep that as the last resort.
+        attempts.append(("SYD", None))
     return attempts
 
 
@@ -1703,7 +2342,7 @@ def find_schedule_conflict(
     saw_clear = False
     first_conflict: dict[str, Any] | None = None
 
-    for pool_name, pool_id in _pool_attempts(site_code):
+    for pool_name, pool_id in _pool_attempts_for_demo(token, site_code, demo):
         cal_end = _cal_end(begin)
         timeslots, cal_err = fetch_content_calendar(
             token,
@@ -1816,6 +2455,15 @@ def schedule_exported_session(
             search_end=cal_end,
         )
         if not alt:
+            # A long session can never fit the 14-day lookahead, so asking dCloud
+            # beats skipping the pool on a window we could not have found anyway.
+            if duration > cal_end - begin_at:
+                if progress:
+                    progress(
+                        f"{site_code.upper()}: {pool_name} calendar is busy but the session is "
+                        f"longer than the {cal_end.strftime('%Y-%m-%d')} lookahead — asking dCloud anyway."
+                    )
+                return begin_at, end_at, False
             if progress:
                 progress(
                     f"{site_code.upper()}: no open slot in calendar for {pool_name} "
@@ -1863,8 +2511,10 @@ def schedule_exported_session(
         return {"ok": False, "message": last_message}
 
     last_conflict: dict[str, Any] | None = None
+    pools = _pool_attempts_for_demo(token, site_code, demo, progress=progress)
+    skipped: list[str] = []
 
-    for pool_name, pool_id in _pool_attempts(site_code):
+    for pool_name, pool_id in pools:
         picked = _pick_window_for_pool(pool_name, pool_id, begin, end)
         if picked is None:
             cal_end = _calendar_search_end(begin)
@@ -1892,6 +2542,7 @@ def schedule_exported_session(
                         f"{site_code.upper()}: {pool_name} busy at requested time — "
                         "trying next pool…"
                     )
+            skipped.append(pool_name)
             continue
         begin_use, end_use, adjusted = picked
         start = _dcloud_timestamp(begin_use)
@@ -2001,11 +2652,19 @@ def schedule_exported_session(
     if not auto_next_available and last_conflict:
         return last_conflict
 
+    if skipped and len(skipped) == len(pools):
+        # Nothing was ever sent to dCloud, so last_message would be misleading.
+        last_message = (
+            f"{site_code.upper()} calendar shows no open window for "
+            f"{', '.join(skipped)} in the requested time range."
+        )
+
     return {
         "ok": False,
         "site": site_code,
         "demoId": demo,
         "contentExport": content_export,
+        "pools": [name for name, _pool_id in pools],
         "message": last_message,
     }
 
@@ -2393,6 +3052,94 @@ def extend_session(
         "stop": new_stop,
         "session": session if isinstance(session, dict) else {},
     }
+
+
+def update_session_schedule(
+    token: str,
+    site: str,
+    session_id: str,
+    *,
+    name: str = "",
+    start_at: str = "",
+    stop_at: str = "",
+) -> dict[str, Any]:
+    """PUT /api/sessions/{id} with the fields dCloud's Edit form changes."""
+    site_code = (site or "").strip().lower()
+    sid = (session_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return {"ok": False, "message": "Datacenter must be SJC, RTP, LON, SNG, or SYD."}
+    if not sid:
+        return {"ok": False, "message": "Session ID is required."}
+    body: dict[str, Any] = {}
+    new_name = (name or "").strip()
+    if new_name:
+        if len(new_name) > 255:
+            return {"ok": False, "message": "Session name must be 255 characters or fewer."}
+        body["name"] = new_name
+    start = parse_schedule_datetime(start_at) if start_at else None
+    stop = parse_schedule_datetime(stop_at) if stop_at else None
+    if start_at and start is None:
+        return {"ok": False, "message": "Start time could not be read."}
+    if stop_at and stop is None:
+        return {"ok": False, "message": "End time could not be read."}
+    if start and stop and stop <= start:
+        return {"ok": False, "message": "End time must be after the start time."}
+    if start:
+        body["start"] = _dcloud_timestamp(start)
+    if stop:
+        body["stop"] = _dcloud_timestamp(stop)
+    if not body:
+        return {"ok": False, "message": "Nothing to update."}
+    url = f"{site_base(site_code)}/api/sessions/{sid}"
+    try:
+        response = _request("PUT", url, token, json_body=body, timeout=60)
+    except requests.RequestException as exc:
+        return {"ok": False, "sessionId": sid, "message": describe_request_error(exc, "dCloud")}
+    parsed = _json_or_text(response)
+    if response.status_code == 404:
+        return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site_code.upper()}."}
+    ok = response.status_code < 400
+    if isinstance(parsed, dict) and "success" in parsed:
+        ok = parsed.get("success") is True
+    session = parsed.get("session") if isinstance(parsed, dict) else None
+    message = api_message(parsed) or f"HTTP {response.status_code}"
+    return {
+        "ok": ok,
+        "sessionId": sid,
+        "message": message if message else ("Session updated." if ok else "Update failed."),
+        "session": session if isinstance(session, dict) else {},
+    }
+
+
+def fetch_session_log(token: str, site: str, session_id: str) -> tuple[str, str | None]:
+    """GET /api/admin/logs/sessions/{id} — the HTML blob behind the dashboard Logs button."""
+    site_code = (site or "").strip().lower()
+    sid = str(session_id or "").strip()
+    if site_code not in KNOWN_SITES or not sid:
+        return "", "Datacenter and session ID are required."
+    url = f"{site_base(site_code)}/api/admin/logs/sessions/{quote(sid)}"
+    try:
+        response = _request("GET", url, token, timeout=90)
+    except requests.RequestException as exc:
+        return "", describe_request_error(exc, "dCloud")
+    if response.status_code == 401:
+        return "", "dCloud token was rejected (401)."
+    if response.status_code == 404:
+        return "", f"No log is available for session {sid}."
+    if response.status_code >= 400:
+        return "", api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    # dCloud wraps each line in styled divs; keep the text so the UI never renders
+    # markup that came back from the API.
+    text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", "", response.text or "")
+    text = re.sub(r"(?i)</div>|<br\s*/?>", "\n", text)
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    text = unescape(text)
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(line for line in lines if line.strip()), None
 
 
 def update_session_name(

@@ -1,0 +1,77 @@
+dCloud Content Manager (Mac)
+
+Kick the tires: unzip, double-click start.command, log in with YOUR dCloud account.
+
+
+You need
+- A Mac
+- Google Chrome
+- Cisco VPN or the office network (to reach dCloud)
+- Python 3.9+ only if this folder has no runtime directory
+  (the smaller zip). Install from https://www.python.org/downloads/macos/
+  The larger “with Python” zip already includes it — skip this.
+
+
+Start
+1. Unzip this folder anywhere (Downloads is fine).
+2. Double-click  start.command
+   First time macOS may block it:  Control-click start.command → Open → Open
+3. First run creates a private .venv in this folder and installs packages there.
+   That is only for this tool — it does not install Python for your Mac.
+   Chrome then opens to  http://127.0.0.1:8768
+4. In the tool, click  Log in to dCloud  and sign in with YOUR Cisco / dCloud account.
+   Sessions and saves run as you — not a shared login.
+5. Leave the Terminal window open while you use the tool. Close it when you are done.
+
+The version is at the top right of the page (Version 1.0, 1.1, …).
+If this folder is a git clone of the private GitHub repo, or github-update.txt
+points at that repo, start.command checks GitHub each launch and only copies a
+newer VERSION. Your jobs, logins, .venv, and the bundled runtime/ Python stay
+put. Set DCLOUD_SKIP_UPDATE=1 to skip the check.
+
+
+GitHub (optional, stops the zip shuffle)
+Clone the private repo once, or fill in github-update.txt with owner/name.
+You need Git (Xcode Command Line Tools) and GitHub access to that private repo.
+Sign in once (`gh auth login` or a normal git clone) so later launches can update.
+
+
+Already have the tool? (keep jobs)
+Close the Terminal window that is running the tool first.
+
+Unzip the new zip, then copy the files from the new “dCloud Content Manager”
+folder on top of your existing folder. When macOS asks, replace the files.
+
+That is safe. The zip does not contain your jobs, saved-content list, or
+logins — those stay in the folder you already have:
+
+  last-job.json
+  managed-saved-ids.json
+  last-saved-ids.json
+  .dcloud-session.json
+  .dcloud-cai-session.json
+  .dcloud-camgr-session.json
+  .env
+  .venv
+
+Do not start from a brand-new empty folder unless you copy those files in
+first, or in-flight jobs and the saved-content list will not come with you.
+
+Then double-click start.command. Confirm Version in the top right.
+
+
+If something fails
+- “Python 3.9+ is required”
+    You have the smaller zip. Install Python from the link above, then run
+    start.command again — or use the larger zip that already includes Python.
+- Login popup blocked
+    Allow popups for this page, or sign in to dCloud in Chrome and click Import from browser.
+- Import from browser cannot read Chrome
+    System Settings → Privacy & Security → Full Disk Access → turn on Terminal (or iTerm).
+- CAI / CAMGR (transfers, integrations, VM replace)
+    Click Open CAI / Open CAMGR, sign in there, then Connect in the tool.
+
+
+Do not
+- Do not send your .env, .venv, or .dcloud-*.json files to anyone.
+- This zip is Mac-only.
