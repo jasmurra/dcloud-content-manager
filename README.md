@@ -18,7 +18,11 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 | --- | --- |
 | **1.6** | What’s new in the app; this README; zip-builder scripts stay off coworker installs |
 | **1.5** | Check for updates in the app; public GitHub updates by commit |
-| **1.4** | First GitHub release: HTTPS auto-update, scheduling, CAI/CAMGR, job workspace, monitoring |
+| **1.4** | First GitHub release: HTTPS auto-update; find session in job workspace; shutdown verify |
+| **1.3** | **Burn-in checkbox** after integrate; session info; `net_errors` in the zip; start.command fixes |
+| **1.2** | Global catalog lookup; VM display vs hypervisor names; CAI dest chips merge |
+| **1.1** | Overlay a zip without wiping jobs |
+| **1.0** | First versioned Mac zip |
 
 Full notes: [CHANGELOG.md](CHANGELOG.md). In the running app, use **What’s new** next to the version number.
 

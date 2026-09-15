@@ -19,11 +19,39 @@ This file is the source of truth. GitHub also has a Releases page if someone lat
 
 First version published on GitHub. After this, `start.command` can install later versions over HTTPS (no GitHub login).
 
-Included in that first shared Mac build:
+Also in that drop (after the 1.3 zips):
 
-- Schedule sessions and keep a job workspace
-- Session monitoring
-- CAI VM replace with per-VM status; CAMGR transfer, integrate, and cleanup
-- Search: add a session to the job workspace or monitoring; filter by session status
-- Movable and collapsible sections; compact Sign in to dCloud
-- Coworker zips with or without bundled Python
+- Find session in the job workspace (same idea as session monitoring)
+- Guest shutdown stays pending until the VM is verified off
+- Faster add-to-monitoring (does not pull full session info up front)
+
+Plus the rest of the shared Mac app at publish time: schedule sessions, monitoring, CAI replace, CAMGR transfer/integrate/cleanup, search actions, movable sections, Sign in to dCloud, zips with or without Python.
+
+## 1.3 — 2026-09-15
+
+Desktop zips (before GitHub). **Burn-in is this one:** after CAMGR transfer + auto-integrate, optional checkbox to spin up new demo sessions for N days (default 1).
+
+Also in 1.3:
+
+- `net_errors.py` in the zip (the missing-module crash) and a packer check so incomplete zips cannot be built
+- `start.command`: only kills the listening server (not Chrome); crash window stays open; `sudo` / root-owned `.venv` guard
+- Preloaded Content/Sessions with “how long ago” per datacenter
+- Actions dropdown on search rows
+- Wider Logs popup
+- Session Details / Session info (NAT IPs, DNS, phones, VPN, documents)
+
+## 1.2 — 2026-09-12
+
+Desktop zips after catalog and naming fixes (no burn-in yet):
+
+- Catalog IDs from the global catalog (one lookup instead of per-DC search)
+- VM labels use Topology Builder display name vs vCenter/hypervisor name
+- CAI integrate dest chips merge instead of wiping other DCs on a re-submit
+
+## 1.1 — 2026-09
+
+Overlay update without losing jobs (`last-job.json`, saved IDs, logins stay in the existing folder). Small zip and with-Python zip packed together.
+
+## 1.0 — 2026-09
+
+First versioned Mac zip: version number on the page, `start.command`, coworker pack without secrets.
