@@ -7,12 +7,16 @@ with bundled Python). Local jobs, logins, .venv, and runtime/ are left alone.
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -153,24 +157,56 @@ def repo_slug(repo: str) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else ""
 
 
-def fetch_public_version(repo: str, branch: str) -> str:
+def _github_json(url: str) -> dict[str, object]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Cache-Control": "no-cache",
+            "User-Agent": "dcloud-content-manager-updater",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        body = json.loads(response.read().decode("utf-8", errors="replace"))
+    return body if isinstance(body, dict) else {}
+
+
+def fetch_public_release(repo: str, branch: str) -> tuple[str, str]:
+    """Return (VERSION, immutable commit SHA) from GitHub's public API."""
     slug = repo_slug(repo)
     if not slug:
-        return ""
-    url = f"https://raw.githubusercontent.com/{slug}/{branch}/VERSION"
+        return "", ""
     try:
-        with urllib.request.urlopen(url, timeout=20) as response:
-            return response.read(200).decode("utf-8", errors="replace").strip().splitlines()[0].strip()
-    except (OSError, urllib.error.URLError, IndexError):
-        return ""
+        branch_name = urllib.parse.quote(branch, safe="")
+        branch_data = _github_json(
+            f"https://api.github.com/repos/{slug}/branches/{branch_name}?_={time.time_ns()}"
+        )
+        commit = branch_data.get("commit")
+        sha = str(commit.get("sha") or "") if isinstance(commit, dict) else ""
+        if not sha:
+            return "", ""
+        version_data = _github_json(
+            f"https://api.github.com/repos/{slug}/contents/VERSION"
+            f"?ref={urllib.parse.quote(sha, safe='')}&_={time.time_ns()}"
+        )
+        encoded = str(version_data.get("content") or "").replace("\n", "")
+        version = base64.b64decode(encoded).decode("utf-8", errors="replace").strip().splitlines()[0].strip()
+        return version, sha
+    except (OSError, ValueError, urllib.error.URLError, IndexError):
+        return "", ""
 
 
-def download_public_source(repo: str, branch: str, dest: Path) -> Path | None:
+def fetch_public_version(repo: str, branch: str) -> str:
+    return fetch_public_release(repo, branch)[0]
+
+
+def download_public_source(repo: str, branch: str, dest: Path, *, ref: str = "") -> Path | None:
     """Download a public repo archive without Git, GitHub login, or SSH keys."""
     slug = repo_slug(repo)
     if not slug:
         return None
-    url = f"https://github.com/{slug}/archive/refs/heads/{branch}.zip"
+    wanted = ref or branch
+    url = f"https://api.github.com/repos/{slug}/zipball/{urllib.parse.quote(wanted, safe='')}?_={time.time_ns()}"
     archive = dest / "source.zip"
     try:
         with urllib.request.urlopen(url, timeout=60) as response, archive.open("wb") as out:
@@ -324,7 +360,7 @@ def main() -> int:
     # Normal coworker install: query and download the public GitHub archive
     # directly. This works in both zips, including the bundled-Python version,
     # without Git, an account, an SSH key, or a personal access token.
-    remote_version = fetch_public_version(configured_repo or url, branch)
+    remote_version, remote_ref = fetch_public_release(configured_repo or url, branch)
     if not remote_version:
         log("Could not reach GitHub. Starting the installed copy instead.")
         return 0
@@ -333,7 +369,12 @@ def main() -> int:
         return 0
     log(f"Updating {local} → {remote_version}…")
     with tempfile.TemporaryDirectory(prefix="dcloud-content-update-") as tmp:
-        source = download_public_source(configured_repo or url, branch, Path(tmp))
+        source = download_public_source(
+            configured_repo or url,
+            branch,
+            Path(tmp),
+            ref=remote_ref,
+        )
         if source is None:
             log("Could not download the GitHub update. Starting the installed copy instead.")
             return 0
