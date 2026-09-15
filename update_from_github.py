@@ -33,6 +33,7 @@ SKIP_DIR_NAMES = {
     ".github-update-cache",
     ".python-runtime-cache",
     ".dcloud-camgr-chrome",
+    ".cursor",
     "__pycache__",
 }
 SKIP_FILE_NAMES = {
@@ -43,6 +44,10 @@ SKIP_FILE_NAMES = {
     ".dcloud-session.json",
     ".dcloud-cai-session.json",
     ".dcloud-camgr-session.json",
+    # Maintainer zip-builders — stay on GitHub / the author's Mac only.
+    "pack_for_mac.py",
+    "share-for-mac.command",
+    "share-for-mac-with-python.command",
 }
 
 GIT_ENV = {
