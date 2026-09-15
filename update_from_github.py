@@ -11,6 +11,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -139,6 +143,46 @@ def repo_https_url(repo: str) -> str:
     return f"https://github.com/{text}.git"
 
 
+def repo_slug(repo: str) -> str:
+    """Return owner/name from a configured GitHub slug or URL."""
+    text = to_https_github(str(repo or "").strip())
+    if "github.com/" in text:
+        text = text.split("github.com/", 1)[1]
+    text = text.removesuffix(".git").strip("/")
+    parts = [part for part in text.split("/") if part]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else ""
+
+
+def fetch_public_version(repo: str, branch: str) -> str:
+    slug = repo_slug(repo)
+    if not slug:
+        return ""
+    url = f"https://raw.githubusercontent.com/{slug}/{branch}/VERSION"
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            return response.read(200).decode("utf-8", errors="replace").strip().splitlines()[0].strip()
+    except (OSError, urllib.error.URLError, IndexError):
+        return ""
+
+
+def download_public_source(repo: str, branch: str, dest: Path) -> Path | None:
+    """Download a public repo archive without Git, GitHub login, or SSH keys."""
+    slug = repo_slug(repo)
+    if not slug:
+        return None
+    url = f"https://github.com/{slug}/archive/refs/heads/{branch}.zip"
+    archive = dest / "source.zip"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response, archive.open("wb") as out:
+            shutil.copyfileobj(response, out)
+        with zipfile.ZipFile(archive) as zipped:
+            zipped.extractall(dest / "source")
+    except (OSError, urllib.error.URLError, zipfile.BadZipFile):
+        return None
+    roots = [path for path in (dest / "source").iterdir() if path.is_dir()]
+    return roots[0] if len(roots) == 1 else None
+
+
 def current_branch(config_branch: str) -> str:
     if (ROOT / ".git").exists():
         result = run_git("rev-parse", "--abbrev-ref", "HEAD")
@@ -238,13 +282,10 @@ def pull_existing_clone(branch: str) -> bool:
 def main() -> int:
     if os.environ.get("DCLOUD_SKIP_UPDATE") == "1":
         return 0
-    if not git_available():
-        log("Git is not installed, so this copy cannot check GitHub for updates.")
-        log("Install the Xcode Command Line Tools, then start again.")
-        return 0
 
     config = load_config()
-    url = repo_https_url(config.get("repo") or "") or to_https_github(origin_url())
+    configured_repo = config.get("repo") or ""
+    url = repo_https_url(configured_repo) or to_https_github(origin_url())
     branch = current_branch(config.get("branch") or "main")
     if not url:
         log("GitHub updates are not configured yet (set repo=owner/name in github-update.txt).")
@@ -254,6 +295,9 @@ def main() -> int:
     log(f"Checking GitHub for a newer version than {local}…")
 
     if (ROOT / ".git").exists() and origin_url():
+        if not git_available():
+            log("Git is not available. Starting the installed copy instead.")
+            return 0
         if working_tree_dirty():
             log("Local file changes are present — skipping the GitHub update so nothing is overwritten.")
             return 0
@@ -277,17 +321,23 @@ def main() -> int:
             log(f"Updated to {read_version(VERSION_FILE) or remote_version}.")
         return 0
 
-    source = fetch_cache(url, branch)
-    if source is None:
+    # Normal coworker install: query and download the public GitHub archive
+    # directly. This works in both zips, including the bundled-Python version,
+    # without Git, an account, an SSH key, or a personal access token.
+    remote_version = fetch_public_version(configured_repo or url, branch)
+    if not remote_version:
         log("Could not reach GitHub. Starting the installed copy instead.")
-        log("If the repo is still private, set it to Public so installs can update without a GitHub login.")
         return 0
-    remote_version = read_version(source / "VERSION")
     if not is_newer(remote_version, local):
         log(f"Already on {local}.")
         return 0
     log(f"Updating {local} → {remote_version}…")
-    copied = copy_tree(source)
+    with tempfile.TemporaryDirectory(prefix="dcloud-content-update-") as tmp:
+        source = download_public_source(configured_repo or url, branch, Path(tmp))
+        if source is None:
+            log("Could not download the GitHub update. Starting the installed copy instead.")
+            return 0
+        copied = copy_tree(source)
     log(f"Updated {copied} file(s) to {read_version(VERSION_FILE) or remote_version}.")
     return 0
 

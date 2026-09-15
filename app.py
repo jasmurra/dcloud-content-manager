@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -4101,6 +4102,78 @@ def index() -> HTMLResponse:
 @app.get("/api/version")
 def api_version() -> dict[str, str]:
     return {"version": APP_VERSION}
+
+
+_update_check_lock = threading.Lock()
+
+
+def _apply_github_update() -> None:
+    """Apply after the HTTP response; uvicorn reloads when the files change."""
+    time.sleep(0.8)
+    try:
+        env = dict(os.environ)
+        env.pop("DCLOUD_SKIP_UPDATE", None)
+        subprocess.run(
+            [sys.executable, str(APP_DIR / "update_from_github.py")],
+            cwd=str(APP_DIR),
+            env=env,
+            timeout=180,
+            check=False,
+        )
+        # The updater normally replaces app.py, which reload mode sees. Touching
+        # it also covers a release where only VERSION or static files changed.
+        os.utime(APP_DIR / "app.py", None)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    finally:
+        if _update_check_lock.locked():
+            _update_check_lock.release()
+
+
+@app.post("/api/update/check")
+def api_update_check() -> dict[str, Any]:
+    """Check public GitHub and apply a newer VERSION without a manual restart."""
+    if not _update_check_lock.acquire(blocking=False):
+        return {
+            "ok": True,
+            "updating": True,
+            "version": APP_VERSION,
+            "message": "An update check is already running.",
+        }
+    try:
+        from update_from_github import fetch_public_version, is_newer, load_config
+
+        config = load_config()
+        repo = str(config.get("repo") or "").strip()
+        branch = str(config.get("branch") or "main").strip() or "main"
+        if not repo:
+            _update_check_lock.release()
+            raise HTTPException(400, "GitHub updates are not configured.")
+        remote_version = fetch_public_version(repo, branch)
+        if not remote_version:
+            _update_check_lock.release()
+            raise HTTPException(503, "Could not reach GitHub. Try again later.")
+        if not is_newer(remote_version, APP_VERSION):
+            _update_check_lock.release()
+            return {
+                "ok": True,
+                "updating": False,
+                "version": APP_VERSION,
+                "message": f"Version {APP_VERSION} is already current.",
+            }
+        threading.Thread(target=_apply_github_update, daemon=True).start()
+        return {
+            "ok": True,
+            "updating": True,
+            "version": remote_version,
+            "message": f"Updating to Version {remote_version}. The page will reload automatically.",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if _update_check_lock.locked():
+            _update_check_lock.release()
+        raise HTTPException(500, f"Could not check for updates: {exc}")
 
 
 @app.get("/api/auth/status")

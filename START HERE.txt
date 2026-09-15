@@ -31,9 +31,10 @@ put. Set DCLOUD_SKIP_UPDATE=1 to skip the check.
 
 
 GitHub (optional, stops the zip shuffle)
-Clone the private repo once, or fill in github-update.txt with owner/name.
-You need Git (Xcode Command Line Tools) and GitHub access to that private repo.
-Sign in once (`gh auth login` or a normal git clone) so later launches can update.
+The updater is already pointed at the public jasmurra/dcloud-content-manager repo.
+Zip installs download public updates directly — no GitHub login, SSH key, Git,
+or Xcode Command Line Tools are required. Use Check for updates at the top of
+the page, or just start.command; both install a newer VERSION automatically.
 
 
 Already have the tool? (keep jobs)

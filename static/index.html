@@ -1349,6 +1349,7 @@
       <h1>dCloud Content Manager</h1>
       <div class="header-actions">
         <span id="app-version" class="app-version">Version 1.0</span>
+        <button type="button" class="secondary" id="btn-check-updates" data-tip="Check GitHub now and install a newer version without manually restarting the app.">Check for updates</button>
         <button type="button" class="secondary dcloud-auth-button" id="btn-dcloud-authorize" data-tip="Open dCloud login and token controls.">Sign in to dCloud</button>
       </div>
     </div>
@@ -2755,6 +2756,64 @@
           ? "You are signed in to dCloud. Click to view login and token controls."
           : "Sign in to dCloud so this tool can use your account."),
       );
+    }
+
+    async function waitForUpdatedApp(version) {
+      const button = $("btn-check-updates");
+      const deadline = Date.now() + 45000;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      while (Date.now() < deadline) {
+        try {
+          const response = await fetch(`/api/version?_=${Date.now()}`, { cache: "no-store" });
+          if (response.ok) {
+            const data = await response.json();
+            if (String(data.version || "") === String(version || "")) {
+              window.location.reload();
+              return;
+            }
+          }
+        } catch {
+          // Expected while uvicorn replaces the worker.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Update downloaded — restart";
+        button.setAttribute("data-tip", "The update downloaded, but automatic reload timed out. Close and restart start.command.");
+      }
+    }
+
+    async function checkForAppUpdates() {
+      const button = $("btn-check-updates");
+      if (!button || button.disabled) return;
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = "Checking…";
+      try {
+        const data = await api("/api/update/check", {
+          method: "POST",
+          body: "{}",
+          quiet: true,
+        });
+        if (data.updating) {
+          button.textContent = `Updating to ${data.version}…`;
+          button.setAttribute("data-tip", data.message || "Installing update.");
+          waitForUpdatedApp(data.version);
+          return;
+        }
+        button.textContent = "✓ Up to date";
+        button.setAttribute("data-tip", data.message || "This is the latest version.");
+        setTimeout(() => {
+          button.disabled = false;
+          button.textContent = original;
+        }, 2500);
+      } catch (err) {
+        button.disabled = false;
+        button.textContent = "Check failed — retry";
+        button.setAttribute("data-tip", err.message || "Could not check GitHub.");
+        showError(err.message);
+      }
     }
 
     function isHubActionMessage(msg) {
@@ -10735,6 +10794,9 @@
     });
     $("token-alert-dismiss").addEventListener("click", () => hideTokenAlert());
     $("token-alert-backdrop").addEventListener("click", () => hideTokenAlert());
+    $("btn-check-updates")?.addEventListener("click", () => {
+      checkForAppUpdates().catch((err) => showError(err.message));
+    });
     $("btn-dcloud-authorize")?.addEventListener("click", openDcloudAuth);
     $("btn-close-dcloud-auth")?.addEventListener("click", (ev) => {
       ev.preventDefault();
