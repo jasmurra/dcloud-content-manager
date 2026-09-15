@@ -4,6 +4,10 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.8 — 2026-09-15
+
+- The CAI Content Dev datacenter dropdown now updates immediately when its display order changes in Settings
+
 ## 1.7 — 2026-09-15
 
 - Personal **Settings** under the new cog button
