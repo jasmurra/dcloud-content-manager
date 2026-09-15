@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.7** | Personal Settings cog: drag datacenters into the display order used throughout the app |
 | **1.6** | What’s new in the app; this README; zip-builder scripts stay off coworker installs |
 | **1.5** | Check for updates in the app; public GitHub updates by commit |
 | **1.4** | First GitHub release: HTTPS auto-update; find session in job workspace; shutdown verify |
@@ -26,7 +27,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 Full notes: [CHANGELOG.md](CHANGELOG.md). In the running app, use **What’s new** next to the version number.
 
-GitHub’s usual pattern is this changelog file in the repo. Optional extra: a [Release](https://github.com/jasmurra/dcloud-content-manager/releases) per version (a `v1.6` tag with the same notes). People do not need Releases to update — they only need a newer `VERSION` on `main`.
+GitHub’s usual pattern is this changelog file in the repo. Optional extra: a [Release](https://github.com/jasmurra/dcloud-content-manager/releases) per version (for example, a `v1.7` tag with the same notes). People do not need Releases to update — they only need a newer `VERSION` on `main`.
 
 ## Updates
 

@@ -4,6 +4,13 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.7 — 2026-09-15
+
+- Personal **Settings** under the new cog button
+- Drag datacenters or use ↑/↓ to choose a display order
+- The saved order applies to schedule-ID fields, dropdowns, grouped results, session cards, saved-content rows, and CAI/CAMGR destination controls
+- The preference stays on that user’s browser and Mac; it does not change another coworker’s order
+
 ## 1.6 — 2026-09-15
 
 - **What’s new** in the app (next to the version) and this changelog on GitHub

@@ -37,6 +37,8 @@
     .header-actions {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
       gap: 0.65rem;
       margin-left: auto;
     }
@@ -783,6 +785,33 @@
       font-size: 0.88rem;
       line-height: 1.45;
     }
+    .settings-card { width: min(100%, 520px); }
+    .settings-card h2 { display: flex; align-items: center; gap: 0.45rem; }
+    .dc-order-list {
+      display: grid;
+      gap: 0.4rem;
+      margin: 0.75rem 0;
+    }
+    .dc-order-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 0.45rem;
+      align-items: center;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+    .dc-order-item.dragging { opacity: 0.45; }
+    .dc-order-item.drop-before { border-top: 3px solid var(--accent); }
+    .dc-order-item.drop-after { border-bottom: 3px solid var(--accent); }
+    .dc-order-grip {
+      cursor: grab;
+      color: var(--muted);
+      font-size: 1.1rem;
+      user-select: none;
+    }
+    .dc-order-item button { padding: 0.25rem 0.55rem; }
     .details-modal-body {
       display: grid;
       gap: 0.8rem;
@@ -1358,6 +1387,7 @@
         <span id="app-version" class="app-version">Version 1.0</span>
         <button type="button" class="secondary" id="btn-whats-new" data-tip="What changed in this version and earlier ones.">What’s new</button>
         <button type="button" class="secondary" id="btn-check-updates" data-tip="Check GitHub now and install a newer version without manually restarting the app.">Check for updates</button>
+        <button type="button" class="secondary" id="btn-settings" aria-label="Settings" data-tip="Personal settings for this browser, including datacenter display order.">⚙ Settings</button>
         <button type="button" class="secondary dcloud-auth-button" id="btn-dcloud-authorize" data-tip="Open dCloud login and token controls.">Sign in to dCloud</button>
       </div>
     </div>
@@ -1409,6 +1439,21 @@
         <div id="details-modal-body" class="details-modal-body"></div>
         <div class="actions">
           <button type="button" class="secondary" id="details-modal-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-backdrop" id="settings-backdrop"></div>
+      <div class="modal-card settings-card">
+        <h2 id="settings-title">⚙ Settings</h2>
+        <p class="hint">These settings are saved only in this browser on this Mac.</p>
+        <h3>Datacenter display order</h3>
+        <p class="hint">Drag datacenters or use the arrows. Lists, cards, checkboxes, and dropdown menus use this order.</p>
+        <div id="dc-order-list" class="dc-order-list" aria-label="Datacenter display order"></div>
+        <div class="actions">
+          <button type="button" class="secondary" id="btn-reset-dc-order">Reset order</button>
+          <button type="button" id="btn-close-settings">Done</button>
         </div>
       </div>
     </div>
@@ -1578,7 +1623,7 @@
       <div class="row">
         <div>
           <label for="src-site">Datacenter</label>
-          <select id="src-site">
+          <select id="src-site" data-dc-order>
             <option value="sjc">SJC</option>
             <option value="rtp">RTP</option>
             <option value="lon">LON</option>
@@ -1627,7 +1672,7 @@
         every available DC in one lookup. Leave a DC blank to skip it.
       </p>
       <p id="lookup-status" class="hint"></p>
-      <div class="row">
+      <div class="row" id="schedule-dc-fields" data-dc-order>
         <div class="dc-field"><label for="id-sjc">SJC</label><input id="id-sjc" data-dc="sjc" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sjc"></p><a class="verify-demos" href="https://dcloud2-sjc.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
         <div class="dc-field"><label for="id-rtp">RTP</label><input id="id-rtp" data-dc="rtp" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-rtp"></p><a class="verify-demos" href="https://dcloud2-rtp.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
         <div class="dc-field"><label for="id-lon">LON</label><input id="id-lon" data-dc="lon" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-lon"></p><a class="verify-demos" href="https://dcloud2-lon.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
@@ -1860,7 +1905,7 @@
           <div class="row">
             <div>
               <label for="workspace-manual-site">Datacenter</label>
-              <select id="workspace-manual-site">
+              <select id="workspace-manual-site" data-dc-order>
                 <option value="sjc">SJC</option>
                 <option value="rtp">RTP</option>
                 <option value="lon">LON</option>
@@ -1964,7 +2009,7 @@
       <div class="row">
         <div>
           <label for="monitor-manual-site">Datacenter</label>
-          <select id="monitor-manual-site">
+          <select id="monitor-manual-site" data-dc-order>
             <option value="sjc">SJC</option>
             <option value="rtp">RTP</option>
             <option value="lon">LON</option>
@@ -2033,7 +2078,7 @@
       <div class="row">
         <div>
           <label for="hub-manual-site">Datacenter</label>
-          <select id="hub-manual-site">
+          <select id="hub-manual-site" data-dc-order>
             <option value="sjc">SJC</option>
             <option value="rtp">RTP</option>
             <option value="lon">LON</option>
@@ -2115,7 +2160,7 @@
         Load VMs after a CAMGR transfer to show dests. Dest DCs that CAI already integrated are disabled.
         They are not used for VM replacement.
       </p>
-      <div id="cai-integrate-list" class="camgr-dest-list"></div>
+      <div id="cai-integrate-list" class="camgr-dest-list" data-dc-order></div>
       <div class="actions">
         <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
         <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM replacement</button>
@@ -2158,7 +2203,7 @@
         </label>
         <label class="dev-transfer-field hidden" id="cai-template-demo-site-field">
           <span>Transferred from</span>
-          <select id="cai-template-demo-site">
+          <select id="cai-template-demo-site" data-dc-order>
             <option value="rtp">RTP</option>
             <option value="sjc">SJC</option>
             <option value="lon">LON</option>
@@ -2177,7 +2222,7 @@
       </div>
       <p class="hint">Folder sent to CAI: <code id="cai-template-path-preview">CDEV.RTP/vPod-…</code></p>
       <p class="hint chip-toolbar-label" style="margin-top:0.65rem">Template destinations</p>
-      <div id="cai-template-dests" class="camgr-dest-list">
+      <div id="cai-template-dests" class="camgr-dest-list" data-dc-order>
         <label><input type="checkbox" class="cai-template-dest" value="rtp" /> RTP</label>
         <label><input type="checkbox" class="cai-template-dest" value="sjc" /> SJC</label>
         <label><input type="checkbox" class="cai-template-dest" value="lon" /> LON</label>
@@ -2239,7 +2284,7 @@
         <button type="button" class="secondary" id="btn-camgr-dest-check-all">Check all</button>
         <button type="button" class="secondary" id="btn-camgr-dest-uncheck-all">Uncheck all</button>
       </div>
-      <div id="camgr-dest-list" class="camgr-dest-list"></div>
+      <div id="camgr-dest-list" class="camgr-dest-list" data-dc-order></div>
       <label id="camgr-auto-integrate-wrap" class="camgr-auto-integrate hidden">
         <input type="checkbox" id="camgr-auto-integrate" />
         <span>After transfer completes, submit CAI Integrate to the same destination DCs</span>
@@ -2289,7 +2334,7 @@
         </p>
         <div>
           <span>Load from</span>
-          <div class="unified-search-dcs" id="unified-search-dcs">
+          <div class="unified-search-dcs" id="unified-search-dcs" data-dc-order>
             <label><input type="checkbox" class="unified-search-dc" value="sjc" /> SJC</label>
             <label><input type="checkbox" class="unified-search-dc" value="rtp" checked /> RTP</label>
             <label><input type="checkbox" class="unified-search-dc" value="lon" /> LON</label>
@@ -2482,15 +2527,15 @@
     }
 
     function visibleWorkspaceDcs(job) {
-      return (job?.dcs || []).filter(
+      return sortByDatacenter((job?.dcs || []).filter(
         (dc) => !["saved", "ended"].includes(dc.phase) && !isMonitorDc(dc),
-      );
+      ), (dc) => dc.site);
     }
 
     function visibleMonitorDcs(job) {
-      return (job?.dcs || []).filter(
+      return sortByDatacenter((job?.dcs || []).filter(
         (dc) => !["saved", "ended"].includes(dc.phase) && isMonitorDc(dc),
-      );
+      ), (dc) => dc.site);
     }
 
     function appendToCurrentJob() {
@@ -4098,7 +4143,7 @@
         method: "POST",
         body: JSON.stringify(body),
       });
-      const conflicts = data.conflicts || [];
+      const conflicts = sortByDatacenter(data.conflicts || [], (conflict) => conflict.site);
       if (!conflicts.length) return [];
       const decisions = [];
       for (const conflict of conflicts) {
@@ -5256,7 +5301,8 @@
       if (camgrLoad) camgrLoad.disabled = !rows.length || cdevSelected;
       if (camgrTransfer) camgrTransfer.disabled = !rows.length || cdevSelected;
       if (destBoxes.length && alreadyIntegratedDestSet(rows).size && destBoxes.every((el) => el.disabled)) {
-        const done = [...alreadyIntegratedDestSet(rows)].map((dc) => dc.toUpperCase()).join(", ");
+        const done = sortByDatacenter([...alreadyIntegratedDestSet(rows)])
+          .map((dc) => dc.toUpperCase()).join(", ");
         const hint = $("cai-integrate-hint");
         if (hint && done) {
           hint.classList.remove("hidden");
@@ -5379,7 +5425,7 @@
     function renderCaiIntegrateList(dcs, { defaultIds = [], integratedIds = [] } = {}) {
       const root = $("cai-integrate-list");
       if (!root) return;
-      const items = dcs || [];
+      const items = sortByDatacenter(dcs || [], (item) => item.id || item);
       $("cai-integrate-label")?.classList.toggle("hidden", !items.length);
       $("cai-integrate-hint")?.classList.toggle("hidden", !items.length);
       if (!items.length) {
@@ -5496,7 +5542,7 @@
         setCaiVmLabel(rows, first);
         updateCaiStatus({ loggedIn: true, configured: true, message: data.title || "CAI: VMs loaded." });
         const integrateCount = (data.integrateDcs || []).length;
-        const already = lastCaiIntegratedDcs.map((dc) => dc.toUpperCase());
+        const already = sortByDatacenter(lastCaiIntegratedDcs).map((dc) => dc.toUpperCase());
         const demoName = String(first.name || "").trim();
         noteLog(
           `Loaded ${(data.vms || []).length} CAI VM(s)`
@@ -5638,7 +5684,7 @@
       const already = alreadyIntegratedDestSet(rows);
       const remaining = dcs.filter((dc) => !already.has(String(dc || "").toLowerCase()));
       if (!remaining.length) {
-        const labels = [...already].map((dc) => dc.toUpperCase()).join(", ") || "those DCs";
+        const labels = sortByDatacenter([...already]).map((dc) => dc.toUpperCase()).join(", ") || "those DCs";
         showError(`This demo has already been integrated into ${labels}. Unintegrated dests can still be selected if CAI lists them.`);
         return;
       }
@@ -5715,7 +5761,9 @@
       const discovered = camgrDevServers
         .map((server) => camgrCdevHomeDc(server.guid || ""))
         .filter(Boolean);
-      const codes = discovered.length ? discovered : ["RTP", "SJC", "LON", "APJ", "SYD"];
+      const codes = sortByDatacenter(
+        discovered.length ? discovered : ["RTP", "SJC", "LON", "APJ", "SYD"],
+      );
       select.innerHTML = codes
         .map((code) => `<option value="${escapeHtml(code)}">CDEV.${escapeHtml(code)}</option>`)
         .join("");
@@ -5804,7 +5852,7 @@
       table.classList.toggle("hidden", items.length === 0);
       toolbar.classList.toggle("hidden", items.length === 0);
       body.innerHTML = items.map((row) => {
-        const chips = (row.dcTasks || []).map((chip) => {
+        const chips = sortByDatacenter(row.dcTasks || [], (chip) => chip.dc || chip.label).map((chip) => {
           const status = String(chip.status || "queuing");
           const label = String(chip.label || chip.dc || "").toUpperCase();
           const newId = String(chip.newId || "").trim();
@@ -5916,7 +5964,7 @@
         });
         noteLog(
           `CAI template submitted: ${data.sourcePath || sourcePath} || ${data.server || server}`
-          + ` → ${(data.dcs || dcs).map((dc) => String(dc).toUpperCase()).join(", ")}.`
+          + ` → ${sortByDatacenter(data.dcs || dcs).map((dc) => String(dc).toUpperCase()).join(", ")}.`
         );
         showActionAlert(
           caiTemplateMode() === "dev"
@@ -6018,7 +6066,9 @@
         const vpod = parts.length > 1 && /^\d+$/.test(parts[parts.length - 1]) ? parts.pop() : "";
         previous.set(parts.join(":").toUpperCase(), vpod);
       }
-      const items = servers || [];
+      const items = sortByDatacenter(servers || [], (server) =>
+        server.homeDc || server.dc || server.guid || server.label
+      );
       root.innerHTML = items.map((server) => {
         const guid = String(server.guid || server.dc || "");
         const label = String(server.label || server.dc || guid);
@@ -6490,7 +6540,7 @@
       if (data.autoIntegrated?.length) {
         for (const row of data.autoIntegrated) {
           const site = String(row.site || "").toUpperCase();
-          const dests = (row.dcs || []).join(", ").toUpperCase();
+          const dests = sortByDatacenter(row.dcs || []).join(", ").toUpperCase();
           noteLog(`${site}: CAI integration submitted for ${row.savedId}${dests ? ` → ${dests}` : ""}.`);
         }
         startCaiReplacePoll();
@@ -6530,7 +6580,10 @@
     }
 
     function camgrStatusCellHtml(row, transfer, transferClass) {
-      const chips = Array.isArray(row?.transferDcStatus) ? row.transferDcStatus : [];
+      const chips = sortByDatacenter(
+        Array.isArray(row?.transferDcStatus) ? row.transferDcStatus : [],
+        (chip) => chip.dc || chip.label,
+      );
       const chipHtml = chips.map((chip) => {
         const done = chip.done ? " done" : "";
         const phase = escapeHtml(chip.phase || "");
@@ -6558,7 +6611,10 @@
 
     function caiStatusCellHtml(row, line, caiClass) {
       const vmHtml = caiVmChipsHtml(row);
-      const chips = Array.isArray(row?.integrateDcStatus) ? row.integrateDcStatus : [];
+      const chips = sortByDatacenter(
+        Array.isArray(row?.integrateDcStatus) ? row.integrateDcStatus : [],
+        (chip) => chip.dc || chip.label,
+      );
       const chipHtml = chips.map((chip) => {
         const done = chip.done ? " done" : "";
         const phase = escapeHtml(chip.phase || chip.status || "");
@@ -6603,7 +6659,7 @@
         typedTarget[`${el.dataset.site}:${el.dataset.savedId}`] = el.value;
       });
       const defaultAll = existingBoxes.length === 0;
-      body.innerHTML = rows.map((row) => {
+      body.innerHTML = sortByDatacenter(rows, (row) => row.site).map((row) => {
         const site = String(row.site || "").toLowerCase();
         const savedId = String(row.savedId || "");
         const key = `${site}:${savedId}`;
@@ -7759,7 +7815,7 @@
 
     function resetStep2Ui() {
       $("src-session").value = "";
-      $("src-site").value = "sjc";
+      $("src-site").value = SITE_ORDER[0] || "sjc";
       $("skip-catalog").checked = false;
       const contentRadio = $("vm-source-content");
       if (contentRadio) contentRadio.checked = true;
@@ -8302,7 +8358,9 @@
       await loadCaiTemplates().catch(() => {});
     }
 
-    const SITE_ORDER = ["sjc", "rtp", "lon", "sng", "syd"];
+    const DEFAULT_SITE_ORDER = Object.freeze(["sjc", "rtp", "lon", "sng", "syd"]);
+    const SETTINGS_KEY = "dcloud-content-manager-settings-v1";
+    let SITE_ORDER = readDatacenterOrder();
     const DCLOUD_CATALOG_EOL_URL = "https://dcloud-camgr.cisco.com/#/catalogue";
     const UI_STATE_KEY = "dcloud-content-manager-ui-v1";
     const LEGACY_UI_STATE_KEY = "dcloud-session-manager-ui-v1";
@@ -8328,6 +8386,195 @@
     const DEFAULT_PANEL_OPEN = new Map();
     const PERSIST_VM_MORE_SELECTOR = "#cards details.vm-more, #monitor-cards details.vm-more";
     const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #found-saved details.dc-group, #saved-ids-found details.dc-group";
+
+    function canonicalDatacenter(value) {
+      const text = String(value || "").trim().toLowerCase();
+      if (!text) return "";
+      const aliases = { apj: "sng", emea: "lon", emear: "lon" };
+      const tokens = text.match(/(?:sjc|rtp|lon|sng|apj|syd|emea|emear)/g) || [];
+      const token = tokens.find((item) => DEFAULT_SITE_ORDER.includes(aliases[item] || item));
+      return aliases[token] || token || "";
+    }
+
+    function readDatacenterOrder() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        const order = Array.isArray(saved.datacenterOrder) ? saved.datacenterOrder : [];
+        const valid = order.map(canonicalDatacenter)
+          .filter((site, index, rows) => DEFAULT_SITE_ORDER.includes(site) && rows.indexOf(site) === index);
+        for (const site of DEFAULT_SITE_ORDER) {
+          if (!valid.includes(site)) valid.push(site);
+        }
+        return valid;
+      } catch {
+        return [...DEFAULT_SITE_ORDER];
+      }
+    }
+
+    function datacenterOrderIndex(value) {
+      const site = canonicalDatacenter(value);
+      const index = SITE_ORDER.indexOf(site);
+      return index < 0 ? SITE_ORDER.length : index;
+    }
+
+    function sortByDatacenter(items, getter = (item) => item) {
+      return [...(items || [])]
+        .map((item, index) => ({ item, index }))
+        .sort((left, right) => {
+          const bySite = datacenterOrderIndex(getter(left.item)) - datacenterOrderIndex(getter(right.item));
+          return bySite || left.index - right.index;
+        })
+        .map(({ item }) => item);
+    }
+
+    function datacenterChildValue(el) {
+      if (el instanceof HTMLOptionElement) return el.value;
+      if (el.dataset.site || el.dataset.dc) return el.dataset.site || el.dataset.dc;
+      const control = el.matches("input, select") ? el : el.querySelector("input[value], select, [data-dc]");
+      return control?.dataset?.dc || control?.dataset?.site || control?.value || el.textContent;
+    }
+
+    function reorderDatacenterChildren(container) {
+      if (!container) return;
+      if (container instanceof HTMLSelectElement) {
+        const selected = container.value;
+        const options = [...container.options];
+        const siteOptions = options.filter((option) => canonicalDatacenter(option.value || option.textContent));
+        const firstOther = options.find((option) => !siteOptions.includes(option)) || null;
+        for (const option of sortByDatacenter(siteOptions, datacenterChildValue)) {
+          container.insertBefore(option, firstOther);
+        }
+        if ([...container.options].some((option) => option.value === selected)) container.value = selected;
+        return;
+      }
+      const children = [...container.children];
+      const siteChildren = children.filter((child) => canonicalDatacenter(datacenterChildValue(child)));
+      if (!siteChildren.length) return;
+      const marker = document.createComment("datacenter-order");
+      container.insertBefore(marker, siteChildren[0]);
+      for (const child of sortByDatacenter(siteChildren, datacenterChildValue)) {
+        container.insertBefore(child, marker);
+      }
+      marker.remove();
+    }
+
+    function applyDatacenterOrderToDom() {
+      document.querySelectorAll("[data-dc-order]").forEach(reorderDatacenterChildren);
+      const groupedParents = new Set(
+        [...document.querySelectorAll("details.dc-group")].map((group) => group.parentElement).filter(Boolean),
+      );
+      groupedParents.forEach(reorderDatacenterChildren);
+    }
+
+    function persistDatacenterOrder(order) {
+      SITE_ORDER = order.filter((site, index) =>
+        DEFAULT_SITE_ORDER.includes(site) && order.indexOf(site) === index
+      );
+      for (const site of DEFAULT_SITE_ORDER) {
+        if (!SITE_ORDER.includes(site)) SITE_ORDER.push(site);
+      }
+      let settings = {};
+      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
+      settings.datacenterOrder = SITE_ORDER;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+      applyDatacenterOrderToDom();
+      if (lastRenderedJob) renderJob(lastRenderedJob, { forceCards: true });
+      if (lastSavedIdRows?.length) {
+        const rows = lastSavedIdRows;
+        lastSavedIdsFingerprint = "";
+        renderSavedIdRows(rows);
+      }
+      renderUnifiedDcData();
+      updateUnifiedCacheStatus();
+    }
+
+    let draggingDatacenter = "";
+
+    function renderDatacenterOrderSettings() {
+      const root = $("dc-order-list");
+      if (!root) return;
+      root.innerHTML = SITE_ORDER.map((site, index) => `
+        <div class="dc-order-item" data-site="${site}" draggable="true">
+          <span class="dc-order-grip" aria-hidden="true" title="Drag to move">⠿</span>
+          <strong>${site.toUpperCase()}</strong>
+          <button type="button" class="secondary dc-order-up" aria-label="Move ${site.toUpperCase()} up" ${index === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" class="secondary dc-order-down" aria-label="Move ${site.toUpperCase()} down" ${index === SITE_ORDER.length - 1 ? "disabled" : ""}>↓</button>
+        </div>
+      `).join("");
+    }
+
+    function moveDatacenter(site, direction) {
+      const order = [...SITE_ORDER];
+      const index = order.indexOf(site);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= order.length) return;
+      [order[index], order[next]] = [order[next], order[index]];
+      persistDatacenterOrder(order);
+      renderDatacenterOrderSettings();
+    }
+
+    function openSettings() {
+      renderDatacenterOrderSettings();
+      $("settings-modal")?.classList.remove("hidden");
+      $("btn-close-settings")?.focus();
+    }
+
+    function closeSettings() {
+      $("settings-modal")?.classList.add("hidden");
+    }
+
+    function initSettings() {
+      applyDatacenterOrderToDom();
+      const root = $("dc-order-list");
+      root?.addEventListener("click", (ev) => {
+        const button = ev.target.closest("button");
+        const row = ev.target.closest(".dc-order-item");
+        if (!button || !row) return;
+        moveDatacenter(row.dataset.site, button.classList.contains("dc-order-up") ? -1 : 1);
+      });
+      root?.addEventListener("dragstart", (ev) => {
+        const row = ev.target.closest(".dc-order-item");
+        if (!row) return;
+        draggingDatacenter = row.dataset.site || "";
+        row.classList.add("dragging");
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", draggingDatacenter);
+      });
+      root?.addEventListener("dragover", (ev) => {
+        const row = ev.target.closest(".dc-order-item");
+        if (!row || !draggingDatacenter || row.dataset.site === draggingDatacenter) return;
+        ev.preventDefault();
+        root.querySelectorAll(".drop-before, .drop-after").forEach((el) =>
+          el.classList.remove("drop-before", "drop-after")
+        );
+        const rect = row.getBoundingClientRect();
+        row.classList.add(ev.clientY > rect.top + rect.height / 2 ? "drop-after" : "drop-before");
+      });
+      root?.addEventListener("drop", (ev) => {
+        const target = ev.target.closest(".dc-order-item");
+        if (!target || !draggingDatacenter || target.dataset.site === draggingDatacenter) return;
+        ev.preventDefault();
+        const order = SITE_ORDER.filter((site) => site !== draggingDatacenter);
+        const index = order.indexOf(target.dataset.site);
+        order.splice(target.classList.contains("drop-after") ? index + 1 : index, 0, draggingDatacenter);
+        persistDatacenterOrder(order);
+        draggingDatacenter = "";
+        renderDatacenterOrderSettings();
+      });
+      root?.addEventListener("dragend", () => {
+        draggingDatacenter = "";
+        root.querySelectorAll(".dragging, .drop-before, .drop-after").forEach((el) =>
+          el.classList.remove("dragging", "drop-before", "drop-after")
+        );
+      });
+      $("btn-settings")?.addEventListener("click", openSettings);
+      $("btn-close-settings")?.addEventListener("click", closeSettings);
+      $("settings-backdrop")?.addEventListener("click", closeSettings);
+      $("btn-reset-dc-order")?.addEventListener("click", () => {
+        persistDatacenterOrder([...DEFAULT_SITE_ORDER]);
+        renderDatacenterOrderSettings();
+      });
+    }
 
     function readUiState() {
       try {
@@ -9125,7 +9372,7 @@
     async function declineAllSurveys() {
       if (!ensureTokenReady("declining surveys")) return;
       if (!await confirmAction(
-        "Decline all pending session feedback surveys in SJC, RTP, LON, SNG, and SYD?\n\nThis matches clicking Decline on each survey in the dCloud dashboard.",
+        `Decline all pending session feedback surveys in ${SITE_ORDER.map((site) => site.toUpperCase()).join(", ")}?\n\nThis matches clicking Decline on each survey in the dCloud dashboard.`,
         { title: "Decline surveys" }
       )) {
         return;
@@ -10841,6 +11088,9 @@
       if (ev.key === "Escape" && $("panel-step1")?.classList.contains("auth-panel-open")) {
         closeDcloudAuth();
       }
+      if (ev.key === "Escape" && !$("settings-modal")?.classList.contains("hidden")) {
+        closeSettings();
+      }
     });
 
     const HOVER_TIP_DELAY_MS = 1500;
@@ -10930,6 +11180,7 @@
       }
     }, true);
 
+    initSettings();
     initSectionOrdering();
     initUiStatePersistence();
     initHubHelpToggle();
