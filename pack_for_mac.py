@@ -41,6 +41,7 @@ FILES = (
     "requirements.txt",
     ".env.example",
     "VERSION",
+    "CHANGELOG.md",
     "github-update.txt",
     "update_from_github.py",
     "app.py",

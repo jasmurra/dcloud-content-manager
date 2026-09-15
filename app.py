@@ -4104,6 +4104,16 @@ def api_version() -> dict[str, str]:
     return {"version": APP_VERSION}
 
 
+@app.get("/api/changelog")
+def api_changelog() -> dict[str, str]:
+    path = APP_DIR / "CHANGELOG.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    return {"version": APP_VERSION, "text": text}
+
+
 _update_check_lock = threading.Lock()
 
 

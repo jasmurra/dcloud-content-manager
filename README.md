@@ -12,6 +12,18 @@ You do not need to clone this repository or log in to GitHub.
 
 Keep the Terminal window open while you use the tool. Details, troubleshooting, and how to overlay a new zip without losing jobs are in `START HERE.txt`.
 
+## What’s new
+
+| Version | What changed |
+| --- | --- |
+| **1.6** | What’s new in the app; this README; zip-builder scripts stay off coworker installs |
+| **1.5** | Check for updates in the app; public GitHub updates by commit |
+| **1.4** | First GitHub release: HTTPS auto-update, scheduling, CAI/CAMGR, job workspace, monitoring |
+
+Full notes: [CHANGELOG.md](CHANGELOG.md). In the running app, use **What’s new** next to the version number.
+
+GitHub’s usual pattern is this changelog file in the repo. Optional extra: a [Release](https://github.com/jasmurra/dcloud-content-manager/releases) per version (a `v1.6` tag with the same notes). People do not need Releases to update — they only need a newer `VERSION` on `main`.
+
 ## Updates
 
 After the 1.5 zip is installed, later versions install themselves:
@@ -31,7 +43,7 @@ These stay in GitHub for the person who builds zips. They are **not** packed int
 | `share-for-mac.command` | Builds the small zip (no Python) |
 | `share-for-mac-with-python.command` | Builds the large zip (Python included) |
 
-To ship a new version: bump `VERSION`, commit and push `main`, then people who already have 1.5+ update from GitHub. Rebuild zips only for a first-time install or a one-time overlay onto an older copy.
+To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`. People who already have 1.5+ update from GitHub. Rebuild zips only for a first-time install or a one-time overlay onto an older copy.
 
 ## What is not in GitHub
 

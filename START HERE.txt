@@ -24,6 +24,7 @@ Start
 5. Leave the Terminal window open while you use the tool. Close it when you are done.
 
 The version is at the top right of the page (Version 1.0, 1.1, …).
+What’s new lists each version in the app and in CHANGELOG.md (also on GitHub).
 If this folder is a git clone of the private GitHub repo, or github-update.txt
 points at that repo, start.command checks GitHub each launch and only copies a
 newer VERSION. Your jobs, logins, .venv, and the bundled runtime/ Python stay

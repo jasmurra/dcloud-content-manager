@@ -776,6 +776,13 @@
       line-height: 1.35;
       tab-size: 4;
     }
+    .changelog-text {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: inherit;
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
     .details-modal-body {
       display: grid;
       gap: 0.8rem;
@@ -1349,6 +1356,7 @@
       <h1>dCloud Content Manager</h1>
       <div class="header-actions">
         <span id="app-version" class="app-version">Version 1.0</span>
+        <button type="button" class="secondary" id="btn-whats-new" data-tip="What changed in this version and earlier ones.">What’s new</button>
         <button type="button" class="secondary" id="btn-check-updates" data-tip="Check GitHub now and install a newer version without manually restarting the app.">Check for updates</button>
         <button type="button" class="secondary dcloud-auth-button" id="btn-dcloud-authorize" data-tip="Open dCloud login and token controls.">Sign in to dCloud</button>
       </div>
@@ -2756,6 +2764,22 @@
           ? "You are signed in to dCloud. Click to view login and token controls."
           : "Sign in to dCloud so this tool can use your account."),
       );
+    }
+
+    async function openWhatsNew() {
+      showDetailsModal("What’s new", `<p class="hint">Loading…</p>`);
+      try {
+        const response = await fetch("/api/changelog", { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not load the changelog.");
+        const data = await response.json();
+        const text = String(data.text || "").trim() || "No changelog yet.";
+        showDetailsModal("What’s new", `<pre class="changelog-text">${escapeHtml(text)}</pre>`);
+      } catch (err) {
+        showDetailsModal(
+          "What’s new",
+          `<p class="hint">${escapeHtml(err.message || "Could not load the changelog.")}</p>`,
+        );
+      }
     }
 
     async function waitForUpdatedApp(version) {
@@ -10794,6 +10818,9 @@
     });
     $("token-alert-dismiss").addEventListener("click", () => hideTokenAlert());
     $("token-alert-backdrop").addEventListener("click", () => hideTokenAlert());
+    $("btn-whats-new")?.addEventListener("click", () => {
+      openWhatsNew().catch((err) => showError(err.message));
+    });
     $("btn-check-updates")?.addEventListener("click", () => {
       checkForAppUpdates().catch((err) => showError(err.message));
     });
