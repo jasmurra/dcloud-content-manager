@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -90,6 +91,16 @@ def test_release_metadata() -> None:
     check("a newer VERSION wins", is_newer(VERSION, "0.9"))
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     check(f"CHANGELOG has a {VERSION} section", f"## {VERSION}" in changelog)
+    check(
+        "CHANGELOG starts at a version, not a title",
+        changelog.lstrip().startswith("## "),
+        changelog.splitlines()[0] if changelog.strip() else "(empty)",
+    )
+    notes = app._changelog_notes(
+        "# What’s new\n\nNewest version first.\n\n## 1.10 — 2026-09-16\n- Delay\n"
+    )
+    check("What’s new skips the preamble", notes.startswith("## 1.10"), notes[:40])
+    check("What’s new does not repeat the title", "Newest version first" not in notes)
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     check(f"README What's new lists {VERSION}", f"**{VERSION}**" in readme)
 
@@ -341,6 +352,93 @@ def test_staggered_session_copies() -> None:
     copies = INDEX.find('id="sched-copies"')
     start = INDEX.find('id="sched-start"')
     check("delay and copies sit next to duration", -1 < days < delay < copies < start)
+
+
+def test_schedule_capacity_explains_and_stays_nearby() -> None:
+    import dcloud_client
+
+    reason = (
+        "Can't schedule an instance of demo 1376509: The following resources "
+        "are unavailable: Resource 'Device(PSTN Services)' requires 1 but only has 0 available"
+    )
+    check(
+        "the blocked resource is named",
+        dcloud_client.unavailable_resource_name(reason) == "Device(PSTN Services)",
+    )
+
+    begin = datetime(2026, 9, 16, 19, 0, tzinfo=timezone.utc)
+    real_calendar = dcloud_client.fetch_content_calendar
+    real_pools = dcloud_client._pool_attempts_for_demo
+    try:
+        dcloud_client.fetch_content_calendar = lambda *args, **kwargs: ([], None)
+        shorter = dcloud_client.find_shorter_schedule_option(
+            "token",
+            "rtp",
+            "1376509",
+            desired_start=begin,
+            requested_duration=timedelta(days=100),
+            pool_id="GDE_CONTENT_DEV",
+        )
+        check("a 100-day request can suggest 30 days", shorter == (begin, begin + timedelta(days=30), 30))
+
+        # Capacity remains blocked beyond tomorrow. Even though a one-day slot
+        # exists later, it is too far away to offer or schedule automatically.
+        block = {
+            "type": "UNAVAILABLE",
+            "start": begin.isoformat(),
+            "stop": (begin + timedelta(days=3)).isoformat(),
+        }
+        dcloud_client.fetch_content_calendar = lambda *args, **kwargs: ([block], None)
+        no_soon_option = dcloud_client.find_shorter_schedule_option(
+            "token",
+            "rtp",
+            "1376509",
+            desired_start=begin,
+            requested_duration=timedelta(days=100),
+            pool_id="GDE_CONTENT_DEV",
+        )
+        check("a slot after tomorrow is not suggested", no_soon_option is None)
+
+        dcloud_client._pool_attempts_for_demo = lambda *args, **kwargs: [
+            ("GDE_CONTENT_DEV", "GDE_CONTENT_DEV")
+        ]
+        conflict = dcloud_client.find_schedule_conflict(
+            "token",
+            "rtp",
+            "1376509",
+            days=1,
+            start_at=begin.isoformat(),
+            stop_at=(begin + timedelta(days=1)).isoformat(),
+        )
+        check("calendar reports the conflict", bool(conflict and conflict.get("conflict")))
+        check("a next slot over 24 hours away is suppressed", not conflict.get("nextStart"), str(conflict))
+    finally:
+        dcloud_client.fetch_content_calendar = real_calendar
+        dcloud_client._pool_attempts_for_demo = real_pools
+
+    check(
+        "the page says next means within 24 hours",
+        "only if it starts within the next 24 hours" in INDEX,
+    )
+    check("failed schedule cards have an adjust button", "btn-adjust-schedule" in INDEX)
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check(
+        "the failed card keeps the resource and date details",
+        'scheduleConflict=availability' in app_source
+        and '"resource",' in app_source
+        and '"suggestedDays",' in app_source,
+    )
+    check(
+        "the card displays dCloud's technical reason",
+        "Technical reason from dCloud" in INDEX,
+    )
+    adjust = js_function("adjustScheduleFromCard")
+    for field in ("days", "sched-delay", "sched-copies"):
+        check(f"Adjust schedule fills {field}", field in adjust)
+    check(
+        "Adjust schedule fills both date controls",
+        'applyDateToControls("start"' in adjust and 'applyDateToControls("stop"' in adjust,
+    )
 
 
 def test_schedule_does_not_require_load_vms() -> None:

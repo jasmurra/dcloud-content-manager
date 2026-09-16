@@ -2045,6 +2045,8 @@ def lookup_demo_ids_across_sites(
 
 
 BLOCKING_TIMESLOT_TYPES = frozenset({"CONFLICT", "UNAVAILABLE", "UNAVAILABILITY"})
+MAX_NEXT_SLOT_DELAY = timedelta(days=1)
+SHORTER_SESSION_CHOICES_DAYS = (30, 14, 7, 3, 1)
 
 
 def _timeslot_interval(slot: dict[str, Any]) -> tuple[datetime, datetime] | None:
@@ -2129,6 +2131,62 @@ def find_next_available_window(
             cursor = block_end
     if cursor + duration <= search_end:
         return cursor, cursor + duration
+    return None
+
+
+def unavailable_resource_name(message: str) -> str:
+    """Pull the useful resource name out of dCloud's capacity error."""
+    match = re.search(
+        r"resources?\s+are\s+unavailable:.*?Resource\s+'([^']+)'",
+        str(message or ""),
+        re.IGNORECASE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def find_shorter_schedule_option(
+    token: str,
+    site: str,
+    demo_id: str,
+    *,
+    desired_start: datetime,
+    requested_duration: timedelta,
+    pool_id: str | None,
+) -> tuple[datetime, datetime, int] | None:
+    """Find a shorter session that can begin within the next 24 hours.
+
+    This is advisory only. It reads the same calendar as dCloud's scheduling
+    page and never submits a session.
+    """
+    choices = [
+        days
+        for days in SHORTER_SESSION_CHOICES_DAYS
+        if timedelta(days=days) < requested_duration
+    ]
+    if not choices:
+        return None
+    latest_start = desired_start + MAX_NEXT_SLOT_DELAY
+    longest = timedelta(days=max(choices))
+    timeslots, error = fetch_content_calendar(
+        token,
+        site,
+        demo_id,
+        range_start=desired_start,
+        range_end=latest_start + longest,
+        pool_id=pool_id,
+    )
+    if error:
+        return None
+    for days in choices:
+        duration = timedelta(days=days)
+        option = find_next_available_window(
+            desired_start,
+            duration,
+            timeslots,
+            search_end=latest_start + duration,
+        )
+        if option and option[0] <= latest_start:
+            return option[0], option[1], days
     return None
 
 
@@ -2380,6 +2438,8 @@ def find_schedule_conflict(
                 timeslots,
                 search_end=cal_end,
             )
+            if alt and alt[0] > begin + MAX_NEXT_SLOT_DELAY:
+                alt = None
             first_conflict = _conflict_payload(site_code, demo, pool_name, begin, end, alt)
 
     if saw_clear:
@@ -2469,6 +2529,13 @@ def schedule_exported_session(
             timeslots,
             search_end=cal_end,
         )
+        if alt and alt[0] > begin_at + MAX_NEXT_SLOT_DELAY:
+            if progress:
+                progress(
+                    f"{site_code.upper()}: next {pool_name} slot starts more than "
+                    "24 hours away; not scheduling it automatically."
+                )
+            return None
         if not alt:
             # A long session can never fit the 14-day lookahead, so asking dCloud
             # beats skipping the pool on a window we could not have found anyway.
@@ -2526,6 +2593,7 @@ def schedule_exported_session(
         return {"ok": False, "message": last_message}
 
     last_conflict: dict[str, Any] | None = None
+    resource_failure: tuple[str, str | None, str, str] | None = None
     pools = _pool_attempts_for_demo(token, site_code, demo, progress=progress)
     skipped: list[str] = []
 
@@ -2548,6 +2616,8 @@ def schedule_exported_session(
                     timeslots,
                     search_end=cal_end,
                 )
+                if alt and alt[0] > begin + MAX_NEXT_SLOT_DELAY:
+                    alt = None
                 if last_conflict is None:
                     last_conflict = _conflict_payload(
                         site_code, demo, pool_name, begin, end, alt
@@ -2587,8 +2657,12 @@ def schedule_exported_session(
 
         if progress:
             progress(f"{site_code.upper()}: {pool_name} not available ({result.get('message') or last_message}).")
+        failed_message = str(result.get("message") or last_message)
+        resource = unavailable_resource_name(failed_message)
+        if resource:
+            resource_failure = (pool_name, pool_id, resource, failed_message)
 
-        if not auto_next_available and _should_try_next_slot(result.get("message") or last_message):
+        if not auto_next_available and _should_try_next_slot(failed_message):
             cal_end = _calendar_search_end(begin_use)
             timeslots, cal_err = fetch_content_calendar(
                 token,
@@ -2606,6 +2680,8 @@ def schedule_exported_session(
                     timeslots,
                     search_end=cal_end,
                 ) if timeslots else None
+                if alt and alt[0] > begin_use + MAX_NEXT_SLOT_DELAY:
+                    alt = None
             if last_conflict is None:
                 last_conflict = _conflict_payload(
                     site_code, demo, pool_name, begin, end, alt
@@ -2629,6 +2705,8 @@ def schedule_exported_session(
                 timeslots,
                 search_end=cal_end,
             ) if timeslots else None
+            if alt and alt[0] > begin_use + MAX_NEXT_SLOT_DELAY:
+                alt = None
             if alt and alt[0] > begin_use:
                 retry_begin, retry_end = alt
                 retry_start = _dcloud_timestamp(retry_begin)
@@ -2664,15 +2742,56 @@ def schedule_exported_session(
         if not _should_try_next_pool(result.get("message") or last_message):
             break
 
-    if not auto_next_available and last_conflict:
-        return last_conflict
-
     if skipped and len(skipped) == len(pools):
         # Nothing was ever sent to dCloud, so last_message would be misleading.
+        if last_conflict:
+            last_conflict["message"] = (
+                "Resources are busy for the requested window. "
+                "No suitable opening starts within the next 24 hours."
+            )
+            return last_conflict
         last_message = (
             f"{site_code.upper()} calendar shows no open window for "
             f"{', '.join(skipped)} in the requested time range."
         )
+
+    if resource_failure:
+        pool_name, pool_id, resource, failed_message = resource_failure
+        shorter = find_shorter_schedule_option(
+            token,
+            site_code,
+            demo,
+            desired_start=begin,
+            requested_duration=duration,
+            pool_id=pool_id,
+        )
+        result = _conflict_payload(
+            site_code,
+            demo,
+            pool_name,
+            begin,
+            end,
+            (shorter[0], shorter[1]) if shorter else None,
+        )
+        result.update(
+            {
+                "resource": resource,
+                "reason": failed_message,
+                "suggestedDays": shorter[2] if shorter else 0,
+                "message": (
+                    f"{resource} has no available capacity for this session. "
+                    "No suitable slot can start within the next 24 hours."
+                    if not shorter
+                    else
+                    f"{resource} has no capacity for the requested duration. "
+                    f"A {shorter[2]}-day session can start within the next 24 hours."
+                ),
+            }
+        )
+        return result
+
+    if last_conflict:
+        return last_conflict
 
     return {
         "ok": False,

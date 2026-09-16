@@ -866,6 +866,18 @@
       margin: 0.35rem 0;
       color: var(--text);
     }
+    .schedule-card-conflict {
+      margin-top: 0.55rem;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 7px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+    .schedule-card-conflict strong { color: var(--text); }
+    .schedule-card-conflict .conflict-reason { margin-top: 0.3rem; }
+    .schedule-card-conflict .conflict-reason > summary { cursor: pointer; }
     .modal:not(.hidden) {
       display: flex !important;
     }
@@ -1794,7 +1806,7 @@
       </label>
       <label class="check-line" for="auto-next-available">
         <input type="checkbox" id="auto-next-available" checked />
-        <span>Use next available slot when resources are busy (checks dCloud calendar per pool before scheduling)</span>
+        <span>Use a nearby slot when resources are busy (only if it starts within the next 24 hours)</span>
       </label>
       <p class="hint hidden" id="add-to-job-hint">
         Scheduling adds to the current job and keeps your session cards.
@@ -4203,7 +4215,7 @@
         if (next) {
           next.textContent = hasNext
             ? formatScheduleSlot(conflict.nextStart, conflict.nextStop)
-            : "No open slot found in the next two weeks.";
+            : "No suitable opening starts within the next 24 hours.";
         }
         if (useNextBtn) {
           useNextBtn.disabled = !hasNext;
@@ -4943,6 +4955,70 @@
       return `<div class="hint">Shared with ${labels.map((label) => escapeHtml(label)).join(", ")}</div>`;
     }
 
+    function scheduleConflictDetails(dc) {
+      const conflict = dc?.scheduleConflict;
+      if (!conflict || typeof conflict !== "object") return "";
+      const requested = formatScheduleSlot(conflict.requestedStart, conflict.requestedStop);
+      const resource = String(conflict.resource || "").trim();
+      const reason = String(conflict.reason || "").trim();
+      const suggestedDays = Number(conflict.suggestedDays || 0);
+      const next = conflict.nextStart
+        ? formatScheduleSlot(conflict.nextStart, conflict.nextStop)
+        : "";
+      return `
+        <div class="schedule-card-conflict">
+          ${resource ? `<div><strong>Blocked resource:</strong> ${escapeHtml(resource)}</div>` : ""}
+          ${requested !== "—" ? `<div><strong>Requested:</strong> ${escapeHtml(requested)}</div>` : ""}
+          ${next
+            ? `<div><strong>Shorter option:</strong> ${escapeHtml(String(suggestedDays))} day${suggestedDays === 1 ? "" : "s"}, ${escapeHtml(next)}</div>`
+            : `<div>No suitable opening starts within the next 24 hours.</div>`}
+          ${reason ? `<details class="conflict-reason"><summary>Technical reason from dCloud</summary><div>${escapeHtml(reason)}</div></details>` : ""}
+        </div>
+      `;
+    }
+
+    function adjustScheduleFromCard(button) {
+      const site = String(button?.dataset.site || "").toLowerCase();
+      const demoId = String(button?.dataset.demoId || "").trim();
+      const requestedStart = String(button?.dataset.requestedStart || "");
+      const dc = (lastRenderedJob?.dcs || []).find((row) =>
+        row.site === site
+        && String(row.demoId || "") === demoId
+        && String(row.scheduleConflict?.requestedStart || "") === requestedStart
+      );
+      if (!dc) {
+        showError("Could not find that failed schedule card. Refresh the job and try again.");
+        return;
+      }
+      const conflict = dc.scheduleConflict || {};
+      document.querySelectorAll(".demo-id").forEach((input) => {
+        input.value = input.dataset.dc === site ? demoId : "";
+      });
+      const suggestedDays = Number(conflict.suggestedDays || 0);
+      const start = new Date(conflict.nextStart || conflict.requestedStart || Date.now());
+      const stop = new Date(conflict.nextStop || conflict.requestedStop || Date.now());
+      if (suggestedDays) $("days").value = String(suggestedDays);
+      else if (!Number.isNaN(start.getTime()) && !Number.isNaN(stop.getTime()) && stop > start) {
+        $("days").value = String(Math.max(1, Math.round((stop - start) / 86400000)));
+      }
+      if (!Number.isNaN(start.getTime())) applyDateToControls("start", start, { exactTime: true });
+      if (!Number.isNaN(stop.getTime())) applyDateToControls("stop", stop, { exactTime: true });
+      $("sched-delay").value = "0";
+      $("sched-copies").value = "1";
+      $("export-sessions").checked = dc.contentExport !== false;
+      if ($("auto-next-available")) $("auto-next-available").checked = false;
+      syncMainScheduleToSaved();
+      syncScheduleCopyHint();
+      const panel = $("panel-step3");
+      if (panel) panel.open = true;
+      panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      noteLog(
+        suggestedDays
+          ? `Loaded the suggested ${suggestedDays}-day ${site.toUpperCase()} schedule. Review the dates, then click Schedule sessions.`
+          : `Loaded the failed ${site.toUpperCase()} schedule. Adjust its duration or dates, then click Schedule sessions.`
+      );
+    }
+
     function renderSessionCard(dc, { monitor = false, openVmMore = new Set(), checkedCards = new Set() } = {}) {
       const cardKey = sessionKey(dc.site, dc.sessionId || dc.demoId);
       const vmsHtml = renderVmGroups(dc, cardKey, openVmMore);
@@ -5013,6 +5089,10 @@
         ? `<button type="button" class="btn-dc-share" ${cardData} data-share-kind="${shareKind}" data-content-id="${escapeHtml(shareKind === "content" ? (dc.savedId || "") : "")}" data-tip="Add or remove dCloud dashboard sharing for this ${shareKind === "content" ? "saved copy" : "live session"}.">${shareLabel}</button>`
         : "";
       const sharedLine = formatSharedWithLine(dc);
+      const conflictDetails = scheduleConflictDetails(dc);
+      const adjustSchedule = dc.phase === "error" && dc.scheduleConflict && !dc.sessionId
+        ? `<button type="button" class="btn-adjust-schedule" ${cardData} data-requested-start="${escapeHtml(dc.scheduleConflict.requestedStart || "")}">Adjust schedule</button>`
+        : "";
       const canRename = canRenameSession(dc);
       const displayName = demoName || (canRename ? "Untitled session" : "");
       const nameLine = displayName || canRename
@@ -5041,7 +5121,9 @@
             ${saved}
             ${sharedLine}
             <div style="margin-top:0.35rem">${escapeHtml(dc.message || "")}</div>
+            ${conflictDetails}
             ${view}
+            ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
             ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset session</button></div>` : ""}
             ${vmsHtml}
             <div class="card-actions-row">
@@ -10618,6 +10700,12 @@
       if (drop) {
         ev.preventDefault();
         removeCard(drop.dataset.site, drop.dataset.session, drop.dataset.demoId).catch((err) => showError(err.message));
+        return;
+      }
+      const adjustBtn = ev.target.closest(".btn-adjust-schedule");
+      if (adjustBtn) {
+        ev.preventDefault();
+        adjustScheduleFromCard(adjustBtn);
         return;
       }
       const onBtn = ev.target.closest(".btn-vm-on");

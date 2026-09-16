@@ -1,8 +1,10 @@
-# What’s new
+## 1.10.1 — 2026-09-16
 
-Newest version first. The same list is in the app under **What’s new**.
-
-This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
+- **What’s new** opens directly on the latest version instead of repeating its title and GitHub notes
+- “Use a nearby slot” now means the replacement must start within 24 hours. The tool will never quietly schedule a session many days later
+- A dCloud capacity error names the blocked resource, keeps the requested dates, and includes the exact technical response under a disclosure
+- For a long request that cannot fit, the tool checks whether a shorter 30-, 14-, 7-, 3-, or 1-day session can start within 24 hours
+- Failed schedule cards offer **Adjust schedule**. It loads the demo, DC, duration, and start/end times back into Schedule sessions for review; nothing is retried until the user clicks Schedule sessions
 
 ## 1.10 — 2026-09-16
 

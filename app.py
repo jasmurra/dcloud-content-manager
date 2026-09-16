@@ -4177,6 +4177,15 @@ def api_version() -> dict[str, str]:
     return {"version": APP_VERSION}
 
 
+def _changelog_notes(text: str) -> str:
+    """Drop the file title and any preamble so What’s new starts at a version."""
+    lines = str(text or "").splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("## "):
+            return "\n".join(lines[index:]).strip() + "\n"
+    return str(text or "").strip()
+
+
 @app.get("/api/changelog")
 def api_changelog() -> dict[str, str]:
     path = APP_DIR / "CHANGELOG.md"
@@ -4184,7 +4193,7 @@ def api_changelog() -> dict[str, str]:
         text = path.read_text(encoding="utf-8")
     except OSError:
         text = ""
-    return {"version": APP_VERSION, "text": text}
+    return {"version": APP_VERSION, "text": _changelog_notes(text)}
 
 
 _update_check_lock = threading.Lock()
@@ -4603,11 +4612,26 @@ def _schedule_one_dc(
         )
     if not result.get("ok"):
         if result.get("conflict"):
+            availability = {
+                key: result.get(key)
+                for key in (
+                    "resource",
+                    "reason",
+                    "requestedStart",
+                    "requestedStop",
+                    "nextStart",
+                    "nextStop",
+                    "suggestedDays",
+                    "pool",
+                )
+                if result.get(key) not in (None, "")
+            }
             _update_dc_card(
                 job,
                 dc,
                 phase="error",
                 message=result.get("message") or "Selected time is not available.",
+                scheduleConflict=availability,
             )
             return False
         _update_dc_card(
