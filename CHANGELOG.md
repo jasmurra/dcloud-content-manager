@@ -1,3 +1,9 @@
+## 1.10.3 — 2026-09-16
+
+- **Guest shutdown & save** waits until the guest-shutdown VMs actually show powered off before it submits the save. This applies to both the card action and the bulk button at the top. The card lists which VMs are still shutting down. If the wait times out after 10 minutes, it starts the save anyway so the session is not left hanging
+- Card actions now use the same wording as the bulk buttons and drop the redundant “session”: **Session info**, **Share…**, **Guest shutdown & save**, **Extend**, **Reset**, **End** (or **Cancel** on a session that has not started)
+- **Owned by** no longer disappears from cards. Restoring the last job after an app restart left the tool without a token to compare owners against, so every card silently dropped the line until something refreshed. It now falls back to the signed-in user and keeps the last known answer
+
 ## 1.10.2 — 2026-09-16
 
 - Session cards show the **Virtual Center** number next to the session ID, the same value dCloud shows on its Sessions page

@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.10.3** | Guest shutdown & save waits for VMs to power off, card actions match the bulk wording, and "Owned by" stops vanishing from cards |
 | **1.10.2** | Session cards show the Virtual Center number from dCloud |
 | **1.10.1** | Resource conflicts explain the blocker, stay within a 24-hour start window, and offer an adjustable retry |
 | **1.10** | Delay (minutes) and number of sessions next to Duration; removed IDs can be added back to the Hub list |

@@ -96,6 +96,7 @@ from dcloud_client import (
     is_active_status,
     is_auth_error,
     is_failed_status,
+    is_powered_off,
     is_saved_status,
     is_saving_in_progress_status,
     is_stopping_status,
@@ -2154,14 +2155,31 @@ def _save_description_for_dc(payload: ShutdownPayload, dc: dict[str, Any]) -> st
 
 
 def _job_identities(job: dict[str, Any]) -> set[str]:
-    return token_identities(str(job.get("token") or ""))
+    """Who I am, for telling my sessions apart from someone else's.
+
+    last-job.json never stores a token, so a restored job starts without one.
+    Fall back to the signed-in user's token — decoding it for a CEC ID works
+    even after it expires — or every card would lose "Owned by …".
+    """
+    identities = token_identities(str(job.get("token") or ""))
+    if identities:
+        return identities
+    with _user_auth_lock:
+        stored = str(_user_auth.get("access_token") or "")
+    return token_identities(stored)
 
 
 def _annotate_dc_ownership(job: dict[str, Any]) -> None:
     """Tell the UI which cards are mine so it can gate save and warn before end."""
     identities = _job_identities(job)
     for dc in job.get("dcs") or []:
-        dc["ownedByMe"] = owner_is_me(str(dc.get("owner") or ""), identities)
+        owned = owner_is_me(str(dc.get("owner") or ""), identities)
+        # Keep the last known answer when we cannot tell right now. A render
+        # with no token would otherwise drop the owner line from every card and
+        # persist that blank into last-job.json.
+        if owned is None and isinstance(dc.get("ownedByMe"), bool):
+            owned = bool(dc["ownedByMe"])
+        dc["ownedByMe"] = owned
         dc["staleForBulk"] = _dc_too_old_for_bulk(job, dc)
 
 
@@ -2388,6 +2406,54 @@ def _load_dc_vms(job: dict[str, Any], dc: dict[str, Any], token: str) -> str | N
 def _vm_is_powered_on(vm: dict[str, Any]) -> bool:
     key = str(vm.get("powerState") or "").lower().replace(" ", "").replace("_", "")
     return key in {state.replace("_", "") for state in POWER_ON_STATES}
+
+
+def _vm_card_label(vm: dict[str, Any]) -> str:
+    return str(vm.get("displayName") or vm.get("name") or vm.get("mor") or "VM").strip() or "VM"
+
+
+def _vm_matches_target(vm: dict[str, Any], target: dict[str, Any]) -> bool:
+    if target.get("mor") and vm.get("mor") == target.get("mor"):
+        return True
+    if target.get("uid") and vm.get("uid") == target.get("uid"):
+        return True
+    name = str(target.get("name") or "").strip().lower()
+    return bool(name) and str(vm.get("name") or "").strip().lower() == name
+
+
+def _merge_observed_vm_power(
+    card_vms: list[dict[str, Any]],
+    observed: list[dict[str, Any]],
+    pending: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    pending_keys = {
+        str(vm.get("mor") or vm.get("uid") or vm.get("name") or "").strip().lower()
+        for vm in pending
+    }
+    merged = list(card_vms or [])
+    for live in observed:
+        hit = next((vm for vm in merged if _vm_matches_target(vm, live)), None)
+        if hit is None:
+            continue
+        if live.get("powerState"):
+            hit["powerState"] = live["powerState"]
+        key = str(live.get("mor") or live.get("uid") or live.get("name") or "").strip().lower()
+        still_on = key in pending_keys
+        hit["shutdownPending"] = still_on
+        if still_on:
+            hit["lastAction"] = "Guest shutdown requested — waiting for powered-off confirmation."
+        else:
+            hit["lastAction"] = "Guest shutdown verified — VM is powered off."
+    return merged
+
+
+def _shutdown_wait_message(pending: list[dict[str, Any]]) -> str:
+    names = [_vm_card_label(vm) for vm in pending]
+    if not names:
+        return "All VMs are powered off — starting save."
+    listed = ", ".join(names[:8])
+    extra = f" (+{len(names) - 8} more)" if len(names) > 8 else ""
+    return f"Waiting for VMs to shut down before saving: {listed}{extra}"
 
 
 def _active_card_message(content_export: bool) -> str:
@@ -5188,7 +5254,62 @@ def _shutdown_one_dc(
             matched = preferred
         tok = current_token()
         results = guest_shutdown_vms(tok, site, session_id, matched, progress=progress)
-        progress(f"{site.upper()}: guest shutdown requests sent — starting save (dCloud handles shutdown on save).")
+        progress(f"{site.upper()}: guest shutdown requests sent — waiting for VMs to power off before save.")
+
+        def _on_shutdown_wait(
+            observed: list[dict[str, Any]],
+            pending: list[dict[str, Any]],
+        ) -> None:
+            live_dc = _find_dc(job, site, session_id) or dc
+            merged = _merge_observed_vm_power(list(live_dc.get("vms") or []), observed, pending)
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                phase="shutting_down",
+                message=_shutdown_wait_message(pending),
+                vms=merged,
+                shutdownResults=results,
+            )
+
+        _on_shutdown_wait(matched, matched)
+        waited = wait_for_power_state(
+            tok,
+            site,
+            session_id,
+            matched,
+            want_on=False,
+            timeout_seconds=10 * 60,
+            poll_seconds=10,
+            progress=progress,
+            should_stop=job["stop"].is_set,
+            get_token=current_token,
+            refresh_auth=recover,
+            on_wait=_on_shutdown_wait,
+        )
+        if job["stop"].is_set():
+            _release_save_claim(job, dc)
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                phase="ready",
+                message="Shutdown & save cancelled before save was submitted.",
+            )
+            return
+        if not waited.get("ok"):
+            still = [
+                _vm_card_label(vm)
+                for vm in (waited.get("vms") or [])
+                if not is_powered_off(vm.get("powerState"))
+            ]
+            progress(
+                f"{site.upper()}: {waited.get('message') or 'timed out waiting for VMs to power off'}"
+                + (f" — still on: {', '.join(still)}" if still else "")
+                + ". Starting save anyway."
+            )
+        else:
+            progress(f"{site.upper()}: selected VMs are powered off — starting save.")
     _set_dc(
         job,
         site,

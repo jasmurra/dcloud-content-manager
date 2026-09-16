@@ -3467,6 +3467,7 @@ def wait_for_power_state(
     should_stop: Callable[[], bool] | None = None,
     get_token: GetToken | None = None,
     refresh_auth: RefreshAuth | None = None,
+    on_wait: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
 ) -> dict[str, Any]:
     wanted_keys: set[str] = set()
     wanted_names: set[str] = set()
@@ -3538,11 +3539,15 @@ def wait_for_power_state(
             elif progress:
                 progress(f"{site.upper()}: using tbv3 vm-status for power checks.")
         pending = []
+        pending_vms: list[dict[str, Any]] = []
         for vm in selected:
             power = vm.get("powerState") or ""
             ok = is_powered_on(power) if want_on else is_powered_off(power)
             if not ok:
                 pending.append(f"{vm['name']} ({power or 'unknown'})")
+                pending_vms.append(vm)
+        if on_wait:
+            on_wait(selected, pending_vms)
         if not pending:
             if progress:
                 progress(f"{site.upper()}: selected VMs are {label}.")

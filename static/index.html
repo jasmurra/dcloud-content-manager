@@ -2044,7 +2044,7 @@
         </div>
         <div class="actions">
         <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh all session statuses</button>
-        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down and saves checked ready cards, or all remaining ready cards if none checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest shutdown &amp; save</button>
+        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down checked ready cards, waits for their VMs to power off, then saves. Uses all remaining ready cards if none are checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest shutdown &amp; save</button>
         <button type="button" class="end" id="btn-end" data-tip="Ends checked sessions without saving, or all visible cards if none checked.">End sessions (no save)</button>
         <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear job workspace cards</button>
         </div>
@@ -5040,7 +5040,7 @@
       const notStarted = isScheduledNotStarted(dc);
       const notMine = dc.ownedByMe === false;
       const ownerLine = notMine
-        ? `<div class="hint" style="color:var(--warn)" data-tip="Shutdown &amp; save is not available on someone else's session. End still works, with a warning.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
+        ? `<div class="hint" style="color:var(--warn)" data-tip="Guest shutdown &amp; save is not available on someone else's session. End still works, with a warning.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
         : "";
       const staleLine = isStaleCard(dc)
         ? `<div class="hint" style="color:var(--warn)" data-tip="Left over from an earlier run — Save all and End all skip it. Use this card's own buttons.">Earlier run</div>`
@@ -5054,13 +5054,13 @@
         : "Reset is offered when dCloud says the session failed or can be reset.";
       const saveFailed = dc.phase === "save_failed" || (dc.phase === "error" && /save failed/i.test(dc.message || ""));
       const canSave = (dc.phase === "ready" || saveFailed) && dc.ownedByMe !== false;
-      const saveLabel = saveFailed ? "Retry save" : "Shutdown &amp; save this session";
+      const saveLabel = saveFailed ? "Retry save" : "Guest shutdown &amp; save";
       const saveTip = dc.ownedByMe === false
         ? `Only ${escapeHtml(dc.owner || "the owner")} can shut down and save this session.`
-        : "Guest-shuts down VMs and saves this session only.";
+        : "Guest-shuts down this session's VMs, waits for them to power off, then saves.";
       const endLabel = notStarted
-        ? (notMine ? "Cancel session (not yours)" : "Cancel session")
-        : (notMine ? "End session (not yours)" : "End session");
+        ? (notMine ? "Cancel (not yours)" : "Cancel")
+        : (notMine ? "End (not yours)" : "End");
       const endTip = notMine
         ? (notStarted
           ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. Cancelling it drops their scheduled session.`
@@ -5088,7 +5088,7 @@
         : "Move this card to monitoring (removed from bulk save/end).";
       const moveMonitorVal = monitor ? "0" : "1";
       const shareKind = shareKindForDc(dc);
-      const shareLabel = shareKind === "content" ? "Share saved content…" : "Share session…";
+      const shareLabel = shareKind === "content" ? "Share saved content…" : "Share…";
       const shareBtn = shareKind
         ? `<button type="button" class="btn-dc-share" ${cardData} data-share-kind="${shareKind}" data-content-id="${escapeHtml(shareKind === "content" ? (dc.savedId || "") : "")}" data-tip="Add or remove dCloud dashboard sharing for this ${shareKind === "content" ? "saved copy" : "live session"}.">${shareLabel}</button>`
         : "";
@@ -5129,7 +5129,7 @@
             ${conflictDetails}
             ${view}
             ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
-            ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset session</button></div>` : ""}
+            ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
             ${vmsHtml}
             <div class="card-actions-row">
               <details class="vm-menu card-actions-menu">
@@ -5140,7 +5140,7 @@
                   <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
                   ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                   <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend</button>
-                  <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset session</button>
+                  <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
                   <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
                 </div>
               </details>
@@ -8017,8 +8017,8 @@
       const summary = bulkSessionLabels(targets).join("; ");
       if (!singleCard) {
         if (!await confirmAction(
-          `Guest-shutdown and save these sessions?\n\n${list}\n\nAlready-saved sessions are not included.`,
-          { title: "Shutdown & save" }
+          `Guest-shutdown and save these sessions?\n\n${list}\n\nEach one waits for its VMs to power off before saving. Already-saved sessions are not included.`,
+          { title: "Guest shutdown & save" }
         )) {
           return;
         }
@@ -8046,7 +8046,7 @@
         startPolling();
       } catch (err) {
         showError(err.message);
-        noteLog(`Shutdown & save failed: ${err.message}`);
+        noteLog(`Guest shutdown & save failed: ${err.message}`);
       }
     }
 

@@ -154,6 +154,49 @@ def test_shared_with_survives_status_poll() -> None:
     )
 
 
+def test_owner_line_survives_a_tokenless_render() -> None:
+    """last-job.json holds no token, so a restored job used to answer "I cannot
+    tell who owns this" for every card — and persist that blank."""
+    import base64
+    import json as _json
+
+    import app
+
+    def fake_token(ccoid: str) -> str:
+        claims = base64.urlsafe_b64encode(_json.dumps({"ccoid": ccoid}).encode()).decode().rstrip("=")
+        return f"e30.{claims}.unsigned-test-token"
+
+    job = {"id": "j1", "token": "", "dcs": [{"site": "sjc", "sessionId": "491381", "owner": "dimena"}]}
+    saved_auth = app._user_auth.get("access_token")
+    try:
+        app._user_auth["access_token"] = fake_token("jasmurra")
+        app._annotate_dc_ownership(job)
+        check(
+            "a restored job still knows a session is someone else's",
+            job["dcs"][0]["ownedByMe"] is False,
+        )
+
+        job["dcs"][0]["owner"] = "jasmurra"
+        app._annotate_dc_ownership(job)
+        check("my own session reads as mine", job["dcs"][0]["ownedByMe"] is True)
+
+        # Signed out entirely: keep the last answer instead of blanking the card.
+        app._user_auth["access_token"] = ""
+        job["dcs"][0]["ownedByMe"] = False
+        app._annotate_dc_ownership(job)
+        check(
+            "an unknown identity does not erase Owned by",
+            job["dcs"][0]["ownedByMe"] is False,
+        )
+    finally:
+        app._user_auth["access_token"] = saved_auth
+
+    check(
+        "the owner line is driven by ownedByMe",
+        "dc.ownedByMe === false" in INDEX and "Owned by ${escapeHtml(dc.owner" in INDEX,
+    )
+
+
 def test_session_card_shows_virtual_center() -> None:
     """The dashboard's Virtual Center number belongs on the session card."""
     from dcloud_client import session_virtual_center
@@ -176,6 +219,84 @@ def test_session_card_shows_virtual_center() -> None:
     fields = app._dc_ids_from_session({"virtualCenter": 5, "parentId": "1376509"})
     check("a payload with VC stamps the card", fields.get("virtualCenter") == "5")
     check("the card template shows Virtual Center", "Virtual Center ${escapeHtml(virtualCenter)}" in INDEX)
+
+
+def test_shutdown_save_waits_for_vms_to_power_off() -> None:
+    """Card Shutdown & save used to POST save as soon as dCloud accepted guest
+    shutdown. It now waits until those VMs actually show powered off."""
+    import app
+    import dcloud_client
+
+    msg = app._shutdown_wait_message([{"name": "CUCM"}, {"displayName": "IMP"}])
+    check("the card names VMs still shutting down", "CUCM" in msg and "IMP" in msg)
+    check("the card says it is waiting to save", "Waiting for VMs to shut down before saving" in msg)
+
+    merged = app._merge_observed_vm_power(
+        [
+            {"name": "CUCM", "powerState": "Powered On"},
+            {"name": "IMP", "powerState": "Powered On"},
+        ],
+        [
+            {"name": "CUCM", "powerState": "Powered Off"},
+            {"name": "IMP", "powerState": "Powered On"},
+        ],
+        [{"name": "IMP", "powerState": "Powered On"}],
+    )
+    check("a verified VM leaves the pending list", merged[0]["powerState"] == "Powered Off")
+    check("a live VM stays marked as shutting down", merged[1]["shutdownPending"] is True)
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = source.index("def _shutdown_one_dc(")
+    body = source[start : source.index("def _shutdown_job(")]
+    check(
+        "save is after the powered-off wait",
+        body.index("wait_for_power_state") < body.index("save_session("),
+    )
+    check("the wait is for powered off", "want_on=False" in body)
+    check(
+        "the old fire-and-save message is gone",
+        "dCloud handles shutdown on save" not in body,
+    )
+    # Bulk Guest shutdown & save has to reuse the same worker, or only the card
+    # button would wait.
+    bulk = source[source.index("def _shutdown_job(") : source.index("def _end_job(")]
+    check("bulk save goes through the same wait", "_shutdown_one_dc," in bulk)
+
+    # Card actions name the action and drop the redundant "session".
+    check('the card menu says "Guest shutdown & save"', '"Guest shutdown &amp; save"' in INDEX)
+    check("the old card label is gone", "Shutdown &amp; save this session" not in INDEX)
+    for gone in ("Share session…", ">Reset session<"):
+        check(f"card menu no longer says {gone}", gone not in INDEX)
+    check(
+        "end and cancel labels lose the word session",
+        '"Cancel (not yours)" : "Cancel"' in INDEX and '"End (not yours)" : "End"' in INDEX,
+    )
+
+    seen: list[tuple[int, int]] = []
+    real_list = dcloud_client.list_session_vms
+    real_tbv3 = dcloud_client.apply_tbv3_power_states
+    try:
+        dcloud_client.list_session_vms = lambda *a, **k: (
+            [{"name": "CUCM", "mor": "m1", "powerState": "Powered Off"}],
+            {},
+            None,
+        )
+        dcloud_client.apply_tbv3_power_states = lambda *a, **k: (a[3], None)
+        out = dcloud_client.wait_for_power_state(
+            "t",
+            "rtp",
+            "1",
+            [{"name": "CUCM", "mor": "m1"}],
+            want_on=False,
+            timeout_seconds=5,
+            poll_seconds=0,
+            on_wait=lambda selected, pending: seen.append((len(selected), len(pending))),
+        )
+        check("on_wait reports no VMs still on", seen == [(1, 0)], str(seen))
+        check("wait_for_power_state succeeds when off", out.get("ok") is True)
+    finally:
+        dcloud_client.list_session_vms = real_list
+        dcloud_client.apply_tbv3_power_states = real_tbv3
 
 
 def test_same_demo_can_repeat_in_a_dc() -> None:
