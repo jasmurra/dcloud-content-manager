@@ -1,10 +1,15 @@
+## 1.11.1 — 2026-09-16
+
+- A demo that is already the original base now shows **its own saved ID** in Root ID with “(this is the base)”, instead of a blank dash you had to hover to understand. There is no copy button on those rows — copying would point the demo at itself
+- Those rows no longer count as missing a root, so they stop asking you to connect to CAMGR and stop being rechecked
+
 ## 1.11 — 2026-09-16
 
 - Saved content list has a **Root ID** column (CAMGR `fkrootDemoId`, the original base after a chain of saves). Target ID stays the previous save and is what CAI replace uses
 - Root stays blank until CAMGR is connected, unless a leftover lookup already stored it. A note under the table says to Connect to CAMGR when the column is empty
 - **Use root as target** (toolbar and per-row) copies Root into Target when you really want to replace VMs in the original base
 - Target lookup no longer silently falls back to the CAMGR root, which used to put the base demo into Target on a save-of-a-save
-- A blank Root ID says why when you hover it: CAMGR has no root recorded, the demo points at itself so it already is the base, or the CAMGR call failed
+- A blank Root ID says why when you hover it: CAMGR has no root recorded, the demo points at itself, or the CAMGR call failed
 - **Recheck root IDs** asks CAMGR again for every row. A failed CAMGR call no longer marks a row as "already looked up", which used to leave Root blank permanently
 
 ## 1.10.3 — 2026-09-16

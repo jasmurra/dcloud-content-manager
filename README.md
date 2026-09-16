@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.11.1** | A demo that is its own base shows that ID in Root ID, with no copy button |
 | **1.11** | Root ID column on the Hub list, filled from CAMGR; Use root as target copies it into Target ID |
 | **1.10.3** | Guest shutdown & save waits for VMs to power off, card actions match the bulk wording, and "Owned by" stops vanishing from cards |
 | **1.10.2** | Session cards show the Virtual Center number from dCloud |

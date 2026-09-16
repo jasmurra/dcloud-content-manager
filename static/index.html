@@ -6860,7 +6860,7 @@
 
     function rowNeedsRootLookup(row) {
       if (camgrCdevHomeDc(row.site)) return false;
-      if (String(row.rootDemoId || "").trim()) return false;
+      if (String(row.rootDemoId || "").trim() || row.rootIsSelf) return false;
       return !row.rootLookupDone;
     }
 
@@ -6868,7 +6868,9 @@
       const hint = $("saved-ids-root-hint");
       if (!hint) return;
       const rows = lastSavedIdRows || [];
-      const missing = rows.some((row) => !camgrCdevHomeDc(row.site) && !String(row.rootDemoId || "").trim());
+      const missing = rows.some(
+        (row) => !camgrCdevHomeDc(row.site) && !String(row.rootDemoId || "").trim() && !row.rootIsSelf
+      );
       hint.classList.toggle("hidden", !(rows.length && missing && !camgrLoggedIn));
     }
 
@@ -6890,7 +6892,7 @@
         else if (data.savedIds) renderSavedIdRows(data.savedIds.rows || []);
         if (force) {
           const rows = (data.savedIds?.rows || lastSavedIdRows || []).filter((row) => !camgrCdevHomeDc(row.site));
-          const blank = rows.filter((row) => !String(row.rootDemoId || "").trim());
+          const blank = rows.filter((row) => !String(row.rootDemoId || "").trim() && !row.rootIsSelf);
           noteLog(
             `Root ID check: ${data.filled || 0} filled from CAMGR`
             + (blank.length ? `, ${blank.length} with no root (hover the dash for the reason).` : ".")
@@ -7023,12 +7025,18 @@
         let target = String(typedTarget[key] ?? (row.parentId || row.publishedId || "")).trim();
         if (target === savedId || isDevSite) target = "";
         const root = isDevSite ? "" : String(row.rootDemoId || "").trim();
+        // CAMGR pointing the demo at itself means this saved content is the base.
+        // Show its own ID so the column reads as an answer, but never offer to
+        // copy it into Target — that would be replacing VMs into itself.
+        const rootIsSelf = !isDevSite && !root && Boolean(row.rootIsSelf);
         const rootDiffers = Boolean(root && root !== target && root !== savedId);
         const rootCell = isDevSite
           ? `<span class="hint" title="ContentDEV content sits in a vPod, so there is no root demo ID.">—</span>`
-          : root
-            ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as target</button>` : ""}`
-            : `<span class="hint" title="${escapeHtml(String(row.rootNote || "").trim() || (camgrLoggedIn ? "CAMGR has not answered for this row yet — use Recheck root IDs." : "Connect to CAMGR to load the original base demo ID."))}">—</span>`;
+          : rootIsSelf
+            ? `<span title="${escapeHtml(String(row.rootNote || "").trim() || "This saved content is the original base.")}">${escapeHtml(savedId)}</span> <span class="hint">(this is the base)</span>`
+            : root
+              ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as target</button>` : ""}`
+              : `<span class="hint" title="${escapeHtml(String(row.rootNote || "").trim() || (camgrLoggedIn ? "CAMGR has not answered for this row yet — use Recheck root IDs." : "Connect to CAMGR to load the original base demo ID."))}">—</span>`;
         const savedLink = isDevSite
           ? `<span class="hint" title="ContentDEV transfers use a vPod, not a saved demo ID.">—</span>`
           : row.contentViewUrl

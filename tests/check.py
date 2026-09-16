@@ -110,12 +110,14 @@ def test_root_id_is_not_the_target() -> None:
     # A failed CAMGR call must not mark the row done, or Root stays blank forever.
     check(
         "the root lookup reports whether anything answered",
-        "def _lookup_root_id(site: str, saved_id: str) -> tuple[str, bool, str]:" in source,
+        "def _lookup_root_id(site: str, saved_id: str) -> RootLookup:" in source,
     )
+    check("a self-root is its own answer", "is_self: bool = False" in source)
     check("a recheck can ignore the done flag", "def _backfill_root_demo_ids(*, force: bool = False)" in source)
     check(
         "an empty root can overwrite a stored one",
-        'overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote")' in source,
+        'ROOT_FIELDS = ("rootDemoId", "rootLookupDone", "rootNote", "rootIsSelf")' in source
+        and "overwrite_keys=ROOT_FIELDS" in source,
     )
     check(
         "a CAMGR name no longer marks the root done",
@@ -125,6 +127,12 @@ def test_root_id_is_not_the_target() -> None:
     check("the Hub table has a Root ID column", "<th>Root ID</th>" in INDEX)
     check("a blank root explains itself", "row.rootNote" in INDEX)
     check("roots can be rechecked", "btn-recheck-roots" in INDEX)
+    # A base demo shows its own ID, and copying it into Target would replace itself.
+    check("a base demo shows its own ID as the root", "rootIsSelf" in INDEX)
+    check(
+        "a base demo gets no copy button",
+        INDEX.index("const rootIsSelf") < INDEX.index("rootDiffers ? ` <button"),
+    )
     check("a blank Root column tells people to connect CAMGR", "saved-ids-root-hint" in INDEX)
     check("Use root as target is on the toolbar", "btn-use-root-as-target" in INDEX)
     check("a row can copy root into target", "btn-use-root" in INDEX)

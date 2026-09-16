@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 from urllib.parse import quote, urlparse
 
 APP_DIR = Path(__file__).resolve().parent
@@ -206,6 +206,8 @@ SESSION_FILE = APP_DIR / ".dcloud-session.json"
 CAI_SESSION_FILE = APP_DIR / ".dcloud-cai-session.json"
 CAMGR_SESSION_FILE = APP_DIR / ".dcloud-camgr-session.json"
 MANAGED_SAVED_IDS_FILE = APP_DIR / "managed-saved-ids.json"
+# A root lookup has to be able to clear these, so they bypass the truthy-merge.
+ROOT_FIELDS = ("rootDemoId", "rootLookupDone", "rootNote", "rootIsSelf")
 _AUTO_RESTORE_HOURS = float(os.getenv("DCLOUD_AUTO_RESTORE_HOURS", "4"))
 _AUTO_RESTORE_MAX_AGE_SECS = max(3600.0, _AUTO_RESTORE_HOURS * 3600.0)
 _TERMINAL_DC_PHASES = frozenset({"saved", "ended"})
@@ -1421,6 +1423,7 @@ def _normalize_saved_id_row(item: dict[str, Any]) -> dict[str, Any] | None:
         "rootDemoId": str(item.get("rootDemoId") or item.get("root_id") or "").strip(),
         "rootLookupDone": bool(item.get("rootLookupDone")),
         "rootNote": str(item.get("rootNote") or "").strip(),
+        "rootIsSelf": bool(item.get("rootIsSelf")),
         "sessionId": str(item.get("sessionId") or "").strip(),
         # ContentDEV rows are a vPod, not saved content, so there is no topology to open.
         "contentViewUrl": str(item.get("contentViewUrl") or "").strip()
@@ -1442,36 +1445,54 @@ def _lookup_published_id(site: str, saved_id: str) -> str:
     return extract_parent_content_id(details or {}, saved_id=saved)
 
 
-def _lookup_root_id(site: str, saved_id: str) -> tuple[str, bool, str]:
-    """Original base demo ID.
+class RootLookup(NamedTuple):
+    """`answered` is only True when something actually told us.
 
-    Returns (root, answered, note). `answered` is only True when something
-    actually told us — a failed CAMGR call must not mark the row done, or the
-    Root column would stay blank forever with no way to retry. `note` explains
-    an empty root so the table can say why instead of showing a bare dash.
+    A failed CAMGR call must not mark the row done, or the Root column would
+    stay blank forever with no way to retry. `is_self` means CAMGR points the
+    demo at itself: this saved content *is* the original base, which is a real
+    answer and different from not knowing.
     """
+
+    root: str = ""
+    answered: bool = True
+    note: str = ""
+    is_self: bool = False
+
+
+def _lookup_root_id(site: str, saved_id: str) -> RootLookup:
+    """Original base demo ID for a saved copy."""
     saved = str(saved_id or "").strip()
     site_code = (site or "").strip().lower()
     if not site_code or not saved:
-        return "", True, ""
+        return RootLookup()
     token = _cached_user_access_token()
     if token:
         details = fetch_content(token, site_code, saved)
         root = extract_root_content_id(details or {}, saved_id=saved)
         if root.isdigit() and root != saved:
-            return root, True, ""
+            return RootLookup(root=root)
     cookie = _camgr_cookie()
     if not cookie:
-        return "", False, "Connect to CAMGR to load the original base demo ID."
+        return RootLookup(
+            answered=False,
+            note="Connect to CAMGR to load the original base demo ID.",
+        )
     demo = fetch_camgr_demo(cookie, site_code, saved)
     if demo.get("ok"):
         root = str(demo.get("rootDemoId") or "").strip()
         if root.isdigit() and root != saved:
-            return root, True, ""
+            return RootLookup(root=root)
         if demo.get("rootIsSelf"):
-            return "", True, "CAMGR points this demo at itself — it is the original base, so Target already is the root."
-        return "", True, "CAMGR has no root demo ID recorded for this saved content."
-    return "", False, str(demo.get("message") or "CAMGR could not read this demo.")
+            return RootLookup(
+                note="CAMGR points this demo at itself — this saved content is the original base.",
+                is_self=True,
+            )
+        return RootLookup(note="CAMGR has no root demo ID recorded for this saved content.")
+    return RootLookup(
+        answered=False,
+        note=str(demo.get("message") or "CAMGR could not read this demo."),
+    )
 
 
 def _backfill_root_demo_ids(*, force: bool = False) -> int:
@@ -1489,19 +1510,20 @@ def _backfill_root_demo_ids(*, force: bool = False) -> int:
             continue
         if norm.get("rootLookupDone") and not force:
             continue
-        root, answered, note = _lookup_root_id(norm["site"], norm["savedId"])
+        found = _lookup_root_id(norm["site"], norm["savedId"])
         updates.append(
             {
                 **norm,
-                "rootDemoId": root,
-                "rootLookupDone": answered,
-                "rootNote": note,
+                "rootDemoId": found.root,
+                "rootLookupDone": found.answered,
+                "rootNote": found.note,
+                "rootIsSelf": found.is_self,
             }
         )
-        if root:
+        if found.root or found.is_self:
             filled += 1
     if updates:
-        _upsert_managed_saved_rows(updates, overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote"))
+        _upsert_managed_saved_rows(updates, overwrite_keys=ROOT_FIELDS)
     return filled
 
 
@@ -1712,6 +1734,7 @@ def _saved_id_display_row(
     root_demo_id: str = "",
     root_lookup_done: bool = False,
     root_note: str = "",
+    root_is_self: bool = False,
     replace: dict[str, Any] | None = None,
     transfer: dict[str, Any] | None = None,
     integrate: dict[str, Any] | None = None,
@@ -1815,6 +1838,7 @@ def _saved_id_display_row(
         "rootDemoId": root_demo_id,
         "rootLookupDone": bool(root_lookup_done or root_demo_id),
         "rootNote": root_note,
+        "rootIsSelf": bool(root_is_self),
         "contentViewUrl": content_view_url or _content_view_url(site, saved_id),
         "caiUrl": cai_demo_url(site, saved_id),
         "camgrUrl": CAMGR_HOME,
@@ -1941,6 +1965,7 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
                 root_demo_id=str(norm.get("rootDemoId") or ""),
                 root_lookup_done=bool(norm.get("rootLookupDone")),
                 root_note=str(norm.get("rootNote") or ""),
+                root_is_self=bool(norm.get("rootIsSelf")),
                 replace=replace,
                 transfer=transfers.get(key) or {},
                 integrate=integrates.get(key) or {},
@@ -3830,6 +3855,7 @@ def _import_in_progress_camgr_jobs(
         # separately. Marking it done off the name left the column blank for good.
         root_answered = bool(root) or bool(existing.get("rootLookupDone"))
         root_note = str(existing.get("rootNote") or "")
+        root_is_self = bool(existing.get("rootIsSelf"))
         if not name or not root_answered:
             demo = fetch_camgr_demo(cookie, site, saved_id)
             if demo.get("loggedIn") is False:
@@ -3842,9 +3868,10 @@ def _import_in_progress_camgr_jobs(
                 name = name or str(demo.get("name") or "").strip()
                 root = root or str(demo.get("rootDemoId") or "").strip()
                 root_answered = True
+                root_is_self = bool(demo.get("rootIsSelf")) and not root
                 root_note = "" if root else (
-                    "CAMGR points this demo at itself — it is the original base, so Target already is the root."
-                    if demo.get("rootIsSelf")
+                    "CAMGR points this demo at itself — this saved content is the original base."
+                    if root_is_self
                     else "CAMGR has no root demo ID recorded for this saved content."
                 )
         _upsert_managed_saved_rows(
@@ -3856,9 +3883,10 @@ def _import_in_progress_camgr_jobs(
                     "rootDemoId": root,
                     "rootLookupDone": root_answered,
                     "rootNote": root_note,
+                    "rootIsSelf": root_is_self,
                 }
             ],
-            overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote"),
+            overwrite_keys=ROOT_FIELDS,
         )
         row = _camgr_job_to_transfer_row(pub, site=site, saved_id=saved_id)
         _upsert_camgr_transfer(job, row)
@@ -7619,25 +7647,26 @@ def api_saved_ids_lookup_parent(body: SavedIdsLookupPayload) -> dict[str, Any]:
     if not site or not saved_id:
         raise HTTPException(400, "Saved content ID is required.")
     parent = _lookup_published_id(site, saved_id)
-    root, root_done, root_note = _lookup_root_id(site, saved_id)
+    found = _lookup_root_id(site, saved_id)
     _upsert_managed_saved_rows(
         [{
             "site": site,
             "savedId": saved_id,
             "publishedId": parent,
             "parentId": parent,
-            "rootDemoId": root,
-            "rootLookupDone": root_done,
-            "rootNote": root_note,
+            "rootDemoId": found.root,
+            "rootLookupDone": found.answered,
+            "rootNote": found.note,
+            "rootIsSelf": found.is_self,
             "publishedLookupDone": True,
         }],
-        overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote"),
+        overwrite_keys=ROOT_FIELDS,
     )
     job = _maybe_job(body.job_id)
     return {
         "ok": True,
         "publishedId": parent,
-        "rootDemoId": root,
+        "rootDemoId": found.root,
         "job": _public_job(job) if job is not None else None,
         "savedIds": _saved_id_summary(job),
     }
