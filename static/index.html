@@ -5025,6 +5025,10 @@
       const demoName = String(dc.name || "").trim();
       const view = dc.viewUrl ? `<div><a href="${dc.viewUrl}" target="_blank" rel="noopener noreferrer">Open session</a></div>` : "";
       const sess = dc.sessionId ? `<div class="mono">session ${escapeHtml(dc.sessionId)}</div>` : "";
+      const virtualCenter = String(dc.virtualCenter || "").trim();
+      const vcLine = virtualCenter
+        ? `<div class="hint">Virtual Center ${escapeHtml(virtualCenter)}</div>`
+        : "";
       const startLine = formatSessionStartLine(dc);
       const endLine = dc.scheduleStop
         ? `<div class="hint">Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}</div>`
@@ -5114,6 +5118,7 @@
             ${nameLine}
             <div class="hint">demo ${escapeHtml(dc.demoId || "")}${dc.pool ? " · " + escapeHtml(dc.pool) : ""} · ${dc.contentExport === false ? "regular" : "export"}</div>
             ${sess}
+            ${vcLine}
             ${ownerLine}
             ${staleLine}
             ${startLine}

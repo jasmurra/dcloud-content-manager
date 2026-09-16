@@ -154,6 +154,30 @@ def test_shared_with_survives_status_poll() -> None:
     )
 
 
+def test_session_card_shows_virtual_center() -> None:
+    """The dashboard's Virtual Center number belongs on the session card."""
+    from dcloud_client import session_virtual_center
+    import app
+
+    check(
+        "list payloads use virtualCenter",
+        session_virtual_center({"virtualCenter": 5}) == "5",
+    )
+    check(
+        "session details use virtualCenterId",
+        session_virtual_center({"virtualCenterId": "5"}) == "5",
+    )
+    check(
+        "a status poll with no VC does not invent one",
+        session_virtual_center({"status": "2", "expand": {"server": {}}}) == "",
+    )
+    fields = app._dc_ids_from_session({"status": "2", "expand": {"server": {}}})
+    check("a poll without VC does not clear the card", "virtualCenter" not in fields)
+    fields = app._dc_ids_from_session({"virtualCenter": 5, "parentId": "1376509"})
+    check("a payload with VC stamps the card", fields.get("virtualCenter") == "5")
+    check("the card template shows Virtual Center", "Virtual Center ${escapeHtml(virtualCenter)}" in INDEX)
+
+
 def test_same_demo_can_repeat_in_a_dc() -> None:
     """1.8.4: dCloud issues a new session ID, so a repeat is its own card."""
     import app

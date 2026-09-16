@@ -118,6 +118,7 @@ from dcloud_client import (
     session_info_panels,
     session_owner,
     session_saved_content_id,
+    session_virtual_center,
     session_view_url,
     shared_with_from_details,
     owner_is_me,
@@ -1987,6 +1988,9 @@ def _dc_ids_from_session(details: dict[str, Any] | None) -> dict[str, str]:
     owner = session_owner(details)
     if owner:
         fields["owner"] = owner
+    virtual_center = session_virtual_center(details)
+    if virtual_center:
+        fields["virtualCenter"] = virtual_center
     fields.update(_session_schedule_fields(details))
     return fields
 
@@ -5653,6 +5657,7 @@ def _attach_card(
         "name": _session_display_name(details),
         "owner": session_owner(details),
         "canReset": bool(details.get("canReset")),
+        "virtualCenter": session_virtual_center(details),
         "pool": str(details.get("poolId") or details.get("pool") or ""),
         "viewUrl": session_view_url(site, session_id, session=details),
         "status": str(status or ""),
@@ -6470,7 +6475,7 @@ def _unified_session_result(site: str, item: dict[str, Any]) -> dict[str, Any]:
         "eventId": str((event or {}).get("uid") or "").strip(),
         "eventName": str((event or {}).get("name") or "").strip(),
         "contentPool": str(item.get("contentPoolName") or "").strip(),
-        "vc": str(item.get("virtualCenter") or "").strip(),
+        "vc": session_virtual_center(item),
         "savedId": str(item.get("activeId") or "").strip(),
         "type": str(item.get("type") or "").strip(),
         "viewUrl": session_view_url(site, session_id, session=item),

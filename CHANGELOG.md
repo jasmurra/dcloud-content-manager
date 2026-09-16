@@ -1,3 +1,7 @@
+## 1.10.2 — 2026-09-16
+
+- Session cards show the **Virtual Center** number next to the session ID, the same value dCloud shows on its Sessions page
+
 ## 1.10.1 — 2026-09-16
 
 - **What’s new** opens directly on the latest version instead of repeating its title and GitHub notes

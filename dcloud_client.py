@@ -956,7 +956,7 @@ def session_info_panels(
         ["End Time", pick(source.get("stop"), details.get("stop"))],
         ["Last Modified", pick(source.get("updated"), details.get("updated"))],
         ["VPN Available", vpn_available or "No"],
-        ["Virtual Center", pick(source.get("virtualCenterId"), details.get("virtualCenter"))],
+        ["Virtual Center", pick(source.get("virtualCenterId"), session_virtual_center(details))],
         ["Session Licenses", license_text],
     ]
 
@@ -4257,6 +4257,32 @@ def session_owner(details: dict[str, Any] | None) -> str:
     if not isinstance(details, dict):
         return ""
     return _owner_name(details)
+
+
+def session_virtual_center(details: dict[str, Any] | None) -> str:
+    """Virtual Center number dCloud shows next to the session ID.
+
+    The list API uses virtualCenter; session details and tbv3 use
+    virtualCenterId. expand=server may omit it, so callers must not treat an
+    empty result as “clear the number we already have.”
+    """
+    if not isinstance(details, dict):
+        return ""
+    expand = details.get("expand") if isinstance(details.get("expand"), dict) else {}
+    nested: list[dict[str, Any]] = []
+    for key in ("session", "sessionDetails", "server"):
+        value = details.get(key)
+        if isinstance(value, dict):
+            nested.append(value)
+    server = expand.get("server")
+    if isinstance(server, dict):
+        nested.append(server)
+    for obj in (details, expand, *nested):
+        for key in ("virtualCenter", "virtualCenterId", "vc"):
+            text = str(obj.get(key) or "").strip()
+            if text and text.lower() not in {"none", "null"}:
+                return text
+    return ""
 
 
 def owner_is_me(owner: str, identities: set[str] | None) -> bool | None:
