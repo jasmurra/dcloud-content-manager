@@ -327,6 +327,20 @@
       gap: 0.6rem;
       margin-bottom: 0.65rem;
     }
+    details.task-group > summary.task-group-head {
+      cursor: pointer;
+      list-style: none;
+    }
+    details.task-group > summary.task-group-head::-webkit-details-marker { display: none; }
+    details.task-group > summary.task-group-head::before {
+      content: "▸";
+      flex: 0 0 auto;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    details.task-group[open] > summary.task-group-head::before { content: "▾"; }
+    details.task-group:not([open]) > summary.task-group-head { margin-bottom: 0; }
+    details.task-group:not([open]) { padding-bottom: 0.9rem; }
     .task-group-head .task-group-title { flex: 1; margin: 0; }
     .task-group-title {
       display: flex;
@@ -2168,11 +2182,12 @@
         CAMGR status comes from <strong>your</strong> jobs in Content Transfer and fills in once you are
         connected to CAMGR. Other people's transfers are not added.
       </p>
-      <div class="task-group cai" id="cai-task-group">
-      <div class="task-group-head">
-        <p class="task-group-title">Content Integration Tasks</p>
+      <details class="task-group cai" id="cai-task-group" open>
+      <summary class="task-group-head">
+        <span class="task-group-title">Content Integration Tasks</span>
         <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
-      </div>
+      </summary>
+      <div class="task-group-body">
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-cai-connect" data-tip="Checks that this machine can reach Content Automation Hub on the Cisco network.">Connect to CAI</button>
         <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
@@ -2285,12 +2300,14 @@
         <tbody id="cai-template-tasks-body"></tbody>
       </table>
       </div>
+      </details>
 
-      <div class="task-group camgr" id="camgr-task-group">
-      <div class="task-group-head">
-        <p class="task-group-title">Content Transfer Tasks</p>
+      <details class="task-group camgr" id="camgr-task-group" open>
+      <summary class="task-group-head">
+        <span class="task-group-title">Content Transfer Tasks</span>
         <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
-      </div>
+      </summary>
+      <div class="task-group-body">
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-camgr-connect" data-tip="Uses your open CAMGR tab in Chrome. Keep Content Transfer open, then click Connect.">Connect to CAMGR</button>
         <a class="secondary" id="btn-camgr-open" href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Transfer in a new tab if you want to look at CAMGR. Not required for Connect.">Open CAMGR</a>
@@ -2357,6 +2374,7 @@
         <button type="button" id="btn-camgr-dev-transfer" disabled data-tip="Submits a CAMGR transfer from this vPod back to its own datacenter. Greyed out until you discover VMs and check at least one.">Submit dev transfer</button>
       </div>
       </div>
+      </details>
       </div>
     </details>
 
@@ -5177,7 +5195,11 @@
       try { show = localStorage.getItem(HUB_HELP_KEY) === "shown"; } catch {}
       applyHubHelp(show);
       document.querySelectorAll(".hub-help-btn").forEach((btn) => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", (ev) => {
+          // The task group toggles live in a <summary>, so a click here would
+          // collapse the section as well as flip the help text.
+          ev.preventDefault();
+          ev.stopPropagation();
           const next = $("hub-body")?.classList.contains("help-hidden") || false;
           applyHubHelp(next);
           try { localStorage.setItem(HUB_HELP_KEY, next ? "shown" : "hidden"); } catch {}
@@ -8597,6 +8619,7 @@
     const PERSIST_PANEL_SELECTOR = [
       "details.panel-collapse",
       "details.advanced",
+      "details.task-group",
       "details.found-sessions-panel",
       "details#found-saved-panel",
       "details#saved-ids-found-panel",
@@ -11282,6 +11305,11 @@
         if (hub) hub.open = true;
       }
       if (el && el.tagName === "DETAILS") el.open = true;
+      // A target inside a collapsed task group cannot be scrolled to, so open
+      // every section it sits in.
+      for (let node = el?.parentElement; node; node = node.parentElement) {
+        if (node.tagName === "DETAILS") node.open = true;
+      }
       if (target === "#panel-recovery" || target === "#panel-cleanup") {
         if (el) el.open = true;
       }

@@ -162,6 +162,82 @@ def test_same_demo_can_repeat_in_a_dc() -> None:
     check("only the repeat is queued", [dc for dc in job["dcs"] if app._dc_needs_schedule(dc)] == [repeat])
 
 
+def test_page_markup_is_balanced() -> None:
+    """Hand-editing nested <details>/<div> markup is easy to get wrong, and a
+    stray close tag silently swallows half a section in the browser."""
+    from html.parser import HTMLParser
+
+    void = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+
+    class Balance(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.stack: list[tuple[str, int]] = []
+            self.errors: list[str] = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag not in void:
+                self.stack.append((tag, self.getpos()[0]))
+
+        def handle_endtag(self, tag):
+            if tag in void:
+                return
+            if not self.stack:
+                self.errors.append(f"line {self.getpos()[0]}: stray </{tag}>")
+                return
+            open_tag, line = self.stack[-1]
+            if open_tag != tag:
+                self.errors.append(
+                    f"line {self.getpos()[0]}: </{tag}> closes <{open_tag}> from line {line}"
+                )
+            self.stack.pop()
+
+    parser = Balance()
+    parser.feed(INDEX)
+    check("index.html tags are balanced", not parser.errors, "; ".join(parser.errors[:3]))
+    check(
+        "nothing is left open at the end",
+        not parser.stack,
+        str([tag for tag, _ in parser.stack[:5]]),
+    )
+
+
+def test_task_groups_collapse() -> None:
+    """Mario's ask: the two Hub task sections fold away like the panels do."""
+    for group, title in (
+        ("cai-task-group", "Content Integration Tasks"),
+        ("camgr-task-group", "Content Transfer Tasks"),
+    ):
+        start = INDEX.index(f'id="{group}"')
+        head = INDEX.index("<summary class=\"task-group-head\">", start - 200)
+        check(f"{group} is a details section", '<details class="task-group' in INDEX[start - 60 : start])
+        check(f"{group} opens by default", 'open>' in INDEX[start : start + 40], INDEX[start : start + 40])
+        check(f"{group} has a summary header", head < INDEX.index(title))
+
+    check(
+        "collapse-all and the saved layout include them",
+        '"details.task-group",' in INDEX,
+    )
+    check(
+        "the caret shows which way the section is folded",
+        'details.task-group[open] > summary.task-group-head::before' in INDEX,
+    )
+    # A button inside <summary> toggles the section unless the handler says no.
+    help_toggle = js_function("initHubHelpToggle")
+    check(
+        "Show help does not collapse the section",
+        "ev.preventDefault()" in help_toggle and "ev.stopPropagation()" in help_toggle,
+    )
+    goto = js_function("goToPageTarget")
+    check(
+        "an error can still scroll to a button inside a collapsed group",
+        'node.tagName === "DETAILS"' in goto and "parentElement" in goto,
+    )
+
+
 def test_removed_id_can_be_added_back() -> None:
     """Remove from list writes two hide lists. CAI/CAMGR discovery must not
     resurrect the row, but an explicit Add to Hub has to clear both — otherwise

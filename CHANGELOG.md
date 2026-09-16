@@ -19,6 +19,7 @@ This file is the source of truth. GitHub also has a Releases page if someone lat
 - Each one shows which demo it will load, for example “Loads VMs from SJC 483886 — TINY BABY. Check a different row in Saved content above to change it.”
 - The note warns instead when two different demos are checked, or when a ContentDEV row is checked and Transfer VMs from Content Dev is the right tool
 - “Check a different row in Saved content above to change it” sits on its own line under the demo name, instead of wrapping mid-sentence next to the button
+- **Content Integration Tasks** and **Content Transfer Tasks** now fold away by clicking their headers, like the main sections. They start open, remember how you left them, and follow Collapse all / Expand all. Show help still only flips the help text
 
 ## 1.8.5 — 2026-09-16
 
