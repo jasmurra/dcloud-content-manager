@@ -8,6 +8,7 @@ This file is the source of truth. GitHub also has a Releases page if someone lat
 
 - Fixes Load VMs keeping its old datacenter and content ID after a refresh: a restored job was refilling those two fields. Job cards still come back; only the input boxes start empty
 - The VM source also returns to **Published/Saved content** on a refresh
+- “Shared with …” stays on a session card. The status refresh used to drop the line a few seconds after you shared the session
 
 ## 1.8.1 — 2026-09-16
 

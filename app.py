@@ -1935,6 +1935,23 @@ def _dc_ids_from_session(details: dict[str, Any] | None) -> dict[str, str]:
     return fields
 
 
+def _shared_with_update(details: dict[str, Any] | None) -> dict[str, list[dict[str, str]]]:
+    """Sharing fields only when dCloud actually returned them.
+
+    The status poll asks for expand=server, so its response carries no
+    sharedWith at all. Writing an empty list from that would erase the people
+    a card was shared with on the next refresh.
+    """
+    if not isinstance(details, dict):
+        return {}
+    expand = details.get("expand") if isinstance(details.get("expand"), dict) else {}
+    if not isinstance(expand.get("sharedWith"), list) and not isinstance(
+        details.get("sharedWith"), list
+    ):
+        return {}
+    return {"sharedWith": shared_with_from_details(details)}
+
+
 def _find_dc(
     job: dict[str, Any],
     site: str,
@@ -2544,7 +2561,7 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         numeric = details.get("status") or details.get("sessionStatus") or ""
         bump(
             viewUrl=session_view_url(site, sid, session=details),
-            sharedWith=shared_with_from_details(details),
+            **_shared_with_update(details),
             canReset=bool(details.get("canReset")),
             **_dc_ids_from_session(details),
         )

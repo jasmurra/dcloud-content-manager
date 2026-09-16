@@ -16,7 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
-| **1.8.2** | Load VMs no longer keeps its old datacenter and ID after a refresh |
+| **1.8.2** | Load VMs no longer keeps its old datacenter and ID after a refresh; “Shared with” stays on the card |
 | **1.8.1** | Dropdowns start on your first datacenter after a refresh; stale IDs are cleared |
 | **1.8** | CAI Content Dev dropdown also updates immediately with the saved DC order |
 | **1.7** | Personal Settings cog: drag datacenters into the display order used throughout the app |
