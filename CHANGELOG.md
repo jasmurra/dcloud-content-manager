@@ -4,6 +4,11 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.8.3 — 2026-09-16
+
+- A session card that is still **scheduled** says **Cancel session** instead of End session, so you can tell at a glance that nothing running is being destroyed. The confirmation prompt uses the same wording
+- Once the session starts, the card goes back to End session. Both do the same thing in dCloud — only the wording changes
+
 ## 1.8.2 — 2026-09-16
 
 - Fixes Load VMs keeping its old datacenter and content ID after a refresh: a restored job was refilling those two fields. Job cards still come back; only the input boxes start empty

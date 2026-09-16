@@ -4516,6 +4516,13 @@
       return Boolean(dc?.sessionId) && dc.phase === "ready";
     }
 
+    // End and Cancel are the same dCloud API. A session that has not started has
+    // nothing running to end, so the wording follows the status on the pill —
+    // nobody should have to wonder whether they are killing live work.
+    function isScheduledNotStarted(dc) {
+      return Boolean(dc?.sessionId) && dc.phase === "waiting" && cardStatusLabel(dc) === "scheduled";
+    }
+
     // dCloud offers Reset on a failed session; canReset comes straight from its session JSON.
     function canResetSession(dc) {
       if (!dc?.sessionId) return false;
@@ -4850,6 +4857,7 @@
         ? `<div class="mono">saved ID ${escapeHtml(dc.savedId)}${dc.contentViewUrl ? ` · <a href="${dc.contentViewUrl}" target="_blank" rel="noopener noreferrer">edit topology</a>` : ""}</div>`
         : "";
       const canEnd = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase);
+      const notStarted = isScheduledNotStarted(dc);
       const notMine = dc.ownedByMe === false;
       const ownerLine = notMine
         ? `<div class="hint" style="color:var(--warn)" data-tip="Shutdown &amp; save is not available on someone else's session. End still works, with a warning.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
@@ -4870,6 +4878,16 @@
       const saveTip = dc.ownedByMe === false
         ? `Only ${escapeHtml(dc.owner || "the owner")} can shut down and save this session.`
         : "Guest-shuts down VMs and saves this session only.";
+      const endLabel = notStarted
+        ? (notMine ? "Cancel session (not yours)" : "Cancel session")
+        : (notMine ? "End session (not yours)" : "End session");
+      const endTip = notMine
+        ? (notStarted
+          ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. Cancelling it drops their scheduled session.`
+          : `This is ${escapeHtml(dc.owner || "someone else")}'s session. Ending it discards their work with no save.`)
+        : (notStarted
+          ? "Cancels this scheduled session in dCloud before it starts. Nothing is running yet, so there is nothing to save."
+          : "Ends this session in dCloud without saving.");
       const canRefresh = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase);
       const canExtend = canExtendSession(dc);
       const extendTip = canExtend
@@ -4936,7 +4954,7 @@
                   ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                   <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend</button>
                   <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset session</button>
-                  <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${notMine ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. Ending it discards their work with no save.` : "Ends this session in dCloud without saving."}">${notMine ? "End session (not yours)" : "End session"}</button>
+                  <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
                 </div>
               </details>
             </div>
@@ -8084,21 +8102,45 @@
       const list = formatBulkSessionList(targets);
       const summary = bulkSessionLabels(targets).join("; ") || "all attached sessions";
       const theirs = splitOwnedTargets(targets).theirs;
+      // Nothing here has started yet, so call it cancelling in the prompts too.
+      const notStarted = targets.every(
+        (row) => isScheduledNotStarted(findDcCard(row.site, row.session_id))
+      );
+      const one = targets.length === 1;
       if (theirs.length && !await confirmAction(
         `STOP — this is not your session.\n\n${ownerLabels(theirs).join("\n")}\n\n`
-        + "Ending it destroys someone else's running work with no save. Are you sure?",
-        { title: "Not your session", okLabel: "Yes, end it anyway", cancelLabel: "Cancel" }
+        + (notStarted
+          ? "Cancelling it drops someone else's scheduled session. Are you sure?"
+          : "Ending it destroys someone else's running work with no save. Are you sure?"),
+        {
+          title: "Not your session",
+          okLabel: notStarted ? "Yes, cancel it anyway" : "Yes, end it anyway",
+          cancelLabel: notStarted ? "Keep it" : "Cancel",
+        }
       )) {
         return;
       }
       if (!await confirmAction(
-        `End these sessions without saving?\n\n${list}\n\nSame as dCloud /end — the session is discarded.`,
-        { title: "End sessions" }
+        notStarted
+          ? `Cancel ${one ? "this scheduled session" : "these scheduled sessions"}?\n\n${list}\n\n`
+            + `${one ? "It has" : "They have"} not started, so nothing is running and there is nothing to save.`
+          : `End these sessions without saving?\n\n${list}\n\nSame as dCloud /end — the session is discarded.`,
+        notStarted
+          ? {
+            title: one ? "Cancel session" : "Cancel sessions",
+            okLabel: one ? "Cancel session" : "Cancel sessions",
+            cancelLabel: "Keep it",
+          }
+          : { title: "End sessions" }
       )) {
         return;
       }
       showError("");
-      noteLog(`End session (no save) requested for ${summary}…`);
+      noteLog(
+        notStarted
+          ? `Cancel scheduled session requested for ${summary}…`
+          : `End session (no save) requested for ${summary}…`
+      );
       try {
         const job = await api(`/api/jobs/${jobId}/end-sessions`, {
           method: "POST",
@@ -8114,7 +8156,7 @@
         startPolling();
       } catch (err) {
         showError(err.message);
-        noteLog(`End session failed: ${err.message}`);
+        noteLog(`${notStarted ? "Cancel" : "End"} session failed: ${err.message}`);
       }
     }
 
