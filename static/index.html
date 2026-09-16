@@ -927,6 +927,10 @@
       min-width: 12rem;
     }
     .load-target.load-target-warn { color: var(--warn); }
+    .load-target .load-target-hint {
+      display: block;
+      opacity: 0.8;
+    }
     table.dc-list {
       width: 100%;
       margin-top: 0.45rem;
@@ -5390,8 +5394,8 @@
       const sites = [...new Set(rows.map((row) => String(row.site || "").toUpperCase()).filter(Boolean))];
       const extra = sites.length > 1 ? ` (same demo in ${sites.slice(1).join(", ")})` : "";
       return {
-        text: `Loads ${what} from ${sites[0]} ${first.saved_id}${name ? ` — ${name}` : ""}${extra}. `
-          + "Check a different row in Saved content above to change it.",
+        text: `Loads ${what} from ${sites[0]} ${first.saved_id}${name ? ` — ${name}` : ""}${extra}.`,
+        hint: "Check a different row in Saved content above to change it.",
         warn: false,
       };
     }
@@ -5404,6 +5408,12 @@
       for (const [el, note] of notes) {
         if (!el) continue;
         el.textContent = note.text;
+        if (note.hint) {
+          const line = document.createElement("span");
+          line.className = "load-target-hint";
+          line.textContent = note.hint;
+          el.appendChild(line);
+        }
         el.classList.toggle("load-target-warn", note.warn);
       }
     }

@@ -18,6 +18,7 @@ This file is the source of truth. GitHub also has a Releases page if someone lat
 - **Load VMs** and **Load transfer VMs** now sit at the top of their section, next to Connect. They used to slide to the bottom once a long VM list was loaded
 - Each one shows which demo it will load, for example “Loads VMs from SJC 483886 — TINY BABY. Check a different row in Saved content above to change it.”
 - The note warns instead when two different demos are checked, or when a ContentDEV row is checked and Transfer VMs from Content Dev is the right tool
+- “Check a different row in Saved content above to change it” sits on its own line under the demo name, instead of wrapping mid-sentence next to the button
 
 ## 1.8.5 — 2026-09-16
 

@@ -415,8 +415,26 @@ const mixed = loadTargetNote(cases[3][0], "VMs");
 if (!mixed.warn) {{ console.error("mixed demos should warn"); process.exit(1); }}
 const single = loadTargetNote(cases[1][0], "VMs");
 if (single.warn) {{ console.error("a single demo should not warn"); process.exit(1); }}
+// The "change it" sentence goes on its own line, so it must not be glued
+// onto the end of the demo name where it word-wraps badly.
+if (single.text.includes("Check a different row")) {{
+  console.error(`the change-row sentence belongs in note.hint, not note.text: "${{single.text}}"`);
+  process.exit(1);
+}}
+if (!String(single.hint || "").includes("Check a different row")) {{
+  console.error(`expected a hint line, got "${{single.hint}}"`);
+  process.exit(1);
+}}
+if (!single.text.trimEnd().endsWith(".")) {{
+  console.error(`the first line should end cleanly, got "${{single.text}}"`);
+  process.exit(1);
+}}
 """
     run_node(source, "Load VMs note names the demo it will pull")
+    check(
+        "the hint line renders as its own block",
+        ".load-target .load-target-hint" in INDEX and "load-target-hint" in INDEX,
+    )
 
     hint_src = js_function("scheduleCopyHintText")
     hint_src += """
