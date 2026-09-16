@@ -4,6 +4,13 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.10 — 2026-09-16
+
+- Next to Duration: **Delay (minutes)** defaults to 0, and **Number of sessions** defaults to 1
+- A delay of 60 with one session starts an hour after the start time (Now + 60)
+- Three sessions with a delay of 15 start at the chosen time, then 15 minutes later, then 15 minutes after that — each copy gets its own session ID
+- The same two fields sit on Cleanup → saved content scheduling and stay in sync with Schedule sessions
+
 ## 1.9 — 2026-09-16
 
 - **Load VMs** and **Load transfer VMs** now sit at the top of their section, next to Connect. They used to slide to the bottom once a long VM list was loaded

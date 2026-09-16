@@ -415,6 +415,21 @@ def resolve_schedule_window(
     return start, stop
 
 
+MAX_SCHEDULE_COPIES = 20
+
+
+def schedule_copy_offsets_minutes(delay_minutes: int = 0, session_count: int = 1) -> list[int]:
+    """Minutes to add to the first-session start for each copy.
+
+    start_at is already the first session: a single session with delay 60 has
+    that 60 baked into start_at, so the only offset is 0. Several sessions
+    keep the first at start_at and stagger the rest by delay_minutes.
+    """
+    delay = max(0, int(delay_minutes or 0))
+    count = max(1, min(int(session_count or 1), MAX_SCHEDULE_COPIES))
+    return [delay * index for index in range(count)]
+
+
 def _dcloud_timestamp(when: datetime) -> str:
     utc = when.astimezone(timezone.utc).replace(tzinfo=None)
     return utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"

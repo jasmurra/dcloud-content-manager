@@ -162,6 +162,43 @@ def test_same_demo_can_repeat_in_a_dc() -> None:
     check("only the repeat is queued", [dc for dc in job["dcs"] if app._dc_needs_schedule(dc)] == [repeat])
 
 
+def test_staggered_session_copies() -> None:
+    """Delay + number of sessions: first at the chosen start, later copies wait."""
+    from dcloud_client import parse_schedule_datetime, schedule_copy_offsets_minutes
+
+    check("a single session's delay is baked into start_at", schedule_copy_offsets_minutes(60, 1) == [0])
+    check("three sessions stagger by the delay", schedule_copy_offsets_minutes(15, 3) == [0, 15, 30])
+    check("three sessions with no delay share a start", schedule_copy_offsets_minutes(0, 3) == [0, 0, 0])
+    check("copies cap at 20", len(schedule_copy_offsets_minutes(1, 99)) == 20)
+
+    import app
+    from app import DemoIds, RunPayload
+
+    payload = RunPayload(
+        demo_ids=DemoIds(sjc="480730"),
+        content_export=False,
+        days=1,
+        start_at="2026-09-16T16:00:00Z",
+        stop_at="2026-09-17T16:00:00Z",
+        delay_minutes=15,
+        session_count=3,
+    )
+    cards = app._expand_schedule_cards([("sjc", "480730")], payload)
+    check("three cards from one demo ID", len(cards) == 3)
+    starts = [parse_schedule_datetime(card["requestedStart"]) for card in cards]
+    check("each copy has a start", all(starts))
+    gap = (starts[1] - starts[0]).total_seconds()
+    gap2 = (starts[2] - starts[1]).total_seconds()
+    check("the gap is 15 minutes", gap == 900 and gap2 == 900, f"{gap}, {gap2}")
+    check("all three still need scheduling", all(app._dc_needs_schedule(card) for card in cards))
+
+    days = INDEX.find('id="days"')
+    delay = INDEX.find('id="sched-delay"')
+    copies = INDEX.find('id="sched-copies"')
+    start = INDEX.find('id="sched-start"')
+    check("delay and copies sit next to duration", -1 < days < delay < copies < start)
+
+
 def test_schedule_does_not_require_load_vms() -> None:
     """1.8.5: a regular session powers its own VMs, so Load VMs is not needed."""
     import threading
@@ -312,6 +349,28 @@ const single = loadTargetNote(cases[1][0], "VMs");
 if (single.warn) {{ console.error("a single demo should not warn"); process.exit(1); }}
 """
     run_node(source, "Load VMs note names the demo it will pull")
+
+    hint_src = js_function("scheduleCopyHintText")
+    hint_src += """
+const cases = [
+  [0, 1, ""],
+  [60, 1, "60 minutes after the start time"],
+  [15, 3, "one every 15 minutes"],
+  [0, 3, "at the same start time"],
+];
+for (const [delay, copies, expected] of cases) {
+  const text = scheduleCopyHintText(delay, copies);
+  if (expected && !text.includes(expected)) {
+    console.error(`hint(${delay}, ${copies}) missing "${expected}": ${text}`);
+    process.exit(1);
+  }
+  if (!expected && text) {
+    console.error(`hint(0, 1) should be empty, got ${text}`);
+    process.exit(1);
+  }
+}
+"""
+    run_node(hint_src, "delay/copies hint matches the schedule math")
 
 
 def main() -> int:

@@ -1688,14 +1688,23 @@
         <div class="dc-field"><label for="id-syd">SYD</label><input id="id-syd" data-dc="syd" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-syd"></p><a class="verify-demos" href="https://dcloud2-syd.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
       </div>
       <div class="row" style="margin-top:0.85rem">
-        <div style="max-width:470px">
+        <div>
           <label for="days">Duration (days)</label>
           <input id="days" type="number" min="1" value="1" autocomplete="off" />
+        </div>
+        <div>
+          <label for="sched-delay">Delay (minutes)</label>
+          <input id="sched-delay" type="number" min="0" step="1" value="0" autocomplete="off" data-tip="For one session, this waits that many minutes after the start time (Now + 60 starts in an hour). For several sessions, the first uses the start time and each extra copy waits this long after the previous one." />
+        </div>
+        <div>
+          <label for="sched-copies">Number of sessions</label>
+          <input id="sched-copies" type="number" min="1" max="20" step="1" value="1" autocomplete="off" data-tip="How many sessions to create from the demo IDs above. 3 with a 15 minute delay schedules one now, one 15 minutes later, and one 30 minutes later." />
         </div>
         <!-- How long the tool watches for Active before it stops polling. dCloud keeps
              building the session either way, so there is nothing to tune here. -->
         <input id="timeout" type="hidden" value="90" />
       </div>
+      <p class="hint" id="sched-copy-hint"></p>
       <div class="row" style="margin-top:0.85rem">
         <div>
           <label for="start-date-btn">Start date</label>
@@ -1741,8 +1750,10 @@
       </div>
       <p class="hint">
         Start/stop fill from now for the duration above (1 day = now until this time tomorrow).
-        Click a date if you need a later window. When <strong>Use next available slot</strong> is checked,
-        the tool reads dCloud’s calendar per pool and shifts busy DCs to the next open time automatically.
+        Click a date if you need a later window.
+        <strong>Delay</strong> waits after that start (60 with one session = Now plus an hour).
+        <strong>Number of sessions</strong> repeats the demo IDs; with delay 15 and 3 sessions, the first starts now, the next 15 minutes later, then 15 minutes after that.
+        When <strong>Use next available slot</strong> is checked, the tool reads dCloud’s calendar per pool and shifts busy DCs to the next open time automatically.
         When unchecked, a conflict prompts you to schedule the next slot or skip that datacenter before anything is sent to dCloud.
         The same schedule appears under Cleanup → saved content scheduling.
       </p>
@@ -1829,11 +1840,20 @@
           </p>
           <p class="step-label" style="margin-top:0.85rem">Session schedule</p>
           <div class="row">
-            <div style="max-width:470px">
+            <div>
               <label for="saved-days">Duration (days)</label>
               <input id="saved-days" type="number" min="1" value="1" autocomplete="off" />
             </div>
+            <div>
+              <label for="saved-sched-delay">Delay (minutes)</label>
+              <input id="saved-sched-delay" type="number" min="0" step="1" value="0" autocomplete="off" />
+            </div>
+            <div>
+              <label for="saved-sched-copies">Number of sessions</label>
+              <input id="saved-sched-copies" type="number" min="1" max="20" step="1" value="1" autocomplete="off" />
+            </div>
           </div>
+          <p class="hint" id="saved-sched-copy-hint"></p>
           <div class="row" style="margin-top:0.85rem">
             <div>
               <label for="saved-start-date-btn">Start date</label>
@@ -1879,6 +1899,7 @@
           </div>
           <p class="hint">
             Start/stop stay in sync with Schedule sessions. One day = now until this time tomorrow — open the calendar if you need a later window.
+            Delay and number of sessions stay in sync too.
           </p>
           <p class="hint">
             After you save sessions, the <strong>Content Automation Hub</strong> list shows those new IDs.
@@ -4053,20 +4074,59 @@
       }));
     }
 
+    function scheduleCopySettings() {
+      const delay = Math.max(0, Math.round(Number($("sched-delay")?.value || 0)) || 0);
+      const copies = Math.min(20, Math.max(1, Math.round(Number($("sched-copies")?.value || 1)) || 1));
+      return { delay, copies };
+    }
+
+    function scheduleCopyHintText(delay, copies) {
+      if (copies <= 1 && delay <= 0) return "";
+      if (copies <= 1) {
+        return `This session starts ${delay} minute${delay === 1 ? "" : "s"} after the start time above.`;
+      }
+      if (delay <= 0) {
+        return `Schedules ${copies} sessions of each DC ID at the same start time.`;
+      }
+      return `Schedules ${copies} sessions of each DC ID: the first at the start time above, then one every ${delay} minute${delay === 1 ? "" : "s"}.`;
+    }
+
+    function syncScheduleCopyHint() {
+      const { delay, copies } = scheduleCopySettings();
+      const text = scheduleCopyHintText(delay, copies);
+      for (const id of ["sched-copy-hint", "saved-sched-copy-hint"]) {
+        const el = $(id);
+        if (el) el.textContent = text;
+      }
+    }
+
+    function shiftedScheduleIso(hiddenId, extraMinutes) {
+      const raw = $(hiddenId)?.value;
+      if (!raw) return "";
+      const when = new Date(raw);
+      if (Number.isNaN(when.getTime())) return "";
+      when.setMinutes(when.getMinutes() + extraMinutes);
+      return when.toISOString();
+    }
+
     function scheduleFields() {
+      const { delay, copies } = scheduleCopySettings();
+      const firstDelay = copies <= 1 ? delay : 0;
       return {
         days: Number($("days").value || 1),
-        start_at: $("sched-start").value ? new Date($("sched-start").value).toISOString() : "",
-        stop_at: $("sched-stop").value ? new Date($("sched-stop").value).toISOString() : "",
+        start_at: shiftedScheduleIso("sched-start", firstDelay),
+        stop_at: shiftedScheduleIso("sched-stop", firstDelay),
+        delay_minutes: delay,
+        session_count: copies,
         active_timeout_minutes: Number($("timeout").value || 90),
         auto_next_available: $("auto-next-available") ? $("auto-next-available").checked : true,
       };
     }
 
     function validateScheduleWindow() {
-      const startVal = $("sched-start").value;
-      const stopVal = $("sched-stop").value;
-      if (startVal && stopVal && new Date(stopVal) <= new Date(startVal)) {
+      const startIso = scheduleFields().start_at;
+      const stopIso = scheduleFields().stop_at;
+      if (startIso && stopIso && new Date(stopIso) <= new Date(startIso)) {
         showError("Stop time must be after start time.");
         return false;
       }
@@ -7374,17 +7434,23 @@
     function syncMainScheduleToSaved() {
       if (!$("saved-days")) return;
       $("saved-days").value = $("days").value;
+      if ($("saved-sched-delay") && $("sched-delay")) $("saved-sched-delay").value = $("sched-delay").value;
+      if ($("saved-sched-copies") && $("sched-copies")) $("saved-sched-copies").value = $("sched-copies").value;
       const start = parseLocalInput($("sched-start").value);
       const stop = parseLocalInput($("sched-stop").value);
       if (start) applyDateToControls("savedStart", start);
       if (stop) applyDateToControls("savedStop", stop);
+      syncScheduleCopyHint();
     }
 
     function syncSavedScheduleToMain() {
       if (!$("saved-days")) return;
       $("days").value = $("saved-days").value;
+      if ($("sched-delay") && $("saved-sched-delay")) $("sched-delay").value = $("saved-sched-delay").value;
+      if ($("sched-copies") && $("saved-sched-copies")) $("sched-copies").value = $("saved-sched-copies").value;
       applyDateToControls("start", dateFromControls("savedStart"));
       applyDateToControls("stop", dateFromControls("savedStop"));
+      syncScheduleCopyHint();
     }
 
     function syncScheduleStop() {
@@ -7597,6 +7663,19 @@
           }
         }
       }
+      const { delay, copies } = scheduleCopySettings();
+      if (copies > 1) {
+        const gap = delay > 0
+          ? `the first at the start time above, then one every ${delay} minute${delay === 1 ? "" : "s"}`
+          : "all at the same start time";
+        if (!await confirmAction(
+          `Schedule ${copies} sessions of each demo ID (${gap})? Each copy gets its own session ID.`,
+          { title: "Schedule several sessions", okLabel: `Schedule ${copies}`, cancelLabel: "Go back" }
+        )) {
+          $("btn-run").disabled = false;
+          return;
+        }
+      }
       try {
         const scheduleDecisions = await resolveScheduleConflictsBeforeStart([], { useDemoIds: true });
         if (scheduleDecisions === null) return;
@@ -7608,12 +7687,8 @@
             demo_ids: demoIds(),
             selected_vms: skipPowerOn ? [] : selected,
             skip_power_on: skipPowerOn,
-            days: Number($("days").value || 1),
-            start_at: $("sched-start").value ? new Date($("sched-start").value).toISOString() : "",
-            stop_at: $("sched-stop").value ? new Date($("sched-stop").value).toISOString() : "",
-            active_timeout_minutes: Number($("timeout").value || 90),
+            ...scheduleFields(),
             content_export: $("export-sessions").checked,
-            auto_next_available: $("auto-next-available") ? $("auto-next-available").checked : true,
             schedule_decisions: scheduleDecisions,
           }),
         });
@@ -9752,8 +9827,13 @@
         .join("\n");
       const more = selected.length > 12 ? `\n…and ${selected.length - 12} more` : "";
       const kind = exportedSaved ? "exported" : "regular";
+      const { delay, copies } = scheduleCopySettings();
+      const copyNote = copies > 1
+        ? `\n\nThis will create ${copies} sessions of each checked item`
+          + (delay > 0 ? `, ${delay} minute(s) apart.` : " at the same start time.")
+        : "";
       if (!await confirmAction(
-        `Schedule ${selected.length} saved content item(s) as ${kind} sessions?\n\n${preview}${more}\n\nAll selected DCs are scheduled in parallel (multiple sessions per DC are allowed).`,
+        `Schedule ${selected.length} saved content item(s) as ${kind} sessions?\n\n${preview}${more}${copyNote}\n\nAll selected DCs are scheduled in parallel (multiple sessions per DC are allowed).`,
         { title: "Schedule saved content" }
       )) {
         return;
@@ -10630,6 +10710,8 @@
     $("export-sessions").addEventListener("change", () => syncRunButton());
     $("days").addEventListener("change", () => syncScheduleStop());
     $("days").addEventListener("input", () => syncScheduleStop());
+    $("sched-delay")?.addEventListener("input", () => { syncMainScheduleToSaved(); });
+    $("sched-copies")?.addEventListener("input", () => { syncMainScheduleToSaved(); });
     $("saved-days").addEventListener("change", () => {
       $("days").value = $("saved-days").value;
       syncScheduleStop();
@@ -10638,6 +10720,8 @@
       $("days").value = $("saved-days").value;
       syncScheduleStop();
     });
+    $("saved-sched-delay")?.addEventListener("input", () => { syncSavedScheduleToMain(); });
+    $("saved-sched-copies")?.addEventListener("input", () => { syncSavedScheduleToMain(); });
     $("start-date-btn").addEventListener("click", (ev) => {
       ev.stopPropagation();
       if (calTarget === "start") closeCalendar();
@@ -11365,8 +11449,13 @@
     // last schedule would silently come back. Every refresh starts at 1 day.
     $("days").value = "1";
     if ($("saved-days")) $("saved-days").value = "1";
+    if ($("sched-delay")) $("sched-delay").value = "0";
+    if ($("saved-sched-delay")) $("saved-sched-delay").value = "0";
+    if ($("sched-copies")) $("sched-copies").value = "1";
+    if ($("saved-sched-copies")) $("saved-sched-copies").value = "1";
     fillScheduleFromNow();
     syncMainScheduleToSaved();
+    syncScheduleCopyHint();
     syncRunButton();
     syncJobAppendHint();
     syncScheduleSavedButton();

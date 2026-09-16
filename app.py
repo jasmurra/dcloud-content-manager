@@ -79,6 +79,7 @@ from dcloud_client import (
     extend_session,
     parse_schedule_datetime,
     resolve_schedule_window,
+    schedule_copy_offsets_minutes,
     _dcloud_timestamp,
     fetch_content,
     fetch_admin_records,
@@ -742,6 +743,8 @@ class RunPayload(TokenPayload):
     job_id: str = ""
     # Set when the user confirmed scheduling with no VMs checked.
     skip_power_on: bool = False
+    delay_minutes: int = Field(default=0, ge=0, le=10080)
+    session_count: int = Field(default=1, ge=1, le=20)
 
 
 class CaiDemoRef(BaseModel):
@@ -1005,6 +1008,8 @@ class ScheduleSavedPayload(TokenPayload):
     job_id: str = ""
     # Set for a regular session, or when the user confirmed scheduling with no VMs checked.
     skip_power_on: bool = False
+    delay_minutes: int = Field(default=0, ge=0, le=10080)
+    session_count: int = Field(default=1, ge=1, le=20)
 
 
 class ScheduleConflictCheckPayload(TokenPayload):
@@ -4501,7 +4506,10 @@ def _schedule_one_dc(
     demo_id = dc.get("demoId") or ""
     kind = "exported" if payload.content_export else "regular"
     decision = _site_schedule_decision(payload, site)
-    if decision and decision.action == "skip":
+    offset = int(dc.get("scheduleOffsetMinutes") or 0)
+    # Skip / next-slot answers came from checking the first window. Later
+    # copies have their own start and should still be sent to dCloud.
+    if offset == 0 and decision and decision.action == "skip":
         _update_dc_card(
             job,
             dc,
@@ -4509,10 +4517,10 @@ def _schedule_one_dc(
             message="Skipped — not scheduled at the selected time.",
         )
         return False
-    schedule_start = payload.start_at
-    schedule_stop = payload.stop_at
+    schedule_start = str(dc.get("requestedStart") or payload.start_at or "")
+    schedule_stop = str(dc.get("requestedStop") or payload.stop_at or "")
     auto_next = payload.auto_next_available
-    if decision and decision.action == "schedule_next":
+    if offset == 0 and decision and decision.action == "schedule_next":
         schedule_start = decision.start_at or schedule_start
         schedule_stop = decision.stop_at or schedule_stop
     _update_dc_card(job, dc, phase="scheduling", message="Asking dCloud for a slot…")
@@ -4569,8 +4577,8 @@ def _schedule_one_dc(
     else:
         window = resolve_schedule_window(
             days=payload.days,
-            start_at=payload.start_at,
-            stop_at=payload.stop_at,
+            start_at=schedule_start,
+            stop_at=schedule_stop,
         )
         if isinstance(window, tuple):
             sched_fields = {
@@ -4841,22 +4849,69 @@ def _new_demo_dc_card(site: str, demo_id: str, *, content_export: bool) -> dict[
     }
 
 
+def _stamp_schedule_window(card: dict[str, Any], payload: RunPayload, offset_minutes: int) -> None:
+    window = resolve_schedule_window(
+        days=payload.days,
+        start_at=payload.start_at,
+        stop_at=payload.stop_at,
+    )
+    if not isinstance(window, tuple):
+        return
+    start, stop = window
+    delta = timedelta(minutes=max(0, int(offset_minutes or 0)))
+    card["requestedStart"] = _dcloud_timestamp(start + delta)
+    card["requestedStop"] = _dcloud_timestamp(stop + delta)
+    card["scheduleOffsetMinutes"] = max(0, int(offset_minutes or 0))
+    if offset_minutes:
+        card["message"] = f"Waiting to be scheduled (+{int(offset_minutes)} min)."
+
+
+def _expand_schedule_cards(
+    targets: list[tuple[str, str]] | list[tuple[str, str, str]],
+    payload: RunPayload,
+) -> list[dict[str, Any]]:
+    offsets = schedule_copy_offsets_minutes(payload.delay_minutes, payload.session_count)
+    cards: list[dict[str, Any]] = []
+    for offset in offsets:
+        for item in targets:
+            site, demo_id = item[0], item[1]
+            card = _new_demo_dc_card(site, demo_id, content_export=payload.content_export)
+            if len(item) > 2 and item[2]:
+                card["name"] = item[2]
+            _stamp_schedule_window(card, payload, offset)
+            cards.append(card)
+    return cards
+
+
 def _append_demo_schedule_to_job(
     job: dict[str, Any],
     targets: list[tuple[str, str]],
     *,
-    content_export: bool,
+    payload: RunPayload | None = None,
+    content_export: bool | None = None,
 ) -> int:
-    kind = "exported" if content_export else "regular"
-    added = 0
-    for site, demo_id in targets:
-        job["dcs"].append(_new_demo_dc_card(site, demo_id, content_export=content_export))
-        added += 1
+    if payload is None:
+        payload = RunPayload(
+            demo_ids=DemoIds(),
+            content_export=bool(content_export) if content_export is not None else True,
+        )
+    kind = "exported" if payload.content_export else "regular"
+    cards = _expand_schedule_cards(targets, payload)
+    job["dcs"].extend(cards)
+    added = len(cards)
     if added:
+        copies = max(1, int(payload.session_count or 1))
+        delay = max(0, int(payload.delay_minutes or 0))
+        extra = ""
+        if copies > 1:
+            extra = (
+                f" ×{copies} sessions"
+                + (f", {delay} min apart" if delay else " at the same start")
+            )
         _log(
             job,
             f"Queued {added} additional {kind} demo schedule(s) on this job "
-            f"({', '.join(site.upper() for site, _ in targets)}).",
+            f"({', '.join(site.upper() for site, _ in targets)}{extra}).",
         )
         _sync_job_phase(job)
     return added
@@ -5822,24 +5877,6 @@ def _schedule_saved_job(body: ScheduleSavedPayload) -> dict[str, Any]:
             f"Job {job_id}: scheduling {kind} sessions from {len(targets)} saved content ID(s).",
         )
 
-    for site, content_id, name in targets:
-        job["dcs"].append(
-            {
-                "site": site,
-                "demoId": content_id,
-                "sessionId": "",
-                "phase": "scheduling",
-                "message": f"From saved content {content_id}…",
-                "name": name,
-                "pool": "",
-                "viewUrl": "",
-                "status": "",
-                "vms": [],
-                "savedId": "",
-                "contentExport": body.content_export,
-            }
-        )
-
     run_payload = RunPayload(
         dcloud_token=body.dcloud_token,
         dcloud_token_source=body.dcloud_token_source,
@@ -5853,7 +5890,10 @@ def _schedule_saved_job(body: ScheduleSavedPayload) -> dict[str, Any]:
         auto_next_available=body.auto_next_available,
         schedule_decisions=body.schedule_decisions,
         skip_power_on=body.skip_power_on,
+        delay_minutes=body.delay_minutes,
+        session_count=body.session_count,
     )
+    job["dcs"].extend(_expand_schedule_cards(targets, run_payload))
     if job.get("worker_alive"):
         threading.Thread(
             target=_schedule_and_watch_new_dcs,
@@ -5916,7 +5956,7 @@ def api_start_job(body: RunPayload) -> dict[str, Any]:
         job = existing
         job["selected_vms"] = [vm.model_dump() for vm in body.selected_vms]
         job["contentExport"] = body.content_export
-        added = _append_demo_schedule_to_job(job, targets, content_export=body.content_export)
+        added = _append_demo_schedule_to_job(job, targets, payload=body)
         if not added:
             raise HTTPException(400, "No demo IDs to schedule.")
         _persist_job(job)
@@ -5938,10 +5978,7 @@ def api_start_job(body: RunPayload) -> dict[str, Any]:
         "token_source": body.dcloud_token_source,
         "selected_vms": [vm.model_dump() for vm in body.selected_vms],
         "contentExport": body.content_export,
-        "dcs": [
-            _new_demo_dc_card(site, demo_id, content_export=body.content_export)
-            for site, demo_id in targets
-        ],
+        "dcs": _expand_schedule_cards(targets, body),
     }
     with _jobs_lock:
         _jobs[job_id] = job
@@ -7895,6 +7932,8 @@ def api_schedule_pending(body: ScheduleSavedPayload) -> dict[str, Any]:
         content_export=body.content_export,
         auto_next_available=body.auto_next_available,
         skip_power_on=body.skip_power_on,
+        delay_minutes=body.delay_minutes,
+        session_count=body.session_count,
     )
     _log(job, f"Scheduling {pending_count} pending session(s) in parallel.")
     threading.Thread(
