@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.8.4** | Scheduling the same demo again in a DC is allowed (with a confirmation) |
 | **1.8.3** | Scheduled sessions offer **Cancel session** instead of End session |
 | **1.8.2** | Load VMs no longer keeps its old datacenter and ID after a refresh; “Shared with” stays on the card |
 | **1.8.1** | Dropdowns start on your first datacenter after a refresh; stale IDs are cleared |

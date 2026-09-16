@@ -4,6 +4,11 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.8.4 — 2026-09-16
+
+- You can schedule the same demo again in a datacenter that already has a session card. It used to be blocked with “still use the same content ID as an existing session card”
+- That check is now a confirmation: it lists the DC and demo ID, notes you will get a second session with its own session ID, and offers **Go back** in case a leftover ID from the previous demo was still in the field
+
 ## 1.8.3 — 2026-09-16
 
 - A session card that is still **scheduled** says **Cancel session** instead of End session, so you can tell at a glance that nothing running is being destroyed. The confirmation prompt uses the same wording

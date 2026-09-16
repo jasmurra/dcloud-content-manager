@@ -4183,6 +4183,10 @@
       if (status) status.textContent = "";
     }
 
+    // DCs about to be scheduled with a demo ID that already has a card on this job.
+    // dCloud is fine with a second session of the same demo, so this only warrants a
+    // heads-up: the same match also shows up when a leftover ID from the previous
+    // demo is still sitting in the field.
     function demoIdsMatchingExistingCards(job) {
       const bySite = new Map();
       (job?.dcs || []).forEach((dc) => {
@@ -4199,10 +4203,10 @@
         const site = el.dataset.dc;
         const val = el.value.trim();
         if (val && bySite.get(site)?.has(val)) {
-          matches.push(site.toUpperCase());
+          matches.push({ site: String(site || "").toUpperCase(), demoId: val });
         }
       });
-      return matches;
+      return sortByDatacenter(matches, (row) => row.site);
     }
 
     function applyLookups(data) {
@@ -7523,14 +7527,24 @@
       $("btn-run").disabled = true;
       const addToJob = appendToCurrentJob();
       if (addToJob) {
-        const stale = demoIdsMatchingExistingCards(lastRenderedJob);
-        if (stale.length) {
-          showError(
-            `${stale.join(", ")} still use the same content ID as an existing session card. `
-            + "Load VMs from the new demo so catalog lookup refreshes every DC, then schedule again."
-          );
-          $("btn-run").disabled = false;
-          return;
+        const repeats = demoIdsMatchingExistingCards(lastRenderedJob);
+        if (repeats.length) {
+          const many = repeats.length > 1;
+          const list = repeats.map((row) => `  • ${row.site} demo ${row.demoId}`).join("\n");
+          if (!await confirmAction(
+            `This job already has a session card for:\n\n${list}\n\n`
+            + `Scheduling again gives you ${many ? "second sessions" : "a second session"} of the same demo, `
+            + `with ${many ? "their own session IDs" : "its own session ID"}.\n\n`
+            + "If you meant a different demo, go back and Load VMs from it first so every DC field is refreshed.",
+            {
+              title: many ? "Schedule these demos again?" : "Schedule this demo again?",
+              okLabel: "Schedule again",
+              cancelLabel: "Go back",
+            },
+          )) {
+            $("btn-run").disabled = false;
+            return;
+          }
         }
       }
       try {
