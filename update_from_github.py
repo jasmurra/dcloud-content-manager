@@ -35,6 +35,8 @@ SKIP_DIR_NAMES = {
     ".dcloud-camgr-chrome",
     ".cursor",
     "__pycache__",
+    # Maintainer regression checks — they stay on GitHub, not in installs.
+    "tests",
 }
 SKIP_FILE_NAMES = {
     ".env",

@@ -919,6 +919,14 @@
       margin: 0;
       margin-right: 0.2rem;
     }
+    /* Sits beside Load VMs at the top of the task group, so a long VM list below
+       never buries which demo the button is about to pull. */
+    .load-target {
+      margin: 0;
+      flex: 1 1 18rem;
+      min-width: 12rem;
+    }
+    .load-target.load-target-warn { color: var(--warn); }
     table.dc-list {
       width: 100%;
       margin-top: 0.45rem;
@@ -2143,6 +2151,8 @@
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-cai-connect" data-tip="Checks that this machine can reach Content Automation Hub on the Cisco network.">Connect to CAI</button>
         <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
+        <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
+        <p class="hint load-target" id="cai-load-target"></p>
       </div>
       <p id="cai-status" class="hint" style="margin-top:0.35rem">CAI: on the Cisco network, click Connect to CAI.</p>
       <p class="hint chip-toolbar-label hidden" id="cai-vm-label"></p>
@@ -2162,7 +2172,6 @@
       </p>
       <div id="cai-integrate-list" class="camgr-dest-list" data-dc-order></div>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
         <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM replacement</button>
         <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for dest DCs that are not already integrated. Needs a CAMGR transfer first. Already-integrated dests cannot be selected.">Submit integration</button>
       </div>
@@ -2260,6 +2269,8 @@
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-camgr-connect" data-tip="Uses your open CAMGR tab in Chrome. Keep Content Transfer open, then click Connect.">Connect to CAMGR</button>
         <a class="secondary" id="btn-camgr-open" href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Transfer in a new tab if you want to look at CAMGR. Not required for Connect.">Open CAMGR</a>
+        <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load transfer VMs</button>
+        <p class="hint load-target" id="camgr-load-target"></p>
       </div>
       <p id="camgr-status" class="hint" style="margin-top:0.35rem">Keep Content Transfer open in Chrome, then Connect. This tool uses that tab.</p>
       <p class="hint">
@@ -2296,7 +2307,6 @@
         <span>day(s)</span>
       </div>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load transfer VMs</button>
         <button type="button" id="btn-camgr-transfer" data-tip="Submits a CAMGR transfer for each checked row to the checked destination DCs. Greyed out for ContentDEV rows — use Submit dev transfer instead.">Submit transfer</button>
       </div>
       <hr class="task-divider" />
@@ -5303,6 +5313,41 @@
       return done;
     }
 
+    // The Load buttons live next to Connect, above the VM list, so they need to
+    // say out loud which demo is queued up and where to change it.
+    function loadTargetNote(rows, what) {
+      if (!rows.length) {
+        return { text: `Check a row in Saved content above to pick the demo to load ${what} from.`, warn: false };
+      }
+      if (new Set(rows.map(demoGroupKey)).size > 1) {
+        return { text: "Two different demos are checked in Saved content above — leave only one.", warn: true };
+      }
+      if (rows.some((row) => Boolean(camgrCdevHomeDc(row.site)))) {
+        return { text: "ContentDEV is checked above — use Transfer VMs from Content Dev below instead.", warn: true };
+      }
+      const first = rows[0];
+      const name = String(first.name || "").trim();
+      const sites = [...new Set(rows.map((row) => String(row.site || "").toUpperCase()).filter(Boolean))];
+      const extra = sites.length > 1 ? ` (same demo in ${sites.slice(1).join(", ")})` : "";
+      return {
+        text: `Loads ${what} from ${sites[0]} ${first.saved_id}${name ? ` — ${name}` : ""}${extra}. `
+          + "Check a different row in Saved content above to change it.",
+        warn: false,
+      };
+    }
+
+    function syncLoadTargetNotes(rows) {
+      const notes = [
+        [$("cai-load-target"), loadTargetNote(rows, "VMs")],
+        [$("camgr-load-target"), loadTargetNote(rows, "transfer VMs")],
+      ];
+      for (const [el, note] of notes) {
+        if (!el) continue;
+        el.textContent = note.text;
+        el.classList.toggle("load-target-warn", note.warn);
+      }
+    }
+
     function syncHubActionButtons() {
       const replaceBtn = $("btn-cai-replace");
       const integrateBtn = $("btn-cai-integrate");
@@ -5310,6 +5355,7 @@
       const rows = selectedSavedIdRows().filter((row) => row.saved_id);
       const sameDemo = rows.length > 0 && new Set(rows.map(demoGroupKey)).size === 1;
       const cdevSelected = rows.some((row) => Boolean(camgrCdevHomeDc(row.site)));
+      syncLoadTargetNotes(rows);
       if (loadBtn) loadBtn.disabled = !rows.length || cdevSelected;
       const hasTarget = rows.length > 0 && rows.every((row) => String(row.target_id || "").trim());
       const hasVms = selectedCaiVms().length > 0;
@@ -10837,6 +10883,8 @@
     $("cai-template-dests").addEventListener("change", () => syncCaiTemplateButton());
     renderCaiTemplateDevDcs();
     syncCaiTemplateMode();
+    // Fills the "which demo loads" notes before any saved content has arrived.
+    syncHubActionButtons();
     $("btn-cai-template-check-all").addEventListener("click", () => setCaiTemplateDestChecks(true));
     $("btn-cai-template-uncheck-all").addEventListener("click", () => setCaiTemplateDestChecks(false));
     $("btn-cai-template-submit").addEventListener("click", () => submitCaiTemplate());

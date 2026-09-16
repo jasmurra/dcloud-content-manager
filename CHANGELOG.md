@@ -4,6 +4,12 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.9 — 2026-09-16
+
+- **Load VMs** and **Load transfer VMs** now sit at the top of their section, next to Connect. They used to slide to the bottom once a long VM list was loaded
+- Each one shows which demo it will load, for example “Loads VMs from SJC 483886 — TINY BABY. Check a different row in Saved content above to change it.”
+- The note warns instead when two different demos are checked, or when a ContentDEV row is checked and Transfer VMs from Content Dev is the right tool
+
 ## 1.8.5 — 2026-09-16
 
 - Scheduling saved content no longer insists on Load VMs first. A regular session powers its own VMs, so nothing needs to be checked
