@@ -1623,7 +1623,7 @@
       <div class="row">
         <div>
           <label for="src-site">Datacenter</label>
-          <select id="src-site" data-dc-order>
+          <select id="src-site" data-dc-order autocomplete="off">
             <option value="sjc">SJC</option>
             <option value="rtp">RTP</option>
             <option value="lon">LON</option>
@@ -1905,7 +1905,7 @@
           <div class="row">
             <div>
               <label for="workspace-manual-site">Datacenter</label>
-              <select id="workspace-manual-site" data-dc-order>
+              <select id="workspace-manual-site" data-dc-order autocomplete="off">
                 <option value="sjc">SJC</option>
                 <option value="rtp">RTP</option>
                 <option value="lon">LON</option>
@@ -2009,7 +2009,7 @@
       <div class="row">
         <div>
           <label for="monitor-manual-site">Datacenter</label>
-          <select id="monitor-manual-site" data-dc-order>
+          <select id="monitor-manual-site" data-dc-order autocomplete="off">
             <option value="sjc">SJC</option>
             <option value="rtp">RTP</option>
             <option value="lon">LON</option>
@@ -2078,7 +2078,7 @@
       <div class="row">
         <div>
           <label for="hub-manual-site">Datacenter</label>
-          <select id="hub-manual-site" data-dc-order>
+          <select id="hub-manual-site" data-dc-order autocomplete="off">
             <option value="sjc">SJC</option>
             <option value="rtp">RTP</option>
             <option value="lon">LON</option>
@@ -2195,7 +2195,7 @@
         </label>
         <label class="dev-transfer-field" id="cai-template-dev-dc-field">
           <span>Content Dev DC</span>
-          <select id="cai-template-dev-dc" data-dc-order></select>
+          <select id="cai-template-dev-dc" data-dc-order autocomplete="off"></select>
         </label>
         <label class="dev-transfer-field" id="cai-template-dev-vpod-field">
           <span>vPod number</span>
@@ -2203,7 +2203,7 @@
         </label>
         <label class="dev-transfer-field hidden" id="cai-template-demo-site-field">
           <span>Transferred from</span>
-          <select id="cai-template-demo-site" data-dc-order>
+          <select id="cai-template-demo-site" data-dc-order autocomplete="off">
             <option value="rtp">RTP</option>
             <option value="sjc">SJC</option>
             <option value="lon">LON</option>
@@ -7837,6 +7837,28 @@
       syncRunButton();
     }
 
+    // Chrome restores text inputs across a refresh, so yesterday's demo, session,
+    // and content IDs would come back beside today's datacenter.
+    function clearRestoredIdFields() {
+      for (const id of [
+        "src-session",
+        "workspace-manual-id",
+        "monitor-manual-id",
+        "hub-manual-id",
+        "cai-template-demo-id",
+        "cai-template-dev-vpod",
+        "cai-template-vm",
+      ]) {
+        const el = $(id);
+        if (el) el.value = "";
+      }
+      clearDemoIdFields();
+      if ($("session-meta")) $("session-meta").textContent = "";
+      // A restored "skip the catalog lookup" with empty IDs would quietly
+      // schedule the wrong thing.
+      if ($("skip-catalog")) $("skip-catalog").checked = false;
+    }
+
     function resetWorkspaceUi() {
       $("cards").innerHTML = "";
       $("cards-actions").classList.add("hidden");
@@ -8466,6 +8488,31 @@
       groupedParents.forEach(reorderDatacenterChildren);
     }
 
+    // CAI pickers use their own codes (APJ, EMEA), so match on the datacenter
+    // each option means rather than on the raw value.
+    function preferredDatacenterValue(select) {
+      for (const site of SITE_ORDER) {
+        const option = [...select.options].find(
+          (item) => canonicalDatacenter(item.value || item.textContent) === site,
+        );
+        if (option) return option.value;
+      }
+      return "";
+    }
+
+    function applyPreferredDatacenterSelection() {
+      document.querySelectorAll("select[data-dc-order]").forEach((select) => {
+        const value = preferredDatacenterValue(select);
+        if (value) select.value = value;
+      });
+      let search = {};
+      try { search = JSON.parse(localStorage.getItem(UNIFIED_SEARCH_STORE) || "{}"); } catch {}
+      if (Array.isArray(search.sites) && search.sites.length) return;
+      document.querySelectorAll(".unified-search-dc").forEach((box) => {
+        box.checked = canonicalDatacenter(box.value) === SITE_ORDER[0];
+      });
+    }
+
     function persistDatacenterOrder(order) {
       SITE_ORDER = order.filter((site, index) =>
         DEFAULT_SITE_ORDER.includes(site) && order.indexOf(site) === index
@@ -8478,6 +8525,7 @@
       settings.datacenterOrder = SITE_ORDER;
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
       applyDatacenterOrderToDom();
+      applyPreferredDatacenterSelection();
       if (lastRenderedJob) renderJob(lastRenderedJob, { forceCards: true });
       if (lastSavedIdRows?.length) {
         const rows = lastSavedIdRows;
@@ -8525,6 +8573,7 @@
 
     function initSettings() {
       applyDatacenterOrderToDom();
+      applyPreferredDatacenterSelection();
       const root = $("dc-order-list");
       root?.addEventListener("click", (ev) => {
         const button = ev.target.closest("button");
@@ -11184,6 +11233,7 @@
     initSectionOrdering();
     initUiStatePersistence();
     initHubHelpToggle();
+    clearRestoredIdFields();
     bootstrapPage().catch(() => {});
     fillTimeOptions();
     // Chrome restores number inputs across a refresh, so a long duration from the

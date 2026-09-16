@@ -4,6 +4,12 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.8.1 — 2026-09-16
+
+- Every datacenter dropdown starts on the first datacenter from your Settings order after a page refresh
+- Search dCloud starts with that same datacenter checked until you pick your own
+- A refresh clears leftover demo, session, and content IDs (and unchecks “I already have the content IDs”) instead of restoring yesterday's values
+
 ## 1.8 — 2026-09-15
 
 - The CAI Content Dev datacenter dropdown now updates immediately when its display order changes in Settings
