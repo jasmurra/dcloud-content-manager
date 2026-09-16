@@ -4,6 +4,11 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.8.2 — 2026-09-16
+
+- Fixes Load VMs keeping its old datacenter and content ID after a refresh: a restored job was refilling those two fields. Job cards still come back; only the input boxes start empty
+- The VM source also returns to **Published/Saved content** on a refresh
+
 ## 1.8.1 — 2026-09-16
 
 - Every datacenter dropdown starts on the first datacenter from your Settings order after a page refresh

@@ -7854,6 +7854,11 @@
       }
       clearDemoIdFields();
       if ($("session-meta")) $("session-meta").textContent = "";
+      const contentRadio = $("vm-source-content");
+      if (contentRadio) {
+        contentRadio.checked = true;
+        syncVmSourceUi();
+      }
       // A restored "skip the catalog lookup" with empty IDs would quietly
       // schedule the wrong thing.
       if ($("skip-catalog")) $("skip-catalog").checked = false;
@@ -8232,10 +8237,13 @@
       }
     }
 
-    function applyJobToForm(job) {
+    // fillInputs is off when a job is restored by a page load: the cards come
+    // back, but Load VMs and the per-DC IDs stay empty like every other refresh.
+    function applyJobToForm(job, { fillInputs = true } = {}) {
       if (job?.tokenSource) {
         $("token-source").value = job.tokenSource;
       }
+      if (!fillInputs) return;
       const dcs = job?.dcs || [];
       const hasLiveSessions = dcs.some(
         (dc) => dc.sessionId && !["saved", "ended"].includes(dc.phase)
@@ -8319,7 +8327,7 @@
           setJobId(job.id);
         }
         lastLogLen = 0;
-        applyJobToForm(job);
+        applyJobToForm(job, { fillInputs: !auto });
         renderJob(job);
         startPolling();
         const prefix = auto ? "Auto-restored" : "Restored";
@@ -8365,7 +8373,7 @@
         let jobGone = false;
         try {
           const job = await api(`/api/jobs/${jobId}`, { quiet: true });
-          applyJobToForm(job);
+          applyJobToForm(job, { fillInputs: false });
           renderJob(job, { forceCards: true });
           if (shouldPollJob(job)) startPolling();
         } catch (err) {
