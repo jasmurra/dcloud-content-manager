@@ -163,12 +163,14 @@ def test_same_demo_can_repeat_in_a_dc() -> None:
 
 
 def test_removed_id_can_be_added_back() -> None:
-    """Remove from list writes two hide lists; Add to Hub must clear both, or
-    the row is stored and filtered straight back out."""
+    """Remove from list writes two hide lists. CAI/CAMGR discovery must not
+    resurrect the row, but an explicit Add to Hub has to clear both — otherwise
+    the row is stored and filtered straight back out and the button looks dead.
+    """
     import app
     from app import CaiDemoRef
 
-    real_state, real_managed = app.MANAGED_SAVED_IDS_FILE, app._managed_saved_state
+    real_state = app.MANAGED_SAVED_IDS_FILE
     with tempfile.TemporaryDirectory() as tmp:
         app.MANAGED_SAVED_IDS_FILE = Path(tmp) / "managed-saved-ids.json"
         try:
@@ -182,19 +184,50 @@ def test_removed_id_can_be_added_back() -> None:
             check("Remove from list hides it", "sjc:483886" in app._saved_id_hidden_set(job))
             check("the job records the hide too", job["savedIdHidden"] == ["sjc:483886"], str(job))
 
-            # Add to Hub: the managed upsert alone used to leave the job's copy.
-            app._upsert_managed_saved_rows([row])
+            # A CAMGR sweep re-adds anything in flight. It must not undo a removal,
+            # and it must not wipe the managed hide list the way it used to.
+            app._upsert_managed_saved_rows([{**row, "name": "TINY BABY - update6"}])
+            check(
+                "a CAMGR sweep leaves a removed row removed",
+                "sjc:483886" in app._managed_hidden_set(),
+            )
+            check(
+                "the swept row is not stored either",
+                all(
+                    r.get("savedId") != "483886"
+                    for r in app._managed_saved_state().get("rows") or []
+                ),
+            )
+            check(
+                "the removal survives with no job attached",
+                "sjc:483886" in app._saved_id_hidden_set(None),
+            )
+
+            # Add to Hub is a deliberate user action, so it clears both lists.
+            app._upsert_managed_saved_rows([row], unhide=True)
             app._unhide_saved_ids(job, [row])
             check(
                 "adding it back un-hides it everywhere",
                 "sjc:483886" not in app._saved_id_hidden_set(job),
                 str(job.get("savedIdHidden")),
             )
+            check(
+                "and the row is back in the list",
+                any(
+                    r.get("savedId") == "483886"
+                    for r in app._managed_saved_state().get("rows") or []
+                ),
+            )
         finally:
-            app.MANAGED_SAVED_IDS_FILE, app._managed_saved_state = real_state, real_managed
+            app.MANAGED_SAVED_IDS_FILE = real_state
 
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     check("the add endpoint clears the job hide list", "_unhide_saved_ids(job, rows)" in source)
+    check(
+        "only the explicit add un-hides",
+        source.count(", unhide=True)") == 1,
+        f"{source.count(', unhide=True)')} callers un-hide",
+    )
 
 
 def test_staggered_session_copies() -> None:

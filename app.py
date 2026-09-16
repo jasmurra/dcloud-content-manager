@@ -1447,7 +1447,15 @@ def _ensure_published_id(site: str, saved_id: str, current: str = "") -> str:
     return _lookup_published_id(site, saved)
 
 
-def _upsert_managed_saved_rows(items: list[dict[str, Any]]) -> int:
+def _upsert_managed_saved_rows(
+    items: list[dict[str, Any]], *, unhide: bool = False
+) -> int:
+    """Store saved content rows, respecting rows the user removed by hand.
+
+    CAI/CAMGR discovery calls this for anything it finds in flight, so it must
+    not resurrect a row someone deliberately removed: a hidden key is skipped
+    unless the caller is an explicit add (unhide=True).
+    """
     state = _managed_saved_state()
     by_key: dict[str, dict[str, Any]] = {}
     for row in state.get("rows") or []:
@@ -1464,6 +1472,8 @@ def _upsert_managed_saved_rows(items: list[dict[str, Any]]) -> int:
             continue
         key = _saved_id_key(norm["site"], norm["savedId"])
         if key in hidden:
+            if not unhide:
+                continue
             hidden.discard(key)
             changed = True
         if key not in by_key:
@@ -7328,7 +7338,7 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
         )
     if not rows:
         raise HTTPException(400, "Check at least one saved content row to add.")
-    added = _upsert_managed_saved_rows(rows)
+    added = _upsert_managed_saved_rows(rows, unhide=True)
     job = _maybe_job(body.job_id)
     unhidden = _unhide_saved_ids(job, rows)
     if job is not None:
