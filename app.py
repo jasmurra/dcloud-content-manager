@@ -1003,6 +1003,8 @@ class ScheduleSavedPayload(TokenPayload):
     auto_next_available: bool = True
     schedule_decisions: list[ScheduleSiteDecision] = Field(default_factory=list)
     job_id: str = ""
+    # Set for a regular session, or when the user confirmed scheduling with no VMs checked.
+    skip_power_on: bool = False
 
 
 class ScheduleConflictCheckPayload(TokenPayload):
@@ -5764,10 +5766,12 @@ def _schedule_saved_job(body: ScheduleSavedPayload) -> dict[str, Any]:
         targets.append((site, content_id, str(item.name or "").strip()))
     if not targets:
         raise HTTPException(400, "Select at least one saved content item to schedule.")
-    if not body.selected_vms:
+    # Only an exported session that is meant to power VMs on needs picks from
+    # Load VMs. A regular session powers everything itself.
+    if not body.selected_vms and not body.skip_power_on:
         raise HTTPException(
             400,
-            "Select VMs in Step 2 (load a session and check VMs), or restore a job that already has them.",
+            "Check the VMs to power on in Load VMs, or restore a job that already has them.",
         )
 
     token = _resolve_token(body)
@@ -5848,6 +5852,7 @@ def _schedule_saved_job(body: ScheduleSavedPayload) -> dict[str, Any]:
         content_export=body.content_export,
         auto_next_available=body.auto_next_available,
         schedule_decisions=body.schedule_decisions,
+        skip_power_on=body.skip_power_on,
     )
     if job.get("worker_alive"):
         threading.Thread(
@@ -7876,19 +7881,20 @@ def api_schedule_pending(body: ScheduleSavedPayload) -> dict[str, Any]:
     job["token_at"] = time.time()
     if body.selected_vms:
         job["selected_vms"] = [vm.model_dump() for vm in body.selected_vms]
-    elif not job.get("selected_vms"):
-        raise HTTPException(400, "Select VMs in Step 2, or restore a job that already has them.")
+    elif not job.get("selected_vms") and not body.skip_power_on:
+        raise HTTPException(400, "Check the VMs to power on in Load VMs, or restore a job that already has them.")
     run_payload = RunPayload(
         dcloud_token=body.dcloud_token,
         dcloud_token_source=body.dcloud_token_source,
         demo_ids=DemoIds(),
-        selected_vms=[SelectedVm(**vm) for vm in job["selected_vms"]],
+        selected_vms=[SelectedVm(**vm) for vm in job.get("selected_vms") or []],
         days=body.days,
         start_at=body.start_at,
         stop_at=body.stop_at,
         active_timeout_minutes=body.active_timeout_minutes,
         content_export=body.content_export,
         auto_next_available=body.auto_next_available,
+        skip_power_on=body.skip_power_on,
     )
     _log(job, f"Scheduling {pending_count} pending session(s) in parallel.")
     threading.Thread(

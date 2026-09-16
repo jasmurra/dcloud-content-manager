@@ -4,6 +4,12 @@ Newest version first. The same list is in the app under **What’s new**.
 
 This file is the source of truth. GitHub also has a Releases page if someone later tags a version; the notes should match this file.
 
+## 1.8.5 — 2026-09-16
+
+- Scheduling saved content no longer insists on Load VMs first. A regular session powers its own VMs, so nothing needs to be checked
+- An exported session with no VMs checked now asks “Schedule anyway?” instead of refusing, matching the main Schedule sessions button
+- Queued cards that were waiting on a schedule retry no longer stall when no VMs are checked
+
 ## 1.8.4 — 2026-09-16
 
 - You can schedule the same demo again in a datacenter that already has a session card. It used to be blocked with “still use the same content ID as an existing session card”

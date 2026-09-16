@@ -4807,7 +4807,10 @@
       if (!job?.id || !jobHasStuckQueuedSchedule(job)) return;
       if (pendingFlushAttempted === job.id) return;
       const selectedVms = selectedVmsForSchedule();
-      if (!selectedVms.length) return;
+      const exportedSaved = $("saved-schedule-export").checked;
+      // Stuck queued cards used to sit there forever when no VMs were checked,
+      // even though a regular session needs no picks at all.
+      if (exportedSaved && !selectedVms.length) return;
       pendingFlushAttempted = job.id;
       try {
         const updated = await api("/api/jobs/schedule-pending", {
@@ -4819,7 +4822,8 @@
             items: [],
             selected_vms: selectedVms,
             ...scheduleFields(),
-            content_export: $("saved-schedule-export").checked,
+            content_export: exportedSaved,
+            skip_power_on: !exportedSaved || !selectedVms.length,
           }),
         });
         renderJob(updated, { forceCards: true });
@@ -9683,9 +9687,17 @@
         return;
       }
       const selectedVms = selectedVmsForSchedule();
-      if (!selectedVms.length) {
-        showError("Select VMs in Load VMs, or restore a job that already has selected VMs.");
-        return;
+      const exportedSaved = $("saved-schedule-export").checked;
+      // A regular session powers its own VMs, so Load VMs is only needed when an
+      // exported session is supposed to power specific ones on.
+      const skipPowerOn = !exportedSaved || !selectedVms.length;
+      if (exportedSaved && !selectedVms.length) {
+        if (!await confirmAction(
+          "No VMs are checked in Load VMs, so nothing will power on after these sessions start. Schedule anyway?",
+          { title: "No VMs checked", okLabel: "Schedule anyway", cancelLabel: "Go back" }
+        )) {
+          return;
+        }
       }
       if (!validateScheduleWindow()) return;
       const preview = selected
@@ -9693,7 +9705,7 @@
         .map((row) => `${row.site.toUpperCase()} ${row.content_id} — ${row.name || "saved content"}`)
         .join("\n");
       const more = selected.length > 12 ? `\n…and ${selected.length - 12} more` : "";
-      const kind = $("saved-schedule-export").checked ? "exported" : "regular";
+      const kind = exportedSaved ? "exported" : "regular";
       if (!await confirmAction(
         `Schedule ${selected.length} saved content item(s) as ${kind} sessions?\n\n${preview}${more}\n\nAll selected DCs are scheduled in parallel (multiple sessions per DC are allowed).`,
         { title: "Schedule saved content" }
@@ -9718,7 +9730,8 @@
             items: selected,
             selected_vms: selectedVms,
             ...scheduleFields(),
-            content_export: $("saved-schedule-export").checked,
+            content_export: exportedSaved,
+            skip_power_on: skipPowerOn,
             schedule_decisions: scheduleDecisions,
           }),
         });
