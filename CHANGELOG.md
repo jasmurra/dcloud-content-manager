@@ -10,6 +10,7 @@ This file is the source of truth. GitHub also has a Releases page if someone lat
 - A delay of 60 with one session starts an hour after the start time (Now + 60)
 - Three sessions with a delay of 15 start at the chosen time, then 15 minutes later, then 15 minutes after that — each copy gets its own session ID
 - The same two fields sit on Cleanup → saved content scheduling and stay in sync with Schedule sessions
+- Fixes **Add to Hub** doing nothing for a demo ID you had removed from the saved content list. Remove from list recorded the ID in two places and adding it back only cleared one, so the row was stored and then filtered straight back out
 
 ## 1.9 — 2026-09-16
 

@@ -16,7 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
-| **1.10** | Delay (minutes) and number of sessions next to Duration, for staggered copies of the same demo |
+| **1.10** | Delay (minutes) and number of sessions next to Duration; removed IDs can be added back to the Hub list |
 | **1.9** | Load VMs stays at the top of its section and names the demo it will load |
 | **1.8.5** | Scheduling saved content no longer requires Load VMs first |
 | **1.8.4** | Scheduling the same demo again in a DC is allowed (with a confirmation) |

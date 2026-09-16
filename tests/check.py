@@ -162,6 +162,41 @@ def test_same_demo_can_repeat_in_a_dc() -> None:
     check("only the repeat is queued", [dc for dc in job["dcs"] if app._dc_needs_schedule(dc)] == [repeat])
 
 
+def test_removed_id_can_be_added_back() -> None:
+    """Remove from list writes two hide lists; Add to Hub must clear both, or
+    the row is stored and filtered straight back out."""
+    import app
+    from app import CaiDemoRef
+
+    real_state, real_managed = app.MANAGED_SAVED_IDS_FILE, app._managed_saved_state
+    with tempfile.TemporaryDirectory() as tmp:
+        app.MANAGED_SAVED_IDS_FILE = Path(tmp) / "managed-saved-ids.json"
+        try:
+            job = {"id": "j1", "phase": "ready", "log": [], "dcs": [], "savedIdHidden": []}
+            row = {"site": "sjc", "savedId": "483886", "name": "TINY BABY"}
+
+            app._upsert_managed_saved_rows([row])
+            check("the row lands in the list", "sjc:483886" not in app._saved_id_hidden_set(job))
+
+            app._hide_saved_ids(job, [CaiDemoRef(site="sjc", saved_id="483886")])
+            check("Remove from list hides it", "sjc:483886" in app._saved_id_hidden_set(job))
+            check("the job records the hide too", job["savedIdHidden"] == ["sjc:483886"], str(job))
+
+            # Add to Hub: the managed upsert alone used to leave the job's copy.
+            app._upsert_managed_saved_rows([row])
+            app._unhide_saved_ids(job, [row])
+            check(
+                "adding it back un-hides it everywhere",
+                "sjc:483886" not in app._saved_id_hidden_set(job),
+                str(job.get("savedIdHidden")),
+            )
+        finally:
+            app.MANAGED_SAVED_IDS_FILE, app._managed_saved_state = real_state, real_managed
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check("the add endpoint clears the job hide list", "_unhide_saved_ids(job, rows)" in source)
+
+
 def test_staggered_session_copies() -> None:
     """Delay + number of sessions: first at the chosen start, later copies wait."""
     from dcloud_client import parse_schedule_datetime, schedule_copy_offsets_minutes

@@ -1575,6 +1575,45 @@ def _hide_saved_ids(job: dict[str, Any] | None, items: list[CaiDemoRef]) -> int:
     return max(0, len(after) - len(before))
 
 
+def _hidden_entry_key(entry: Any) -> str:
+    if isinstance(entry, str):
+        return entry.strip().lower()
+    if isinstance(entry, dict):
+        return _saved_id_key(
+            str(entry.get("site") or ""),
+            str(entry.get("savedId") or entry.get("saved_id") or ""),
+        )
+    return ""
+
+
+def _unhide_saved_ids(job: dict[str, Any] | None, items: list[dict[str, Any]]) -> int:
+    """Clear a removed ID from the job's hide list when it is added back.
+
+    Remove from list records the key in two places: the job and the managed
+    state. The managed upsert only clears its own copy, so without this the row
+    is stored and then filtered straight back out — Add to Hub looks like it
+    does nothing at all.
+    """
+    if job is None:
+        return 0
+    wanted = set()
+    for item in items:
+        key = _saved_id_key(
+            str(item.get("site") or ""),
+            str(item.get("savedId") or item.get("saved_id") or ""),
+        )
+        if key and key != ":":
+            wanted.add(key)
+    if not wanted:
+        return 0
+    entries = list(job.get("savedIdHidden") or [])
+    kept = [entry for entry in entries if _hidden_entry_key(entry) not in wanted]
+    removed = len(entries) - len(kept)
+    if removed:
+        job["savedIdHidden"] = kept
+    return removed
+
+
 def _saved_id_display_row(
     *,
     site: str,
@@ -7291,12 +7330,14 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
         raise HTTPException(400, "Check at least one saved content row to add.")
     added = _upsert_managed_saved_rows(rows)
     job = _maybe_job(body.job_id)
+    unhidden = _unhide_saved_ids(job, rows)
     if job is not None:
         _log(
             job,
             "Added "
             + ", ".join(f"{row['site'].upper()} {row['savedId']}" for row in rows[:8])
-            + " to the saved content list.",
+            + " to the saved content list."
+            + (" Removed from the hidden list." if unhidden else ""),
         )
         _persist_job(job)
         _persist_saved_ids(job)
