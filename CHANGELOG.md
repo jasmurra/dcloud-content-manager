@@ -1,3 +1,12 @@
+## 1.11 — 2026-09-16
+
+- Saved content list has a **Root ID** column (CAMGR `fkrootDemoId`, the original base after a chain of saves). Target ID stays the previous save and is what CAI replace uses
+- Root stays blank until CAMGR is connected, unless a leftover lookup already stored it. A note under the table says to Connect to CAMGR when the column is empty
+- **Use root as target** (toolbar and per-row) copies Root into Target when you really want to replace VMs in the original base
+- Target lookup no longer silently falls back to the CAMGR root, which used to put the base demo into Target on a save-of-a-save
+- A blank Root ID says why when you hover it: CAMGR has no root recorded, the demo points at itself so it already is the base, or the CAMGR call failed
+- **Recheck root IDs** asks CAMGR again for every row. A failed CAMGR call no longer marks a row as "already looked up", which used to leave Root blank permanently
+
 ## 1.10.3 — 2026-09-16
 
 - **Guest shutdown & save** waits until the guest-shutdown VMs actually show powered off before it submits the save. This applies to both the card action and the bulk button at the top. The card lists which VMs are still shutting down. If the wait times out after 10 minutes, it starts the save anyway so the session is not left hanging

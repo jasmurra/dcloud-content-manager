@@ -558,7 +558,10 @@ def fetch_camgr_demo(cookie_header: str, site: str, saved_id: str) -> dict[str, 
             continue
         demo_id = str(body.get("pkdemoId") or saved).strip()
         root_id = str(body.get("fkrootDemoId") or body.get("fkRootDemoId") or "").strip()
-        if root_id == demo_id or root_id == saved:
+        # A demo that points at itself is the original base, which is different
+        # from CAMGR not knowing a root at all.
+        root_is_self = bool(root_id) and (root_id == demo_id or root_id == saved)
+        if root_is_self:
             root_id = ""
         return {
             "ok": True,
@@ -567,6 +570,7 @@ def fetch_camgr_demo(cookie_header: str, site: str, saved_id: str) -> dict[str, 
             "savedId": saved,
             "demoId": demo_id,
             "rootDemoId": root_id,
+            "rootIsSelf": root_is_self,
             "name": str(body.get("dname") or "").strip(),
             "owner": str(body.get("fkownerId") or "").strip(),
             "camgrPath": path,

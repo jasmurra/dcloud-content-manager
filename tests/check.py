@@ -82,6 +82,54 @@ def test_sources_parse() -> None:
             Path(path).unlink(missing_ok=True)
 
 
+def test_root_id_is_not_the_target() -> None:
+    """Target is the previous save. Root is the original base from CAMGR."""
+    from dcloud_client import extract_parent_content_id, extract_root_content_id
+
+    payload = {"parentId": "222", "fkrootDemoId": 111}
+    check(
+        "parent is the previous save",
+        extract_parent_content_id(payload, saved_id="333") == "222",
+    )
+    check(
+        "root is the original base",
+        extract_root_content_id(payload, saved_id="333") == "111",
+    )
+    check(
+        "root is not used as parent",
+        extract_parent_content_id({"fkrootDemoId": "111"}, saved_id="333") == "",
+    )
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = source.index("def _lookup_published_id(")
+    body = source[start : source.index("def _lookup_root_id(")]
+    check("target lookup does not call CAMGR", "fetch_camgr_demo" not in body)
+    check("root lookup lives next to target lookup", "def _lookup_root_id(" in source)
+    check("connect fills missing roots", "/api/saved-ids/lookup-roots" in source)
+
+    # A failed CAMGR call must not mark the row done, or Root stays blank forever.
+    check(
+        "the root lookup reports whether anything answered",
+        "def _lookup_root_id(site: str, saved_id: str) -> tuple[str, bool, str]:" in source,
+    )
+    check("a recheck can ignore the done flag", "def _backfill_root_demo_ids(*, force: bool = False)" in source)
+    check(
+        "an empty root can overwrite a stored one",
+        'overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote")' in source,
+    )
+    check(
+        "a CAMGR name no longer marks the root done",
+        'bool(root) or bool(name)' not in source,
+    )
+
+    check("the Hub table has a Root ID column", "<th>Root ID</th>" in INDEX)
+    check("a blank root explains itself", "row.rootNote" in INDEX)
+    check("roots can be rechecked", "btn-recheck-roots" in INDEX)
+    check("a blank Root column tells people to connect CAMGR", "saved-ids-root-hint" in INDEX)
+    check("Use root as target is on the toolbar", "btn-use-root-as-target" in INDEX)
+    check("a row can copy root into target", "btn-use-root" in INDEX)
+
+
 def test_release_metadata() -> None:
     import app
     from update_from_github import is_newer

@@ -1445,11 +1445,15 @@ def extract_demo_numeric_id(obj: Any) -> str:
 
 
 def extract_parent_content_id(obj: Any, *, saved_id: str = "") -> str:
-    """Published / parent demo ID for a saved copy. Empty if unknown or same as the saved ID."""
+    """Immediate parent demo ID for a saved copy. Empty if unknown or same as the saved ID.
+
+    This is the demo the save came from (save-of-a-save → the previous save).
+    Do not treat CAMGR's fkrootDemoId as the parent — that is the original base.
+    """
     saved = str(saved_id or "").strip()
     if not isinstance(obj, dict):
         return ""
-    for key in ("parentId", "parentDemoId", "publishedId", "fkrootDemoId", "fkRootDemoId"):
+    for key in ("parentId", "parentDemoId", "publishedId"):
         value = str(obj.get(key) or "").strip()
         if value.isdigit() and value != saved:
             return value
@@ -1465,6 +1469,22 @@ def extract_parent_content_id(obj: Any, *, saved_id: str = "") -> str:
             return hit.group(1)
     for nest in ("demo", "content", "item", "data", "result"):
         found = extract_parent_content_id(obj.get(nest), saved_id=saved)
+        if found:
+            return found
+    return ""
+
+
+def extract_root_content_id(obj: Any, *, saved_id: str = "") -> str:
+    """Original base demo ID (CAMGR fkrootDemoId). Empty if unknown or same as the saved ID."""
+    saved = str(saved_id or "").strip()
+    if not isinstance(obj, dict):
+        return ""
+    for key in ("fkrootDemoId", "fkRootDemoId", "rootDemoId"):
+        value = str(obj.get(key) or "").strip()
+        if value.isdigit() and value != saved:
+            return value
+    for nest in ("demo", "content", "item", "data", "result"):
+        found = extract_root_content_id(obj.get(nest), saved_id=saved)
         if found:
             return found
     return ""

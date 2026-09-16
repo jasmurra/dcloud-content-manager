@@ -88,6 +88,7 @@ from dcloud_client import (
     update_session_schedule,
     extract_content_topology_uid,
     extract_parent_content_id,
+    extract_root_content_id,
     fetch_content_shared_with,
     fetch_session,
     fetch_session_shared_with,
@@ -808,6 +809,11 @@ class SavedIdsLookupPayload(BaseModel):
     saved_id: str
 
 
+class SavedIdsLookupRootsPayload(BaseModel):
+    job_id: str = ""
+    force: bool = False
+
+
 class CaiCookiePayload(BaseModel):
     cookie: str = ""
 
@@ -1412,6 +1418,9 @@ def _normalize_saved_id_row(item: dict[str, Any]) -> dict[str, Any] | None:
         "name": str(item.get("name") or "").strip(),
         "parentId": parent or published,
         "sourceDemoId": str(item.get("sourceDemoId") or "").strip(),
+        "rootDemoId": str(item.get("rootDemoId") or item.get("root_id") or "").strip(),
+        "rootLookupDone": bool(item.get("rootLookupDone")),
+        "rootNote": str(item.get("rootNote") or "").strip(),
         "sessionId": str(item.get("sessionId") or "").strip(),
         # ContentDEV rows are a vPod, not saved content, so there is no topology to open.
         "contentViewUrl": str(item.get("contentViewUrl") or "").strip()
@@ -1421,24 +1430,79 @@ def _normalize_saved_id_row(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _lookup_published_id(site: str, saved_id: str) -> str:
+    """Immediate parent for Target ID. Never use CAMGR's root as a silent fallback."""
     saved = str(saved_id or "").strip()
     site_code = (site or "").strip().lower()
     if not site_code or not saved:
         return ""
     token = _cached_user_access_token()
+    if not token:
+        return ""
+    details = fetch_content(token, site_code, saved)
+    return extract_parent_content_id(details or {}, saved_id=saved)
+
+
+def _lookup_root_id(site: str, saved_id: str) -> tuple[str, bool, str]:
+    """Original base demo ID.
+
+    Returns (root, answered, note). `answered` is only True when something
+    actually told us — a failed CAMGR call must not mark the row done, or the
+    Root column would stay blank forever with no way to retry. `note` explains
+    an empty root so the table can say why instead of showing a bare dash.
+    """
+    saved = str(saved_id or "").strip()
+    site_code = (site or "").strip().lower()
+    if not site_code or not saved:
+        return "", True, ""
+    token = _cached_user_access_token()
     if token:
         details = fetch_content(token, site_code, saved)
-        parent = extract_parent_content_id(details or {}, saved_id=saved)
-        if parent:
-            return parent
+        root = extract_root_content_id(details or {}, saved_id=saved)
+        if root.isdigit() and root != saved:
+            return root, True, ""
     cookie = _camgr_cookie()
-    if cookie:
-        demo = fetch_camgr_demo(cookie, site_code, saved)
-        if demo.get("ok"):
-            parent = str(demo.get("rootDemoId") or "").strip()
-            if parent.isdigit() and parent != saved:
-                return parent
-    return ""
+    if not cookie:
+        return "", False, "Connect to CAMGR to load the original base demo ID."
+    demo = fetch_camgr_demo(cookie, site_code, saved)
+    if demo.get("ok"):
+        root = str(demo.get("rootDemoId") or "").strip()
+        if root.isdigit() and root != saved:
+            return root, True, ""
+        if demo.get("rootIsSelf"):
+            return "", True, "CAMGR points this demo at itself — it is the original base, so Target already is the root."
+        return "", True, "CAMGR has no root demo ID recorded for this saved content."
+    return "", False, str(demo.get("message") or "CAMGR could not read this demo.")
+
+
+def _backfill_root_demo_ids(*, force: bool = False) -> int:
+    """Fill missing Root IDs from CAMGR (or dCloud if it still carries fkrootDemoId)."""
+    filled = 0
+    updates: list[dict[str, Any]] = []
+    for raw in _managed_saved_state().get("rows") or []:
+        norm = _normalize_saved_id_row(raw)
+        if not norm:
+            continue
+        if is_cdev_camgr_guid(norm["site"]):
+            continue
+        have = str(norm.get("rootDemoId") or "").strip()
+        if have and have != norm["savedId"]:
+            continue
+        if norm.get("rootLookupDone") and not force:
+            continue
+        root, answered, note = _lookup_root_id(norm["site"], norm["savedId"])
+        updates.append(
+            {
+                **norm,
+                "rootDemoId": root,
+                "rootLookupDone": answered,
+                "rootNote": note,
+            }
+        )
+        if root:
+            filled += 1
+    if updates:
+        _upsert_managed_saved_rows(updates, overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote"))
+    return filled
 
 
 def _ensure_published_id(site: str, saved_id: str, current: str = "") -> str:
@@ -1450,13 +1514,19 @@ def _ensure_published_id(site: str, saved_id: str, current: str = "") -> str:
 
 
 def _upsert_managed_saved_rows(
-    items: list[dict[str, Any]], *, unhide: bool = False
+    items: list[dict[str, Any]],
+    *,
+    unhide: bool = False,
+    overwrite_keys: tuple[str, ...] = (),
 ) -> int:
     """Store saved content rows, respecting rows the user removed by hand.
 
     CAI/CAMGR discovery calls this for anything it finds in flight, so it must
     not resurrect a row someone deliberately removed: a hidden key is skipped
     unless the caller is an explicit add (unhide=True).
+
+    Only truthy fields merge, so a caller that needs to clear a value (a root
+    lookup that came back empty) lists that field in overwrite_keys.
     """
     state = _managed_saved_state()
     by_key: dict[str, dict[str, Any]] = {}
@@ -1482,7 +1552,10 @@ def _upsert_managed_saved_rows(
             added += 1
             changed = True
         existing = by_key.get(key) or {}
-        merged = {**existing, **{k: v for k, v in norm.items() if v}}
+        merged = {
+            **existing,
+            **{k: v for k, v in norm.items() if v or k in overwrite_keys},
+        }
         if merged != existing:
             changed = True
         by_key[key] = merged
@@ -1636,6 +1709,9 @@ def _saved_id_display_row(
     source_demo_id: str = "",
     parent_id: str = "",
     content_view_url: str = "",
+    root_demo_id: str = "",
+    root_lookup_done: bool = False,
+    root_note: str = "",
     replace: dict[str, Any] | None = None,
     transfer: dict[str, Any] | None = None,
     integrate: dict[str, Any] | None = None,
@@ -1736,6 +1812,9 @@ def _saved_id_display_row(
         "sessionId": session_id,
         "sourceDemoId": source_demo_id,
         "parentId": parent_id or published_id,
+        "rootDemoId": root_demo_id,
+        "rootLookupDone": bool(root_lookup_done or root_demo_id),
+        "rootNote": root_note,
         "contentViewUrl": content_view_url or _content_view_url(site, saved_id),
         "caiUrl": cai_demo_url(site, saved_id),
         "camgrUrl": CAMGR_HOME,
@@ -1859,6 +1938,9 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
                 source_demo_id=str(norm.get("sourceDemoId") or ""),
                 parent_id=str(norm.get("parentId") or ""),
                 content_view_url=str(norm.get("contentViewUrl") or ""),
+                root_demo_id=str(norm.get("rootDemoId") or ""),
+                root_lookup_done=bool(norm.get("rootLookupDone")),
+                root_note=str(norm.get("rootNote") or ""),
                 replace=replace,
                 transfer=transfers.get(key) or {},
                 integrate=integrates.get(key) or {},
@@ -3743,7 +3825,12 @@ def _import_in_progress_camgr_jobs(
         seen.add(key)
         existing = saved_by_key.get(key) or {}
         name = str(existing.get("name") or "").strip()
-        if not name:
+        root = str(existing.get("rootDemoId") or "").strip()
+        # Having a name says nothing about the root, so track the root answer
+        # separately. Marking it done off the name left the column blank for good.
+        root_answered = bool(root) or bool(existing.get("rootLookupDone"))
+        root_note = str(existing.get("rootNote") or "")
+        if not name or not root_answered:
             demo = fetch_camgr_demo(cookie, site, saved_id)
             if demo.get("loggedIn") is False:
                 _camgr_mark_unverified(demo.get("message") or "")
@@ -3752,15 +3839,26 @@ def _import_in_progress_camgr_jobs(
                 demo_owner = str(demo.get("owner") or "").strip().lower()
                 if me_l and demo_owner and demo_owner != me_l:
                     continue
-                name = str(demo.get("name") or "").strip()
+                name = name or str(demo.get("name") or "").strip()
+                root = root or str(demo.get("rootDemoId") or "").strip()
+                root_answered = True
+                root_note = "" if root else (
+                    "CAMGR points this demo at itself — it is the original base, so Target already is the root."
+                    if demo.get("rootIsSelf")
+                    else "CAMGR has no root demo ID recorded for this saved content."
+                )
         _upsert_managed_saved_rows(
             [
                 {
                     "site": site,
                     "savedId": saved_id,
                     "name": name,
+                    "rootDemoId": root,
+                    "rootLookupDone": root_answered,
+                    "rootNote": root_note,
                 }
-            ]
+            ],
+            overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote"),
         )
         row = _camgr_job_to_transfer_row(pub, site=site, saved_id=saved_id)
         _upsert_camgr_transfer(job, row)
@@ -7472,6 +7570,7 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
             published = _ensure_published_id(site, saved_id, published)
         name = str(item.name or (details or {}).get("name") or "").strip()
         topology_uid = extract_content_topology_uid(details or {}, site)
+        root = extract_root_content_id(details or {}, saved_id=saved_id)
         rows.append(
             {
                 "site": site,
@@ -7479,6 +7578,8 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
                 "publishedId": published,
                 "name": name,
                 "parentId": published or str(item.parent_id or "").strip(),
+                "rootDemoId": root,
+                "rootLookupDone": bool(root),
                 "contentViewUrl": (
                     tbv3_edit_url(topology_uid)
                     or edit_topology_url(site, saved_id, details)
@@ -7489,6 +7590,8 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
     if not rows:
         raise HTTPException(400, "Check at least one saved content row to add.")
     added = _upsert_managed_saved_rows(rows, unhide=True)
+    if _camgr_cookie():
+        _backfill_root_demo_ids()
     job = _maybe_job(body.job_id)
     unhidden = _unhide_saved_ids(job, rows)
     if job is not None:
@@ -7516,19 +7619,38 @@ def api_saved_ids_lookup_parent(body: SavedIdsLookupPayload) -> dict[str, Any]:
     if not site or not saved_id:
         raise HTTPException(400, "Saved content ID is required.")
     parent = _lookup_published_id(site, saved_id)
+    root, root_done, root_note = _lookup_root_id(site, saved_id)
     _upsert_managed_saved_rows(
         [{
             "site": site,
             "savedId": saved_id,
             "publishedId": parent,
             "parentId": parent,
+            "rootDemoId": root,
+            "rootLookupDone": root_done,
+            "rootNote": root_note,
             "publishedLookupDone": True,
-        }]
+        }],
+        overwrite_keys=("rootDemoId", "rootLookupDone", "rootNote"),
     )
     job = _maybe_job(body.job_id)
     return {
         "ok": True,
         "publishedId": parent,
+        "rootDemoId": root,
+        "job": _public_job(job) if job is not None else None,
+        "savedIds": _saved_id_summary(job),
+    }
+
+
+@app.post("/api/saved-ids/lookup-roots")
+def api_saved_ids_lookup_roots(body: SavedIdsLookupRootsPayload) -> dict[str, Any]:
+    filled = _backfill_root_demo_ids(force=bool(body.force))
+    job = _maybe_job(body.job_id)
+    return {
+        "ok": True,
+        "filled": filled,
+        "camgrConnected": bool(_camgr_cookie()),
         "job": _public_job(job) if job is not None else None,
         "savedIds": _saved_id_summary(job),
     }

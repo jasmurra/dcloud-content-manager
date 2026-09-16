@@ -173,6 +173,14 @@
       padding: 0.22rem 0.5rem;
       font-size: 0.75rem;
     }
+    .saved-id-root-cell {
+      white-space: nowrap;
+    }
+    .saved-id-root-cell .btn-use-root {
+      margin-left: 0.4rem;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.72rem;
+    }
     .auth-panel {
       border-color: rgba(4, 159, 217, 0.45);
       box-shadow: 0 0 0 1px rgba(4, 159, 217, 0.12);
@@ -2131,6 +2139,8 @@
         <button type="button" class="secondary" id="btn-saved-ids-find" data-tip="Lists your saved content in each DC under this button so you can add rows to the table below.">Find saved content</button>
         <button type="button" class="secondary" id="btn-saved-ids-remove" data-tip="Removes checked rows from this list only. Does not uncheck them, and does not delete saved content in dCloud.">Remove from list</button>
         <button type="button" class="secondary" id="btn-saved-ids-remove-all" data-tip="Removes every row from this list in one step. Does not delete saved content in dCloud.">Remove all</button>
+        <button type="button" class="secondary" id="btn-use-root-as-target" disabled data-tip="Copies Root ID into Target ID for checked rows. Use this when you want CAI to replace VMs in the original base demo instead of the previous save.">Use root as target</button>
+        <button type="button" class="secondary" id="btn-recheck-roots" data-tip="Asks CAMGR again for the original base demo ID of every row, even ones already checked. Needs CAMGR connected.">Recheck root IDs</button>
       </div>
       <p class="step-label" style="margin-top:0.85rem">Add content by ID</p>
       <p class="hint help-text">Add any demo ID you can access; it does not have to appear under Find saved content.</p>
@@ -2176,6 +2186,7 @@
             <th>DC</th>
             <th>Saved ID</th>
             <th>Target ID</th>
+            <th>Root ID</th>
             <th>Name</th>
             <th>CAI status</th>
             <th>CAMGR status</th>
@@ -2184,6 +2195,9 @@
         </thead>
         <tbody id="saved-ids-body"></tbody>
       </table>
+      <p id="saved-ids-root-hint" class="hint hidden" style="margin-top:0.55rem">
+        Root ID is blank until CAMGR is connected — that catalog call is how dCloud still knows the original base after a chain of saves. Target ID stays the previous save and is enough for CAI replace. Connect to CAMGR below, and this column fills in.
+      </p>
       <p class="hint help-text" style="margin-top:0.75rem">
         Use the header checkbox to select rows for Load VMs, CAI replace, or CAMGR transfer.
         After a spin-up save, check every DC of the <strong>same</strong> demo together — they share the same VMs.
@@ -2213,7 +2227,7 @@
         <strong>Load VMs</strong>. Several rows of the same demo can be checked together; two different demos cannot.
       </p>
       <p class="hint help-text">
-        Target ID is filled when this tool saved the session; type it if it is blank, since a wrong ID fails in CAI.
+        Target ID is the demo this save came from (filled when this tool saved the session). Root ID is the original base; copy it into Target if you want CAI to replace VMs there instead.
       </p>
       <div id="cai-vm-list" class="cai-vm-list"></div>
       <p class="step-label hidden" id="cai-integrate-label" style="margin-top:0.85rem">CAI Integrate destinations</p>
@@ -5263,6 +5277,8 @@
       return false;
     }
     let camgrTransferPollTimer = null;
+    let camgrLoggedIn = false;
+    let rootLookupInFlight = false;
     let camgrDestSourceGuids = [];
     let camgrDevServers = [];
     const CAMGR_PENDING = ["ready", "exporting", "exported", "xfring", "xfred", "importing", "submitted"];
@@ -5339,8 +5355,15 @@
     function updateCamgrStatus(info) {
       const el = $("camgr-status");
       if (!el) return;
+      const loggedIn = Boolean(info?.loggedIn);
+      const becameConnected = loggedIn && !camgrLoggedIn;
+      camgrLoggedIn = loggedIn;
       markConnectButton("btn-camgr-connect", info?.loggedIn, "CAMGR connected ✓", "Connect to CAMGR");
       syncCamgrWatch(Boolean(info?.loggedIn));
+      syncRootIdHint();
+      if (becameConnected) {
+        refreshRootIds().catch(() => {});
+      }
       if (!info) {
         setConnectStatus(el, "Keep Content Transfer open in Chrome, then Connect.");
         return;
@@ -5384,6 +5407,7 @@
           site: el.dataset.site,
           saved_id: el.dataset.savedId,
           target_id: String(typed || el.dataset.targetId || "").trim(),
+          root_id: String(el.dataset.rootId || "").trim(),
           name: el.dataset.name || "",
         };
       });
@@ -5551,6 +5575,13 @@
       const camgrTransfer = $("btn-camgr-transfer");
       if (camgrLoad) camgrLoad.disabled = !rows.length || cdevSelected;
       if (camgrTransfer) camgrTransfer.disabled = !rows.length || cdevSelected;
+      const useRootBtn = $("btn-use-root-as-target");
+      if (useRootBtn) {
+        useRootBtn.disabled = !rows.some((row) => {
+          const root = String(row.root_id || "").trim();
+          return root && root !== String(row.target_id || "").trim() && root !== String(row.saved_id || "").trim();
+        });
+      }
       if (destBoxes.length && alreadyIntegratedDestSet(rows).size && destBoxes.every((el) => el.disabled)) {
         const done = sortByDatacenter([...alreadyIntegratedDestSet(rows)])
           .map((dc) => dc.toUpperCase()).join(", ");
@@ -5633,6 +5664,7 @@
         site: el.dataset.site,
         saved_id: el.dataset.savedId,
         target_id: String(el.closest("tr")?.querySelector(".saved-id-target")?.value || el.dataset.targetId || "").trim(),
+        root_id: String(el.dataset.rootId || "").trim(),
         name: el.dataset.name || "",
       }));
     }
@@ -6823,11 +6855,79 @@
 
     function applySavedIds(summary) {
       renderSavedIdRows(summary?.rows || []);
+      refreshRootIds().catch(() => {});
+    }
+
+    function rowNeedsRootLookup(row) {
+      if (camgrCdevHomeDc(row.site)) return false;
+      if (String(row.rootDemoId || "").trim()) return false;
+      return !row.rootLookupDone;
+    }
+
+    function syncRootIdHint() {
+      const hint = $("saved-ids-root-hint");
+      if (!hint) return;
+      const rows = lastSavedIdRows || [];
+      const missing = rows.some((row) => !camgrCdevHomeDc(row.site) && !String(row.rootDemoId || "").trim());
+      hint.classList.toggle("hidden", !(rows.length && missing && !camgrLoggedIn));
+    }
+
+    async function refreshRootIds({ force = false } = {}) {
+      syncRootIdHint();
+      if (rootLookupInFlight) return;
+      if (!camgrLoggedIn) {
+        if (force) showError("Connect to CAMGR first — the root demo ID comes from its catalog.");
+        return;
+      }
+      if (!force && !(lastSavedIdRows || []).some(rowNeedsRootLookup)) return;
+      rootLookupInFlight = true;
+      try {
+        const data = await api("/api/saved-ids/lookup-roots", {
+          method: "POST",
+          body: JSON.stringify({ job_id: jobId || "", force }),
+        });
+        if (data.job) renderJob(data.job, { forceCards: true });
+        else if (data.savedIds) renderSavedIdRows(data.savedIds.rows || []);
+        if (force) {
+          const rows = (data.savedIds?.rows || lastSavedIdRows || []).filter((row) => !camgrCdevHomeDc(row.site));
+          const blank = rows.filter((row) => !String(row.rootDemoId || "").trim());
+          noteLog(
+            `Root ID check: ${data.filled || 0} filled from CAMGR`
+            + (blank.length ? `, ${blank.length} with no root (hover the dash for the reason).` : ".")
+          );
+        }
+      } finally {
+        rootLookupInFlight = false;
+        syncRootIdHint();
+      }
+    }
+
+    async function copyRootToTarget(rows) {
+      const targets = (rows || []).filter((row) => {
+        const root = String(row.root_id || row.rootDemoId || "").trim();
+        return root && root !== String(row.saved_id || row.savedId || "").trim();
+      });
+      if (!targets.length) {
+        showError("Check a row that has a Root ID first. Connect to CAMGR if that column is still blank.");
+        return;
+      }
+      for (const row of targets) {
+        const root = String(row.root_id || row.rootDemoId || "").trim();
+        const savedId = String(row.saved_id || row.savedId || "").trim();
+        applyTargetIdToRow({ site: row.site, saved_id: savedId }, root);
+        const input = [...document.querySelectorAll(".saved-id-target")].find(
+          (el) => el.dataset.site === String(row.site || "").toLowerCase() && el.dataset.savedId === savedId
+        );
+        if (input) await persistTargetId(input);
+      }
+      noteLog(`Copied Root ID into Target ID for ${targets.length} row(s).`);
+      syncHubActionButtons();
     }
 
     function renderSavedIds(job) {
       if (!job || !job.savedIds) return;
       renderSavedIdRows(job.savedIds.rows || []);
+      refreshRootIds().catch(() => {});
     }
 
     function camgrStatusCellHtml(row, transfer, transferClass) {
@@ -6884,18 +6984,23 @@
     }
 
     function renderSavedIdRows(rows) {
+      lastSavedIdRows = rows || [];
       const fingerprint = JSON.stringify(rows);
-      if (fingerprint === lastSavedIdsFingerprint) return;
+      if (fingerprint === lastSavedIdsFingerprint) {
+        syncRootIdHint();
+        syncHubActionButtons();
+        return;
+      }
       lastSavedIdsFingerprint = fingerprint;
-      lastSavedIdRows = rows;
       const panel = $("saved-ids-panel");
       const body = $("saved-ids-body");
       panel.classList.remove("hidden");
       if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="8" class="hint">No saved content in this list yet. Click Find saved content to add IDs, or finish a save.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="9" class="hint">No saved content in this list yet. Click Find saved content to add IDs, or finish a save.</td></tr>`;
         syncSavedIdHeadCheck();
         stopCaiReplacePoll();
         stopCamgrTransferPoll();
+        syncRootIdHint();
         return;
       }
       panel.classList.remove("hidden");
@@ -6917,6 +7022,13 @@
         const isDevSite = Boolean(camgrCdevHomeDc(site));
         let target = String(typedTarget[key] ?? (row.parentId || row.publishedId || "")).trim();
         if (target === savedId || isDevSite) target = "";
+        const root = isDevSite ? "" : String(row.rootDemoId || "").trim();
+        const rootDiffers = Boolean(root && root !== target && root !== savedId);
+        const rootCell = isDevSite
+          ? `<span class="hint" title="ContentDEV content sits in a vPod, so there is no root demo ID.">—</span>`
+          : root
+            ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as target</button>` : ""}`
+            : `<span class="hint" title="${escapeHtml(String(row.rootNote || "").trim() || (camgrLoggedIn ? "CAMGR has not answered for this row yet — use Recheck root IDs." : "Connect to CAMGR to load the original base demo ID."))}">—</span>`;
         const savedLink = isDevSite
           ? `<span class="hint" title="ContentDEV transfers use a vPod, not a saved demo ID.">—</span>`
           : row.contentViewUrl
@@ -6935,15 +7047,16 @@
         const transferHtml = camgrStatusCellHtml(row, transfer, transferClass);
         const isChecked = defaultAll || checked.has(key) ? " checked" : "";
         return `<tr>
-          <td><input type="checkbox" class="saved-id-select" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-target-id="${escapeHtml(target)}" data-name="${escapeHtml(row.name || "")}" ${isChecked} /></td>
+          <td><input type="checkbox" class="saved-id-select" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-target-id="${escapeHtml(target)}" data-root-id="${escapeHtml(root)}" data-name="${escapeHtml(row.name || "")}" ${isChecked} /></td>
           <td>${escapeHtml(row.site || "")}</td>
           <td class="mono">${savedLink}</td>
           <td class="mono">${
             isDevSite
               // ContentDEV content lives in a vPod, so there is no demo to copy VMs into.
               ? `<span class="hint" title="ContentDEV content sits in a vPod, so it has no Target ID.">—</span>`
-              : `<input class="saved-id-target saved-id-published" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-name="${escapeHtml(row.name || "")}" value="${escapeHtml(target)}" placeholder="Target ID" inputmode="numeric" autocomplete="off" title="Demo ID to copy VMs into. Filled when this tool saved the session; otherwise type it. A wrong ID fails in CAI." />`
+              : `<input class="saved-id-target saved-id-published" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-name="${escapeHtml(row.name || "")}" value="${escapeHtml(target)}" placeholder="Target ID" inputmode="numeric" autocomplete="off" title="Demo ID to copy VMs into (the previous save). Filled when this tool saved the session; otherwise type it. A wrong ID fails in CAI." />`
           }</td>
+          <td class="mono saved-id-root-cell">${rootCell}</td>
           <td>${escapeHtml(row.name || "")}</td>
           <td>${statusHtml}</td>
           <td>${transferHtml}</td>
@@ -6954,6 +7067,8 @@
       }).join("");
       bindTargetIdInputs();
       syncSavedIdHeadCheck();
+      syncRootIdHint();
+      syncHubActionButtons();
       if (rows.some((row) => caiRowNeedsPoll(row))) {
         startCaiReplacePoll();
       }
@@ -11067,6 +11182,12 @@
     $("btn-saved-ids-remove-all").addEventListener("click", () => {
       hideSavedIdRows(allSavedIdRows(), { all: true }).catch((err) => showError(err.message));
     });
+    $("btn-use-root-as-target").addEventListener("click", () => {
+      copyRootToTarget(selectedSavedIdRows()).catch((err) => showError(err.message));
+    });
+    $("btn-recheck-roots").addEventListener("click", () => {
+      refreshRootIds({ force: true }).catch((err) => showError(err.message));
+    });
     $("saved-ids-head").addEventListener("change", (ev) => {
       setSavedIdChecks(ev.target.checked);
     });
@@ -11076,6 +11197,15 @@
     $("cai-vm-list")?.addEventListener("change", () => syncHubActionButtons());
     $("cai-integrate-list")?.addEventListener("change", () => syncHubActionButtons());
     $("saved-ids-body").addEventListener("click", (ev) => {
+      const useRoot = ev.target.closest(".btn-use-root");
+      if (useRoot) {
+        copyRootToTarget([{
+          site: useRoot.dataset.site,
+          saved_id: useRoot.dataset.savedId,
+          root_id: useRoot.dataset.rootId,
+        }]).catch((err) => showError(err.message));
+        return;
+      }
       const btn = ev.target.closest(".saved-id-remove");
       if (!btn) return;
       hideSavedIdRows([{ site: btn.dataset.site, saved_id: btn.dataset.savedId }]).catch((err) => showError(err.message));
