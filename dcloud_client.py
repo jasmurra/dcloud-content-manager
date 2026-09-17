@@ -818,7 +818,10 @@ def fetch_session(
     if response.status_code == 404:
         return None, f"Session {sid} not found in {site_code.upper()}."
     if response.status_code == 401:
-        return None, "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then Continue."
+        return None, (
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then Continue."
+        )
     if response.status_code >= 400:
         return None, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
 
@@ -1474,13 +1477,23 @@ def extract_parent_content_id(obj: Any, *, saved_id: str = "") -> str:
     return ""
 
 
+_ROOT_ID_KEYS = {"fkrootdemoid", "rootdemoid", "rootid"}
+
+
 def extract_root_content_id(obj: Any, *, saved_id: str = "") -> str:
-    """Original base demo ID (CAMGR fkrootDemoId). Empty if unknown or same as the saved ID."""
+    """Original base demo ID. Empty if unknown or same as the saved ID.
+
+    CAMGR spells it fkrootDemoId; dCloud content details use _rootDemoId. Match
+    on the name with underscores and case ignored so a new spelling of the same
+    field does not silently leave the Root ID column blank.
+    """
     saved = str(saved_id or "").strip()
     if not isinstance(obj, dict):
         return ""
-    for key in ("fkrootDemoId", "fkRootDemoId", "rootDemoId"):
-        value = str(obj.get(key) or "").strip()
+    for key, raw in obj.items():
+        if str(key).replace("_", "").lower() not in _ROOT_ID_KEYS:
+            continue
+        value = str(raw or "").strip()
         if value.isdigit() and value != saved:
             return value
     for nest in ("demo", "content", "item", "data", "result"):
@@ -1488,6 +1501,23 @@ def extract_root_content_id(obj: Any, *, saved_id: str = "") -> str:
         if found:
             return found
     return ""
+
+
+def root_content_id_is_self(obj: Any, *, saved_id: str = "") -> bool:
+    """True when the payload names this saved content as its own root.
+
+    That is an answer, not a missing value: the demo is the original base.
+    """
+    saved = str(saved_id or "").strip()
+    if not saved or not isinstance(obj, dict):
+        return False
+    for key, raw in obj.items():
+        if str(key).replace("_", "").lower() in _ROOT_ID_KEYS and str(raw or "").strip() == saved:
+            return True
+    return any(
+        root_content_id_is_self(obj.get(nest), saved_id=saved)
+        for nest in ("demo", "content", "item", "data", "result")
+    )
 
 
 def _owner_name(item: dict[str, Any]) -> str:
@@ -2991,7 +3021,8 @@ def list_dashboard_sessions(token: str, site: str) -> tuple[list[dict[str, Any]]
         return [], str(exc)
     if response.status_code == 401:
         return [], (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
@@ -3099,7 +3130,10 @@ def resolve_monitor_sessions(
     except requests.RequestException as exc:
         return [], str(exc)
     if response.status_code == 401:
-        return [], "dCloud rejected the token. Log in or import a fresh token in Step 1."
+        return [], (
+            "dCloud rejected the token. Use Sign in to dCloud at the top of the page to "
+            "log in or import a fresh token."
+        )
     if response.status_code in {403, 404}:
         return [], "Admin session lookup is not available for this dCloud account."
     if response.status_code >= 400:
@@ -3721,7 +3755,8 @@ def list_saved_contents(token: str, site: str, *, state: str | None = "saved") -
         return [], str(exc)
     if response.status_code == 401:
         return [], (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
@@ -3876,7 +3911,8 @@ def list_pending_surveys(token: str, site: str) -> tuple[list[dict[str, Any]], s
         return [], str(exc)
     if response.status_code == 401:
         return [], (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
@@ -4370,7 +4406,8 @@ def search_share_users(
         return [], str(exc)
     if response.status_code == 401:
         return [], (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
@@ -4426,7 +4463,8 @@ def fetch_content_shared_with(
         return [], str(exc)
     if response.status_code == 401:
         return [], (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
@@ -4471,7 +4509,8 @@ def update_session_share(
         return False, str(exc)
     if response.status_code == 401:
         return False, (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return False, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
@@ -4498,7 +4537,8 @@ def update_content_share(
         return False, str(exc)
     if response.status_code == 401:
         return False, (
-            "dCloud token was rejected (401). Log in to dCloud or Import from browser in Step 1, then try again."
+            "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
+            "to log in or import from browser, then try again."
         )
     if response.status_code >= 400:
         return False, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"

@@ -802,11 +802,20 @@
     }
     .changelog-text {
       margin: 0;
-      white-space: pre-wrap;
-      font-family: inherit;
       font-size: 0.88rem;
       line-height: 1.45;
     }
+    .changelog-text h3 {
+      margin: 1.1rem 0 0.4rem;
+      font-size: 1rem;
+      font-weight: 650;
+    }
+    .changelog-text h3:first-child { margin-top: 0; }
+    .changelog-text ul {
+      margin: 0 0 0.35rem;
+      padding-left: 1.2rem;
+    }
+    .changelog-text li { margin: 0.2rem 0; }
     .settings-card { width: min(100%, 520px); }
     .settings-card h2 { display: flex; align-items: center; gap: 0.45rem; }
     .dc-order-list {
@@ -893,11 +902,36 @@
     .hidden { display: none !important; }
     .dc-field .hint { margin: 0.25rem 0 0; }
     .dc-field .hint:empty { display: none; }
-    .dc-field .verify-demos {
-      display: inline-block;
+    .dc-id-toolbar {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      margin: 0.15rem 0 0.35rem;
+    }
+    .dc-field-links {
+      display: flex;
+      gap: 0.75rem;
       margin-top: 0.15rem;
       font-size: 0.78rem;
     }
+    .dc-field .verify-demos,
+    .dc-field .clear-demo-id,
+    .linkish {
+      display: inline;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--accent);
+      font: inherit;
+      font-size: 0.78rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .dc-field .verify-demos:hover,
+    .dc-field .clear-demo-id:hover,
+    .linkish:hover { text-decoration: underline; }
     .demo-id.stale-id { border-color: var(--err, #c0392b); box-shadow: 0 0 0 1px var(--err, #c0392b); }
     .advanced { margin-top: 0.75rem; }
     details.advanced summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
@@ -965,6 +999,17 @@
       display: block;
       opacity: 0.8;
     }
+    .run-result {
+      margin: 0.55rem 0 0;
+      font-size: 0.92rem;
+      color: var(--ok);
+    }
+    .run-result.run-result-warn { color: var(--warn); }
+    .run-result .run-result-detail {
+      display: block;
+      color: var(--muted);
+    }
+    .run-result button.linkish { margin-left: 0.35rem; }
     table.dc-list {
       width: 100%;
       margin-top: 0.45rem;
@@ -1718,12 +1763,15 @@
         every available DC in one lookup. Leave a DC blank to skip it.
       </p>
       <p id="lookup-status" class="hint"></p>
+      <div class="dc-id-toolbar">
+        <button type="button" class="linkish" id="btn-clear-all-demo-ids">Clear all IDs</button>
+      </div>
       <div class="row" id="schedule-dc-fields" data-dc-order>
-        <div class="dc-field"><label for="id-sjc">SJC</label><input id="id-sjc" data-dc="sjc" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sjc"></p><a class="verify-demos" href="https://dcloud2-sjc.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
-        <div class="dc-field"><label for="id-rtp">RTP</label><input id="id-rtp" data-dc="rtp" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-rtp"></p><a class="verify-demos" href="https://dcloud2-rtp.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
-        <div class="dc-field"><label for="id-lon">LON</label><input id="id-lon" data-dc="lon" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-lon"></p><a class="verify-demos" href="https://dcloud2-lon.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
-        <div class="dc-field"><label for="id-sng">SNG</label><input id="id-sng" data-dc="sng" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sng"></p><a class="verify-demos" href="https://dcloud2-sng.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
-        <div class="dc-field"><label for="id-syd">SYD</label><input id="id-syd" data-dc="syd" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-syd"></p><a class="verify-demos" href="https://dcloud2-syd.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></div>
+        <div class="dc-field"><label for="id-sjc">SJC</label><input id="id-sjc" data-dc="sjc" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sjc"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-sjc.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
+        <div class="dc-field"><label for="id-rtp">RTP</label><input id="id-rtp" data-dc="rtp" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-rtp"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-rtp.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
+        <div class="dc-field"><label for="id-lon">LON</label><input id="id-lon" data-dc="lon" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-lon"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-lon.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
+        <div class="dc-field"><label for="id-sng">SNG</label><input id="id-sng" data-dc="sng" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sng"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-sng.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
+        <div class="dc-field"><label for="id-syd">SYD</label><input id="id-syd" data-dc="syd" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-syd"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-syd.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
       </div>
       <div class="row" style="margin-top:0.85rem">
         <div>
@@ -1824,6 +1872,7 @@
         <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section, using the VMs checked in Load VMs. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
         <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you import a new token from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with new token</button>
       </div>
+      <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
       <details class="advanced" id="panel-recovery">
         <summary>Refresh recovery — restore last job</summary>
         <p class="hint">
@@ -2140,7 +2189,7 @@
         <button type="button" class="secondary" id="btn-saved-ids-remove" data-tip="Removes checked rows from this list only. Does not uncheck them, and does not delete saved content in dCloud.">Remove from list</button>
         <button type="button" class="secondary" id="btn-saved-ids-remove-all" data-tip="Removes every row from this list in one step. Does not delete saved content in dCloud.">Remove all</button>
         <button type="button" class="secondary" id="btn-use-root-as-target" disabled data-tip="Copies Root ID into Target ID for checked rows. Use this when you want CAI to replace VMs in the original base demo instead of the previous save.">Use root as target</button>
-        <button type="button" class="secondary" id="btn-recheck-roots" data-tip="Asks CAMGR again for the original base demo ID of every row, even ones already checked. Needs CAMGR connected.">Recheck root IDs</button>
+        <button type="button" class="secondary" id="btn-recheck-roots" data-tip="Looks up the original base demo ID for every row again, even ones already checked. Asks dCloud first, then CAMGR if it is connected.">Recheck root IDs</button>
       </div>
       <p class="step-label" style="margin-top:0.85rem">Add content by ID</p>
       <p class="hint help-text">Add any demo ID you can access; it does not have to appear under Find saved content.</p>
@@ -2196,7 +2245,7 @@
         <tbody id="saved-ids-body"></tbody>
       </table>
       <p id="saved-ids-root-hint" class="hint hidden" style="margin-top:0.55rem">
-        Root ID is blank until CAMGR is connected — that catalog call is how dCloud still knows the original base after a chain of saves. Target ID stays the previous save and is enough for CAI replace. Connect to CAMGR below, and this column fills in.
+        Root ID is the original base after a chain of saves. dCloud reports it for most content; when it does not, the answer comes from the CAMGR catalog, so connect to CAMGR below and the column fills in. Target ID stays the previous save and is enough for CAI replace.
       </p>
       <p class="hint help-text" style="margin-top:0.75rem">
         Use the header checkbox to select rows for Load VMs, CAI replace, or CAMGR transfer.
@@ -2890,14 +2939,39 @@
       );
     }
 
+    function changelogHtml(text) {
+      const blocks = [];
+      const items = [];
+      const flushList = () => {
+        if (!items.length) return;
+        blocks.push(`<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`);
+        items.length = 0;
+      };
+      for (const raw of String(text || "").split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (line.startsWith("## ")) {
+          flushList();
+          blocks.push(`<h3>${escapeHtml(line.slice(3).trim())}</h3>`);
+        } else if (line.startsWith("- ")) {
+          items.push(line.slice(2).trim());
+        } else if (!line.trim()) {
+          flushList();
+        } else {
+          flushList();
+          blocks.push(`<p>${escapeHtml(line)}</p>`);
+        }
+      }
+      flushList();
+      return `<div class="changelog-text">${blocks.join("") || escapeHtml("No changelog yet.")}</div>`;
+    }
+
     async function openWhatsNew() {
       showDetailsModal("What’s new", `<p class="hint">Loading…</p>`);
       try {
         const response = await fetch("/api/changelog", { cache: "no-store" });
         if (!response.ok) throw new Error("Could not load the changelog.");
         const data = await response.json();
-        const text = String(data.text || "").trim() || "No changelog yet.";
-        showDetailsModal("What’s new", `<pre class="changelog-text">${escapeHtml(text)}</pre>`);
+        showDetailsModal("What’s new", changelogHtml(data.text));
       } catch (err) {
         showDetailsModal(
           "What’s new",
@@ -4089,6 +4163,9 @@
         if (shouldShowTokenAlert(res, path, message)) {
           showTokenAlert(message);
           scrollToAuthPanel();
+          // The Sign in button only changed on the next status poll, so it sat
+          // green while calls were already failing. Re-check it now.
+          refreshAuth().catch(() => {});
         } else {
           showActionAlert(message);
         }
@@ -4290,15 +4367,19 @@
       return ids;
     }
 
+    function clearOneDemoId(input) {
+      if (!input) return;
+      input.value = "";
+      input.classList.remove("stale-id");
+      const hint = document.getElementById(`hint-${input.dataset.dc}`);
+      if (hint) hint.textContent = "";
+    }
+
     function clearDemoIdFields() {
-      document.querySelectorAll(".demo-id").forEach((el) => {
-        el.value = "";
-        el.classList.remove("stale-id");
-        const hint = document.getElementById(`hint-${el.dataset.dc}`);
-        if (hint) hint.textContent = "";
-      });
+      document.querySelectorAll(".demo-id").forEach(clearOneDemoId);
       const status = $("lookup-status");
       if (status) status.textContent = "";
+      syncRunButton();
     }
 
     // DCs about to be scheduled with a demo ID that already has a card on this job.
@@ -5056,9 +5137,6 @@
       const ownerLine = notMine
         ? `<div class="hint" style="color:var(--warn)" data-tip="Guest shutdown &amp; save is not available on someone else's session. End still works, with a warning.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
         : "";
-      const staleLine = isStaleCard(dc)
-        ? `<div class="hint" style="color:var(--warn)" data-tip="Left over from an earlier run — Save all and End all skip it. Use this card's own buttons.">Earlier run</div>`
-        : "";
       const canReset = canResetSession(dc);
       // dCloud reports canReset on healthy sessions too, so only a failed card
       // gets the loud button; everything else keeps Reset in Card actions.
@@ -5134,12 +5212,11 @@
             ${sess}
             ${vcLine}
             ${ownerLine}
-            ${staleLine}
             ${startLine}
             ${endLine}
             ${saved}
             ${sharedLine}
-            <div style="margin-top:0.35rem">${escapeHtml(dc.message || "")}</div>
+            ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
             ${conflictDetails}
             ${view}
             ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
@@ -5164,6 +5241,7 @@
     }
 
     function renderJob(job, { forceCards = false } = {}) {
+      updateRunResult(job);
       lastRenderedJob = job || null;
       syncJobAppendHint();
       $("job-phase").textContent = job
@@ -6877,10 +6955,8 @@
     async function refreshRootIds({ force = false } = {}) {
       syncRootIdHint();
       if (rootLookupInFlight) return;
-      if (!camgrLoggedIn) {
-        if (force) showError("Connect to CAMGR first — the root demo ID comes from its catalog.");
-        return;
-      }
+      // dCloud carries the root for its own content, so this runs without CAMGR
+      // and only falls back to the CAMGR catalog when dCloud has no answer.
       if (!force && !(lastSavedIdRows || []).some(rowNeedsRootLookup)) return;
       rootLookupInFlight = true;
       try {
@@ -6894,7 +6970,7 @@
           const rows = (data.savedIds?.rows || lastSavedIdRows || []).filter((row) => !camgrCdevHomeDc(row.site));
           const blank = rows.filter((row) => !String(row.rootDemoId || "").trim() && !row.rootIsSelf);
           noteLog(
-            `Root ID check: ${data.filled || 0} filled from CAMGR`
+            `Root ID check: ${data.filled || 0} answered`
             + (blank.length ? `, ${blank.length} with no root (hover the dash for the reason).` : ".")
           );
         }
@@ -7859,9 +7935,105 @@
       }
     }
 
+    // Scheduling can finish with Job workspace collapsed, which left the click
+    // with no answer at all. The button reports what happened instead.
+    let runWatch = null;
+
+    function runTargetKey(site, demoId) {
+      return `${String(site || "").toLowerCase()}|${String(demoId || "").trim()}`;
+    }
+
+    function jobDemoCards(job) {
+      return (job?.dcs || []).filter((dc) => !isMonitorDc(dc));
+    }
+
+    function setRunResult(html, { warn = false } = {}) {
+      const el = $("run-result");
+      if (!el) return;
+      el.innerHTML = html || "";
+      el.classList.toggle("hidden", !html);
+      el.classList.toggle("run-result-warn", Boolean(warn));
+    }
+
+    function startRunWatch(job) {
+      const { copies } = scheduleCopySettings();
+      const before = new Map();
+      jobDemoCards(lastRenderedJob).forEach((dc) => {
+        const key = runTargetKey(dc.site, dc.demoId);
+        before.set(key, (before.get(key) || 0) + 1);
+      });
+      const targets = Object.entries(demoIds())
+        .filter(([, demoId]) => String(demoId || "").trim())
+        .map(([site, demoId]) => ({
+          site,
+          demoId: String(demoId).trim(),
+          copies,
+          before: before.get(runTargetKey(site, demoId)) || 0,
+        }));
+      runWatch = targets.length ? { jobId: job.id, targets, settled: false } : null;
+    }
+
+    function runResultLine(target, cards) {
+      const label = `${target.site.toUpperCase()} demo ${escapeHtml(target.demoId)}`;
+      const ids = cards.map((dc) => String(dc.sessionId || "").trim()).filter(Boolean);
+      const missing = target.copies - cards.length;
+      const parts = [];
+      if (ids.length) {
+        parts.push(`${label} → session ${ids.map(escapeHtml).join(", ")}`);
+      } else if (cards.length) {
+        parts.push(`${label} → waiting for a session ID`);
+      }
+      if (missing > 0) {
+        parts.push(`${label} → not scheduled (${missing} of ${target.copies})`);
+      }
+      return parts;
+    }
+
+    function updateRunResult(job) {
+      if (!runWatch || runWatch.settled) return;
+      if (!job || job.id !== runWatch.jobId) {
+        runWatch = null;
+        return;
+      }
+      const cards = jobDemoCards(job);
+      let expected = 0;
+      let landed = 0;
+      let pending = 0;
+      const lines = [];
+      runWatch.targets.forEach((target) => {
+        expected += target.copies;
+        const mine = cards
+          .filter((dc) => runTargetKey(dc.site, dc.demoId) === runTargetKey(target.site, target.demoId))
+          .slice(target.before);
+        landed += mine.filter((dc) => String(dc.sessionId || "").trim()).length;
+        pending += mine.filter((dc) => !String(dc.sessionId || "").trim()).length;
+        lines.push(...runResultLine(target, mine));
+      });
+      const detail = lines.length
+        ? `<span class="run-result-detail">${lines.join(" · ")}</span>`
+        : "";
+      const show = '<button type="button" class="linkish btn-show-workspace">Show in Job workspace</button>';
+      if (pending) {
+        setRunResult(`Scheduling ${expected} session${expected === 1 ? "" : "s"}…${detail}${show}`);
+        return;
+      }
+      runWatch.settled = true;
+      if (!landed) {
+        setRunResult(`Nothing was scheduled — check the error above and the log.${detail}`, { warn: true });
+        return;
+      }
+      const warn = landed < expected;
+      const headline = warn
+        ? `Scheduled ${landed} of ${expected} sessions.`
+        : `Scheduled ${landed} session${landed === 1 ? "" : "s"} on job ${escapeHtml(job.id)}.`;
+      setRunResult(`${headline}${detail}${show}`, { warn });
+    }
+
     async function startJob() {
       if (!ensureTokenReady("scheduling sessions")) return;
       showError("");
+      setRunResult("");
+      runWatch = null;
       const selected = selectedVms();
       const exported = $("export-sessions").checked;
       // Regular sessions power every VM themselves. Exported sessions only start
@@ -7934,6 +8106,7 @@
             schedule_decisions: scheduleDecisions,
           }),
         });
+        startRunWatch(job);
         setJobId(job.id);
         lastLogLen = 0;
         renderJob(job, { forceCards: true });
@@ -10956,6 +11129,16 @@
     });
     syncVmSourceUi();
     $("btn-run").addEventListener("click", () => startJob());
+    $("run-result")?.addEventListener("click", (evt) => {
+      if (evt.target.closest(".btn-show-workspace")) goToPageTarget("#panel-job-cards");
+    });
+    $("btn-clear-all-demo-ids")?.addEventListener("click", () => clearDemoIdFields());
+    $("schedule-dc-fields")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".clear-demo-id");
+      if (!btn) return;
+      clearOneDemoId(btn.closest(".dc-field")?.querySelector(".demo-id"));
+      syncRunButton();
+    });
     $("export-sessions").addEventListener("change", () => syncRunButton());
     $("days").addEventListener("change", () => syncScheduleStop());
     $("days").addEventListener("input", () => syncScheduleStop());

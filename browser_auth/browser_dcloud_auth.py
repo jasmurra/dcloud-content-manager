@@ -754,14 +754,15 @@ def _import_session_from_chrome_storage(
             None,
             None,
             None,
-            "Your dCloud session has expired. Click Log in to dCloud in Step 1 to sign in again.",
+            "Your dCloud session has expired. Click Sign in to dCloud at the top of the "
+            "page to sign in again.",
         )
 
     return (
         None,
         None,
         None,
-        "Not signed into dCloud in Chrome. Click Log in to dCloud in Step 1.",
+        "Not signed into dCloud in Chrome. Click Sign in to dCloud at the top of the page.",
     )
 
 
@@ -870,9 +871,10 @@ def try_import_dcloud_session(
     if cookie_note:
         notes.append(cookie_note)
     combined = " ".join(n for n in notes if n).strip()
-    if combined and "step 1" not in combined.lower():
-        combined = f"{combined} Click Log in to dCloud in Step 1, or paste a token below."
-    return None, None, None, combined or "Click Log in to dCloud in Step 1."
+    sign_in = "Click Sign in to dCloud at the top of the page"
+    if combined and "sign in to dcloud" not in combined.lower():
+        combined = f"{combined} {sign_in}, or paste a token there."
+    return None, None, None, combined or f"{sign_in}."
 
 
 def try_import_dcloud_session_legacy() -> tuple[str | None, str | None, str | None, str]:

@@ -84,7 +84,59 @@ def test_sources_parse() -> None:
 
 def test_root_id_is_not_the_target() -> None:
     """Target is the previous save. Root is the original base from CAMGR."""
-    from dcloud_client import extract_parent_content_id, extract_root_content_id
+    import app
+    from dcloud_client import (
+        extract_parent_content_id,
+        extract_root_content_id,
+        root_content_id_is_self,
+    )
+
+    # dCloud spells it _rootDemoId; CAMGR uses fkrootDemoId. Missing the dCloud
+    # spelling left Root blank on rows dCloud could answer without CAMGR.
+    dcloud_payload = {"_rootDemoId": 1207125, "pkdemoId": 1391854}
+    check(
+        "a dCloud root is read",
+        extract_root_content_id(dcloud_payload, saved_id="1391854") == "1207125",
+    )
+    check(
+        "a dCloud self-root is an answer, not a blank",
+        root_content_id_is_self({"_rootDemoId": 483886}, saved_id="483886"),
+    )
+    check(
+        "a root is never read as the parent",
+        extract_parent_content_id(dcloud_payload, saved_id="1391854") == "",
+    )
+    check(
+        "a lookup from an older version is retried once",
+        "rootLookupVersion" in app.ROOT_FIELDS and app.ROOT_LOOKUP_VERSION >= 3,
+    )
+    # CAMGR uses either spelling depending on the demo, and reading only
+    # fkrootDemoId left Root blank on demos that answer with _rootDemoId.
+    import camgr_client
+
+    check(
+        "CAMGR's _rootDemoId is read",
+        camgr_client._root_demo_id({"pkdemoId": 1391854, "_rootDemoId": 1207125}) == "1207125",
+    )
+    check(
+        "CAMGR's fkrootDemoId still works",
+        camgr_client._root_demo_id({"fkrootDemoId": "1387783"}) == "1387783",
+    )
+    check(
+        "an unrelated ID is not read as the root",
+        camgr_client._root_demo_id({"fkownerId": "jasmurra", "pkdemoId": 1391854}) == "",
+    )
+
+    # A saved card in the job produced a second row for the same ID with no root
+    # fields, and it came first — so the stored Root ID was dropped as a dupe.
+    summary = (ROOT / "app.py").read_text(encoding="utf-8")
+    body = summary[summary.index("def _saved_id_summary(") : summary.index("def _persist_saved_ids(")]
+    check(
+        "stored rows are read before the job copies",
+        body.index("sources: list[dict[str, Any]] = list(_managed_saved_state()")
+        < body.index("for row in auto_add:"),
+    )
+    check("a job copy only fills an ID with no stored row", "not in stored_keys" in body)
 
     payload = {"parentId": "222", "fkrootDemoId": 111}
     check(
@@ -116,7 +168,7 @@ def test_root_id_is_not_the_target() -> None:
     check("a recheck can ignore the done flag", "def _backfill_root_demo_ids(*, force: bool = False)" in source)
     check(
         "an empty root can overwrite a stored one",
-        'ROOT_FIELDS = ("rootDemoId", "rootLookupDone", "rootNote", "rootIsSelf")' in source
+        all(field in app.ROOT_FIELDS for field in ("rootDemoId", "rootLookupDone", "rootNote"))
         and "overwrite_keys=ROOT_FIELDS" in source,
     )
     check(
@@ -157,6 +209,10 @@ def test_release_metadata() -> None:
     )
     check("What’s new skips the preamble", notes.startswith("## 1.10"), notes[:40])
     check("What’s new does not repeat the title", "Newest version first" not in notes)
+    check("What’s new turns headings into HTML", "function changelogHtml(" in INDEX)
+    check("What’s new does not dump raw markdown", '<pre class="changelog-text">' not in INDEX)
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check("the header reads VERSION from disk", '"version": _read_app_version()' in source)
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     check(f"README What's new lists {VERSION}", f"**{VERSION}**" in readme)
 
@@ -353,6 +409,151 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     finally:
         dcloud_client.list_session_vms = real_list
         dcloud_client.apply_tbv3_power_states = real_tbv3
+
+
+def test_no_stale_step_numbers() -> None:
+    """Sign-in moved to a header button, so "Step 1" points at nothing."""
+    for rel in ("app.py", "dcloud_client.py", "browser_auth/browser_dcloud_auth.py"):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        check(f"{rel} has no step numbers", not re.search(r"Step [123]", text))
+    check(
+        "the expired hint names the button",
+        "Sign in to dCloud at the top of the page" in (ROOT / "app.py").read_text(encoding="utf-8"),
+    )
+
+
+def test_token_refresh_is_not_raced() -> None:
+    """dCloud retires the old refresh token, so two threads refreshing at once
+    made the loser report "signed out" under a green Sign in button."""
+    import app
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    body = source[
+        source.index("def _ensure_user_access_token(") : source.index("def _refresh_with_any_site(")
+    ]
+    check("only one refresh runs at a time", "with _token_refresh_lock:" in body)
+    check(
+        "the session is re-read after waiting for the lock",
+        body.count("_read_user_session()") >= 2,
+    )
+    check(
+        "the lock covers the refresh call, not just the dict",
+        "_token_refresh_lock = threading.Lock()" in source,
+    )
+    check("a live token is reused", app._access_token_is_usable("t", 0) is True)
+    check("an expired token is not reused", app._access_token_is_usable("t", 1.0) is False)
+    check("no token is never usable", app._access_token_is_usable("", 0) is False)
+    # A failed call has to correct the button, not wait for the next poll.
+    check("a sign-in failure re-checks auth", "refreshAuth().catch(() => {});" in INDEX)
+
+
+def test_schedule_button_reports_back() -> None:
+    """With Job workspace collapsed, the click had no visible result at all."""
+    check("the button has a result line", 'id="run-result"' in INDEX)
+    check("screen readers hear it too", 'role="status"' in INDEX and 'aria-live="polite"' in INDEX)
+    check("the result is cleared on the next click", 'setRunResult("");' in INDEX)
+    check("the job render keeps it current", "updateRunResult(job);" in INDEX)
+    check("it counts cards that existed before", "before.get(runTargetKey(" in INDEX)
+    check("it names the sessions it got", "→ session ${ids.map(escapeHtml).join" in INDEX)
+    check("it says when a card never scheduled", "not scheduled (${missing} of" in INDEX)
+    check("it can open the collapsed workspace", 'goToPageTarget("#panel-job-cards")' in INDEX)
+    check("it stops updating once settled", "runWatch.settled = true;" in INDEX)
+
+
+def test_failed_schedule_leaves_no_card() -> None:
+    """A card with no session is nothing to act on, so it should not need clearing."""
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    body = source[source.index("def _schedule_one_dc(") : source.index("def _parallel_schedule_pending(")]
+    check("a failed schedule drops its card", body.count("_drop_dc_card(") >= 2)
+    check(
+        "the reason still reaches the log and banner",
+        '_log(job, f"{site}: not scheduled' in source and 'job["error"]' in source,
+    )
+    # A capacity conflict keeps its card: that one has Adjust schedule on it.
+    conflict = body[body.index('if result.get("conflict"):') : body.index("_drop_dc_card(job, dc, str(")]
+    check("a capacity conflict keeps its card", "scheduleConflict=availability" in conflict)
+    check("the conflict card is not dropped", "_drop_dc_card(" not in conflict)
+
+
+def test_active_card_says_nothing() -> None:
+    """A healthy Active card carried a "connect, then guest-shutdown & save"
+    line. The buttons say that already."""
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check("the connect hint is gone", "Connect to your session" not in source)
+    check("its helper is gone too", "_active_card_message" not in source)
+    check("an empty message leaves no empty row", "${dc.message ? `<div" in INDEX)
+
+
+def test_shutdown_wait_message_is_not_overwritten() -> None:
+    """The card flipped between the pending VM list and "waiting for dCloud to
+    report the save" — a save that had not been submitted yet."""
+    import app
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    poll = source[
+        source.index("def _refresh_dc_save_progress(") : source.index("def _dc_reset_in_progress(")
+    ]
+    check("the poll respects the running wait", '_shutdown_waiting' in poll)
+    check(
+        "the poll cannot rewrite the card the wait owns",
+        'for owned in ("message", "phase", "savePending"):' in poll,
+    )
+
+    job = {"id": "j1", "discarded": True, "dcs": [], "log": []}
+    dc = {
+        "site": "rtp",
+        "sessionId": "1356727",
+        "phase": "shutting_down",
+        "message": "Waiting for VMs to shut down before saving: CUCM",
+        "_shutdown_waiting": True,
+    }
+    job["dcs"] = [dc]
+    wait_owns = bool(dc.get("_shutdown_waiting"))
+
+    def bump(**fields):
+        if wait_owns and str(fields.get("phase") or "") in {"shutting_down", "saving"}:
+            for owned in ("message", "phase", "savePending"):
+                fields.pop(owned, None)
+        app._set_dc(job, "rtp", match_session="1356727", **fields)
+
+    bump(phase="saving", savePending=True, message="Waiting for dCloud to report the save.")
+    check(
+        "a save poll leaves the VM list on the card",
+        dc["message"].startswith("Waiting for VMs to shut down"),
+        dc["message"],
+    )
+    bump(phase="save_failed", message="Save failed or session error (ERROR).")
+    check("a failed save still speaks up", dc["message"].startswith("Save failed"), dc["message"])
+
+    # A restart kills the wait thread, so the flag must not outlive it.
+    restored = app._hydrate_job({"id": "j1", "dcs": [dict(dc)]})
+    for item in restored["dcs"]:
+        item.pop("_shutdown_waiting", None)
+    check("restore drops the wait flag", "_shutdown_waiting" not in restored["dcs"][0])
+    check(
+        "restore clears it in app.py too",
+        'dc.pop("_shutdown_waiting", None)' in source,
+    )
+
+    # A restart leaves nothing that will submit the save, so the card has to be
+    # handed back instead of claiming dCloud is saving.
+    check("the claim marks the wait up front", 'dc["_shutdown_waiting"] = True' in source)
+    check("submitting the save records it", "saveSubmitted=True" in source)
+    check(
+        "an interrupted shutdown is handed back",
+        "Guest shutdown was interrupted before the save was submitted" in poll,
+    )
+    check(
+        "a card stuck in the saving phase is handed back too",
+        'str(dc.get("phase") or "") in {"shutting_down", "saving"}' in poll,
+    )
+    # A real save in flight must keep its path, so the hand-back only fires after
+    # dCloud has been asked whether it is stopping, saving, or already saved.
+    check(
+        "the hand-back waits for dCloud's answer",
+        poll.index("is_saving_in_progress_status(public)") < poll.index("hand_back()\n        return"),
+    )
+    check("the hand-back reloads the VM list", "_load_dc_vms(job, dc, token)" in poll)
 
 
 def test_same_demo_can_repeat_in_a_dc() -> None:
@@ -712,6 +913,14 @@ def test_refresh_starts_clean() -> None:
     cleared = js_function("clearRestoredIdFields")
     for field in ("src-session", "hub-manual-id", "cai-template-demo-id", "skip-catalog"):
         check(f"refresh clears {field}", field in cleared)
+
+
+def test_demo_id_fields_can_be_cleared() -> None:
+    """Catalog lookup fills every DC; those IDs need a one-click undo."""
+    check("each DC has a Clear control", INDEX.count('class="clear-demo-id"') == 5)
+    check("Clear all IDs is on the schedule form", 'id="btn-clear-all-demo-ids"' in INDEX)
+    check("Clear all reuses the existing clearer", "clearDemoIdFields()" in INDEX)
+    check("one box can be cleared without the rest", "function clearOneDemoId(" in INDEX)
 
 
 def test_cancel_wording_for_scheduled_cards() -> None:

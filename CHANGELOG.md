@@ -1,3 +1,13 @@
+## 1.12 — 2026-09-17
+
+- The **Schedule** button now reports back under itself: “Scheduling 2 sessions…” while dCloud works, then the session IDs it got. With Job workspace collapsed the click used to produce no visible result at all. **Show in Job workspace** opens the panel when you want the cards, so it is not a popup you have to dismiss
+- A schedule that never created a session **no longer leaves a card behind** for you to close. The reason goes to the log and the error banner instead. A capacity conflict still keeps its card, because that one carries the next-available details and **Adjust schedule**
+- Fixed the **400 under a green Sign in button**. dCloud retires the old refresh token each time it issues a new one, so two background threads refreshing at the same moment meant one of them spent a dead token and reported you signed out. Refreshes now happen one at a time, and a thread that waited reuses the token the winner just stored. A failed call also re-checks the button instead of waiting for the next poll
+- **Guest shutdown & save** no longer says “Waiting for dCloud to report the save” while VMs are still powering off, and a card is no longer stuck on that message if the app restarts mid-shutdown. Such a card now says the shutdown was interrupted and can be run again
+- Removed the leftover “Connect to your session, then guest-shutdown & save when finished.” line from healthy active cards
+- Error messages and hints no longer mention **Step 1** or **Step 2**, which stopped matching the page when sign-in moved to the button at the top
+- Root ID fills in more cases: dCloud spells the field `_rootDemoId` on some demos and CAMGR uses `fkrootDemoId` on others, and both are now read. Root IDs also survive an app restart instead of being blanked by the job's own copy of the row, and rows looked up by the older logic are rechecked automatically
+
 ## 1.11.1 — 2026-09-16
 
 - A demo that is already the original base now shows **its own saved ID** in Root ID with “(this is the base)”, instead of a blank dash you had to hover to understand. There is no copy button on those rows — copying would point the demo at itself

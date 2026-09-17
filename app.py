@@ -89,6 +89,7 @@ from dcloud_client import (
     extract_content_topology_uid,
     extract_parent_content_id,
     extract_root_content_id,
+    root_content_id_is_self,
     fetch_content_shared_with,
     fetch_session,
     fetch_session_shared_with,
@@ -207,7 +208,12 @@ CAI_SESSION_FILE = APP_DIR / ".dcloud-cai-session.json"
 CAMGR_SESSION_FILE = APP_DIR / ".dcloud-camgr-session.json"
 MANAGED_SAVED_IDS_FILE = APP_DIR / "managed-saved-ids.json"
 # A root lookup has to be able to clear these, so they bypass the truthy-merge.
-ROOT_FIELDS = ("rootDemoId", "rootLookupDone", "rootNote", "rootIsSelf")
+ROOT_FIELDS = ("rootDemoId", "rootLookupDone", "rootNote", "rootIsSelf", "rootLookupVersion")
+# Bump when a root lookup learns to read a field it used to miss. Rows looked up
+# under an older version are asked again once, instead of keeping a blank Root ID
+# that only Recheck root IDs could fix.
+# 2: read dCloud's _rootDemoId. 3: read CAMGR's _rootDemoId.
+ROOT_LOOKUP_VERSION = 3
 _AUTO_RESTORE_HOURS = float(os.getenv("DCLOUD_AUTO_RESTORE_HOURS", "4"))
 _AUTO_RESTORE_MAX_AGE_SECS = max(3600.0, _AUTO_RESTORE_HOURS * 3600.0)
 _TERMINAL_DC_PHASES = frozenset({"saved", "ended"})
@@ -243,6 +249,9 @@ _jobs_lock = threading.Lock()
 _jobs: dict[str, dict[str, Any]] = {}
 
 _user_auth_lock = threading.Lock()
+# Held across the refresh POST itself, not just the dict update: dCloud retires
+# the old refresh token, so only one thread may spend it at a time.
+_token_refresh_lock = threading.Lock()
 _user_auth: dict[str, Any] = {
     "access_token": "",
     "refresh_token": "",
@@ -613,35 +622,64 @@ def _load_persisted_session() -> None:
     _maybe_backfill_refresh_from_chrome()
 
 
+def _read_user_session() -> tuple[str, float, str, str]:
+    with _user_auth_lock:
+        return (
+            (_user_auth.get("access_token") or "").strip(),
+            float(_user_auth.get("expires_at") or 0),
+            (_user_auth.get("refresh_token") or "").strip(),
+            (_user_auth.get("site") or "rtp").strip().lower(),
+        )
+
+
+def _access_token_is_usable(token: str, expires_at: float) -> bool:
+    return bool(token) and (not expires_at or time.time() < expires_at - 60)
+
+
 def _ensure_user_access_token(
     progress: Callable[[str], None] | None = None,
 ) -> str:
     """Return a valid access token, refreshing from dc_p_r in memory when the JWT expired."""
-    with _user_auth_lock:
-        token = (_user_auth.get("access_token") or "").strip()
-        expires_at = float(_user_auth.get("expires_at") or 0)
-        refresh = (_user_auth.get("refresh_token") or "").strip()
-        site = (_user_auth.get("site") or "rtp").strip().lower()
-    if token and (not expires_at or time.time() < expires_at - 60):
+    token, expires_at, refresh, site = _read_user_session()
+    if _access_token_is_usable(token, expires_at):
         return token
     if refresh:
-        sites: list[str] = []
-        if site:
-            sites.append(site)
-        for code in DCLOUD_SITES:
-            if code not in sites:
-                sites.append(code)
-        last_err = ""
-        for try_site in sites:
-            access, _new_refresh, _expires_at, err = _refresh_session_token(
-                refresh, try_site, progress
-            )
-            if access:
-                return access
-            if err:
-                last_err = err
-        if progress and last_err:
-            progress(last_err)
+        # dCloud hands back a new refresh token, which retires the old one. Two
+        # threads refreshing at once means the loser's POST is rejected and it
+        # reports "signed out" while the winner is holding a good token — a 400
+        # under a green Sign in button. One refresh at a time, and re-read the
+        # session after the wait in case someone else just refreshed it.
+        with _token_refresh_lock:
+            token, expires_at, refresh, site = _read_user_session()
+            if _access_token_is_usable(token, expires_at):
+                return token
+            if not refresh:
+                return ""
+            return _refresh_with_any_site(refresh, site, progress)
+    return ""
+
+
+def _refresh_with_any_site(
+    refresh: str,
+    site: str,
+    progress: Callable[[str], None] | None = None,
+) -> str:
+    """Refresh against the session's DC, then the others — any DC honours the token."""
+    sites: list[str] = [site] if site else []
+    for code in DCLOUD_SITES:
+        if code not in sites:
+            sites.append(code)
+    last_err = ""
+    for try_site in sites:
+        access, _new_refresh, _expires_at, err = _refresh_session_token(
+            refresh, try_site, progress
+        )
+        if access:
+            return access
+        if err:
+            last_err = err
+    if progress and last_err:
+        progress(last_err)
     return ""
 
 
@@ -1064,9 +1102,10 @@ class VmActionPayload(TokenPayload):
 
 
 SESSION_EXPIRED_HINT = (
-    "Your dCloud session expired. Click Log in to dCloud in Step 1 to sign in again."
+    "Your dCloud session expired. Click Sign in to dCloud at the top of the page "
+    "to sign in again."
 )
-NOT_SIGNED_IN_HINT = "Not signed in. Click Log in to dCloud in Step 1."
+NOT_SIGNED_IN_HINT = "Not signed in. Click Sign in to dCloud at the top of the page."
 
 
 def _resolve_token(payload: TokenPayload, progress: Callable[[str], None] | None = None) -> str:
@@ -1076,8 +1115,9 @@ def _resolve_token(payload: TokenPayload, progress: Callable[[str], None] | None
     if source == "oauth" and not env_ok:
         raise HTTPException(
             400,
-            "Auto login from .env is disabled. Log in to dCloud or import your token from Chrome "
-            "or paste it in Step 1 — sessions must run under your own login.",
+            "Auto login from .env is disabled. Use Sign in to dCloud at the top of the page to "
+            "log in, import your token from Chrome, or paste one — sessions must run under "
+            "your own login.",
         )
 
     if source == "paste":
@@ -1087,7 +1127,8 @@ def _resolve_token(payload: TokenPayload, progress: Callable[[str], None] | None
         if not token:
             raise HTTPException(
                 400,
-                "Paste your dCloud token in Step 1, or click Import from browser.",
+                "Paste your dCloud token under Sign in to dCloud at the top of the page, "
+                "or click Import from browser.",
             )
         return token
 
@@ -1113,8 +1154,8 @@ def _resolve_token(payload: TokenPayload, progress: Callable[[str], None] | None
 OAUTH_REFRESH_AFTER = 40 * 60
 BROWSER_REFRESH_BEFORE = 5 * 60
 AUTH_PAUSE_HINT = (
-    "Token expired (401). Click Log in to dCloud or Import from browser in Step 1, "
-    "then Continue."
+    "Token expired (401). Use Sign in to dCloud at the top of the page to log in or "
+    "import from browser, then Continue."
 )
 
 
@@ -1402,6 +1443,13 @@ def _managed_hidden_set(state: dict[str, Any] | None = None) -> set[str]:
     return hidden
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(str(value or "0").strip() or 0)
+    except ValueError:
+        return 0
+
+
 def _normalize_saved_id_row(item: dict[str, Any]) -> dict[str, Any] | None:
     site = str(item.get("site") or "").strip().lower()
     saved_id = str(item.get("savedId") or item.get("saved_id") or item.get("contentId") or "").strip()
@@ -1424,6 +1472,7 @@ def _normalize_saved_id_row(item: dict[str, Any]) -> dict[str, Any] | None:
         "rootLookupDone": bool(item.get("rootLookupDone")),
         "rootNote": str(item.get("rootNote") or "").strip(),
         "rootIsSelf": bool(item.get("rootIsSelf")),
+        "rootLookupVersion": _as_int(item.get("rootLookupVersion")),
         "sessionId": str(item.get("sessionId") or "").strip(),
         # ContentDEV rows are a vPod, not saved content, so there is no topology to open.
         "contentViewUrl": str(item.get("contentViewUrl") or "").strip()
@@ -1472,6 +1521,13 @@ def _lookup_root_id(site: str, saved_id: str) -> RootLookup:
         root = extract_root_content_id(details or {}, saved_id=saved)
         if root.isdigit() and root != saved:
             return RootLookup(root=root)
+        # dCloud answers this for its own content, so a self-root does not need
+        # CAMGR at all.
+        if root_content_id_is_self(details or {}, saved_id=saved):
+            return RootLookup(
+                note="dCloud points this demo at itself — this saved content is the original base.",
+                is_self=True,
+            )
     cookie = _camgr_cookie()
     if not cookie:
         return RootLookup(
@@ -1508,7 +1564,11 @@ def _backfill_root_demo_ids(*, force: bool = False) -> int:
         have = str(norm.get("rootDemoId") or "").strip()
         if have and have != norm["savedId"]:
             continue
-        if norm.get("rootLookupDone") and not force:
+        current = (
+            norm.get("rootLookupDone")
+            and _as_int(norm.get("rootLookupVersion")) >= ROOT_LOOKUP_VERSION
+        )
+        if current and not force:
             continue
         found = _lookup_root_id(norm["site"], norm["savedId"])
         updates.append(
@@ -1518,6 +1578,7 @@ def _backfill_root_demo_ids(*, force: bool = False) -> int:
                 "rootLookupDone": found.answered,
                 "rootNote": found.note,
                 "rootIsSelf": found.is_self,
+                "rootLookupVersion": ROOT_LOOKUP_VERSION if found.answered else 0,
             }
         )
         if found.root or found.is_self:
@@ -1735,6 +1796,7 @@ def _saved_id_display_row(
     root_lookup_done: bool = False,
     root_note: str = "",
     root_is_self: bool = False,
+    root_lookup_version: int = 0,
     replace: dict[str, Any] | None = None,
     transfer: dict[str, Any] | None = None,
     integrate: dict[str, Any] | None = None,
@@ -1836,7 +1898,12 @@ def _saved_id_display_row(
         "sourceDemoId": source_demo_id,
         "parentId": parent_id or published_id,
         "rootDemoId": root_demo_id,
-        "rootLookupDone": bool(root_lookup_done or root_demo_id),
+        # A row looked up before the lookup learned a new field counts as not
+        # done, so the page asks again by itself instead of showing a bare dash.
+        "rootLookupDone": bool(
+            root_demo_id
+            or (root_lookup_done and root_lookup_version >= ROOT_LOOKUP_VERSION)
+        ),
         "rootNote": root_note,
         "rootIsSelf": bool(root_is_self),
         "contentViewUrl": content_view_url or _content_view_url(site, saved_id),
@@ -1933,9 +2000,19 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
     if auto_add:
         _upsert_managed_saved_rows(auto_add)
 
-    sources: list[dict[str, Any]] = list(auto_add)
-    for row in _managed_saved_state().get("rows") or []:
-        sources.append(row)
+    # auto_add was just merged into the stored rows, so read those back first.
+    # Listing the job copies ahead of them used to shadow the stored row for the
+    # same ID, and a job copy carries no Root ID — hence a permanent dash.
+    sources: list[dict[str, Any]] = list(_managed_saved_state().get("rows") or [])
+    stored_keys = set()
+    for row in sources:
+        norm = _normalize_saved_id_row(row)
+        if norm:
+            stored_keys.add(_saved_id_key(norm["site"], norm["savedId"]))
+    for row in auto_add:
+        norm = _normalize_saved_id_row(row)
+        if norm and _saved_id_key(norm["site"], norm["savedId"]) not in stored_keys:
+            sources.append(row)
 
     for raw in sources:
         norm = _normalize_saved_id_row(raw)
@@ -1966,6 +2043,7 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
                 root_lookup_done=bool(norm.get("rootLookupDone")),
                 root_note=str(norm.get("rootNote") or ""),
                 root_is_self=bool(norm.get("rootIsSelf")),
+                root_lookup_version=_as_int(norm.get("rootLookupVersion")),
                 replace=replace,
                 transfer=transfers.get(key) or {},
                 integrate=integrates.get(key) or {},
@@ -2328,6 +2406,9 @@ def _claim_dc_for_save(job: dict[str, Any], dc: dict[str, Any]) -> bool:
         else:
             dc["phase"] = "shutting_down"
             dc["message"] = "Guest shutdown…"
+            # Claimed here rather than in the worker so the status poll can never
+            # see a shutdown card with no wait behind it and call it orphaned.
+            dc["_shutdown_waiting"] = True
         return True
 
 
@@ -2563,13 +2644,6 @@ def _shutdown_wait_message(pending: list[dict[str, Any]]) -> str:
     return f"Waiting for VMs to shut down before saving: {listed}{extra}"
 
 
-def _active_card_message(content_export: bool) -> str:
-    """Only exported sessions end in a save, so regular ones skip that hint."""
-    if content_export:
-        return "Connect to your session, then guest-shutdown & save when finished."
-    return "Connect to your session."
-
-
 def _vm_power_summary(vms: list[dict[str, Any]]) -> str:
     on = sum(1 for vm in vms if _vm_is_powered_on(vm))
     off = len(vms) - on
@@ -2612,7 +2686,49 @@ def _refresh_dc_save_progress(job: dict[str, Any], dc: dict[str, Any], token: st
     if not sid:
         return
 
+    # The pre-save shutdown wait writes its own running list of VMs. A poll that
+    # replaced that text made the card flip between the VM list and a save
+    # message for a save that had not been submitted yet, so leave the message
+    # alone while that wait owns the card. Anything terminal still speaks up.
+    wait_owns_message = bool(dc.get("_shutdown_waiting"))
+    save_submitted = bool(
+        dc.get("saveSubmitted") or dc.get("saveConfirmed") or dc.get("savedId")
+    )
+
+    # An app restart takes the wait thread with it, so a card can be left mid
+    # shutdown with nothing that will ever submit the save. "saving" counts too:
+    # an older poll promoted waiting cards to that phase, which left them stuck
+    # there with no save behind it and no VM refresh.
+    orphaned = (
+        str(dc.get("phase") or "") in {"shutting_down", "saving"}
+        and not wait_owns_message
+        and not save_submitted
+    )
+
+    def hand_back() -> None:
+        """Return an orphaned card to Active so its buttons work again."""
+        _release_save_claim(job, dc)
+        _set_dc(
+            job,
+            site,
+            match_session=sid,
+            phase="ready",
+            status="Active",
+            savePending=False,
+            message=(
+                "Guest shutdown was interrupted before the save was submitted "
+                "(the app restarted). Use Guest shutdown & save to finish."
+            ),
+        )
+        _load_dc_vms(job, dc, token)
+
     def bump(**fields: Any) -> None:
+        # While the wait runs, dCloud still says Active: nothing there tells us a
+        # save is in flight, so the poll must not promote the card to saving or
+        # rewrite the VM list it is keeping fresh.
+        if wait_owns_message and str(fields.get("phase") or "") in {"shutting_down", "saving"}:
+            for owned in ("message", "phase", "savePending"):
+                fields.pop(owned, None)
         _set_dc(job, site, match_session=sid, **fields)
 
     public, _pub_err = check_public_session_status(site, sid)
@@ -2714,6 +2830,11 @@ def _refresh_dc_save_progress(job: dict[str, Any], dc: dict[str, Any], token: st
             savePending=True,
             message=f"{id_prefix}dCloud is writing the saved content.",
         )
+        return
+    if orphaned:
+        # dCloud is not stopping, saving, or saved, so nothing is in flight and
+        # the wait that would have submitted the save is gone.
+        hand_back()
         return
     bump(
         phase="saving",
@@ -2848,7 +2969,8 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         return
     if is_active_status(public) or is_active_status(numeric):
         vm_err = _load_dc_vms(job, dc, token)
-        message = _active_card_message(bool(dc.get("contentExport", True)))
+        # A healthy Active card says nothing: the buttons are the instructions.
+        message = ""
         if vm_err:
             message = f"VMs did not load: {vm_err}"
         elif not (dc.get("vms") or []):
@@ -3053,6 +3175,10 @@ def _load_last_job() -> None:
     job = _hydrate_job(data)
     if not job["id"]:
         return
+    # No shutdown-wait thread survives a restart, so a card left mid-wait would
+    # otherwise keep its stale VM list and never take a message from the poll.
+    for dc in job["dcs"]:
+        dc.pop("_shutdown_waiting", None)
     if _prune_old_cards(job):
         _persist_job(job)
     with _jobs_lock:
@@ -3093,6 +3219,31 @@ def _update_dc_card(job: dict[str, Any], dc_card: dict[str, Any], **fields: Any)
         if dc_card in (job.get("dcs") or []):
             dc_card.update(fields)
             dc_card["touchedAt"] = time.time()
+    _persist_job(job)
+
+
+def _drop_dc_card(job: dict[str, Any], dc_card: dict[str, Any], reason: str) -> None:
+    """Remove a card that never got a dCloud session.
+
+    There is nothing to act on and no session to clean up, so leaving it behind
+    only gives the user something to close. The reason goes to the log and the
+    error banner instead.
+    """
+    site = str(dc_card.get("site") or "").upper()
+    demo_id = str(dc_card.get("demoId") or "").strip()
+    with _jobs_lock:
+        dcs = list(job.get("dcs") or [])
+        if dc_card in dcs:
+            dcs.remove(dc_card)
+            job["dcs"] = dcs
+        if not dcs:
+            # No cards left to report on, so the job is over. Otherwise it would
+            # sit in "scheduling" and the page would poll it forever.
+            job["phase"] = "ended"
+    label = f"{site} demo {demo_id}" if demo_id else site
+    text = str(reason or "").strip() or "Schedule failed."
+    _log(job, f"{site}: not scheduled — {text} Card removed.")
+    job["error"] = f"{label} was not scheduled: {text}"
     _persist_job(job)
 
 
@@ -3853,7 +4004,10 @@ def _import_in_progress_camgr_jobs(
         root = str(existing.get("rootDemoId") or "").strip()
         # Having a name says nothing about the root, so track the root answer
         # separately. Marking it done off the name left the column blank for good.
-        root_answered = bool(root) or bool(existing.get("rootLookupDone"))
+        root_answered = bool(root) or (
+            bool(existing.get("rootLookupDone"))
+            and _as_int(existing.get("rootLookupVersion")) >= ROOT_LOOKUP_VERSION
+        )
         root_note = str(existing.get("rootNote") or "")
         root_is_self = bool(existing.get("rootIsSelf"))
         if not name or not root_answered:
@@ -3884,6 +4038,7 @@ def _import_in_progress_camgr_jobs(
                     "rootLookupDone": root_answered,
                     "rootNote": root_note,
                     "rootIsSelf": root_is_self,
+                    "rootLookupVersion": ROOT_LOOKUP_VERSION if root_answered else 0,
                 }
             ],
             overwrite_keys=ROOT_FIELDS,
@@ -4370,7 +4525,7 @@ def index() -> HTMLResponse:
 
 @app.get("/api/version")
 def api_version() -> dict[str, str]:
-    return {"version": APP_VERSION}
+    return {"version": _read_app_version()}
 
 
 def _changelog_notes(text: str) -> str:
@@ -4389,7 +4544,7 @@ def api_changelog() -> dict[str, str]:
         text = path.read_text(encoding="utf-8")
     except OSError:
         text = ""
-    return {"version": APP_VERSION, "text": _changelog_notes(text)}
+    return {"version": _read_app_version(), "text": _changelog_notes(text)}
 
 
 _update_check_lock = threading.Lock()
@@ -4425,7 +4580,7 @@ def api_update_check() -> dict[str, Any]:
         return {
             "ok": True,
             "updating": True,
-            "version": APP_VERSION,
+            "version": _read_app_version(),
             "message": "An update check is already running.",
         }
     try:
@@ -4441,13 +4596,14 @@ def api_update_check() -> dict[str, Any]:
         if not remote_version:
             _update_check_lock.release()
             raise HTTPException(503, "Could not reach GitHub. Try again later.")
-        if not is_newer(remote_version, APP_VERSION):
+        current = _read_app_version()
+        if not is_newer(remote_version, current):
             _update_check_lock.release()
             return {
                 "ok": True,
                 "updating": False,
-                "version": APP_VERSION,
-                "message": f"Version {APP_VERSION} is already current.",
+                "version": current,
+                "message": f"Version {current} is already current.",
             }
         threading.Thread(target=_apply_github_update, daemon=True).start()
         return {
@@ -4489,7 +4645,7 @@ def api_auth_status() -> dict[str, Any]:
         "sessionHasRefresh": has_refresh,
         "sessionExpiresAt": int(expires_at) if expires_at else 0,
         "accessToken": access_token if logged_in else "",
-        "version": APP_VERSION,
+        "version": _read_app_version(),
         "cai": _cai_public_status(),
         "camgr": _camgr_public_status(),
     }
@@ -4690,7 +4846,8 @@ def api_load_vms(body: LoadVmsPayload) -> dict[str, Any]:
         if demo_id and demo_id == session_id:
             hint = (
                 f"{session_id} is the content ID, not a session ID. "
-                "Switch Step 2 to Saved content, or use a running session ID from Find my sessions."
+                "Switch Load VMs to Published/Saved content, or use a running session ID "
+                "from Find my sessions."
             )
         raise HTTPException(400, hint)
     if body.skip_catalog_lookup or not name:
@@ -4793,7 +4950,7 @@ def _schedule_one_dc(
     if not result.get("ok") and is_auth_error(result.get("message")):
         tok, auth_err = recover(tok)
         if auth_err:
-            _update_dc_card(job, dc, phase="error", message=auth_err)
+            _drop_dc_card(job, dc, auth_err)
             return False
         result = schedule_exported_session(
             tok,
@@ -4830,12 +4987,9 @@ def _schedule_one_dc(
                 scheduleConflict=availability,
             )
             return False
-        _update_dc_card(
-            job,
-            dc,
-            phase="error",
-            message=result.get("message") or "Schedule failed.",
-        )
+        # No session was created, and unlike a capacity conflict there is nothing
+        # to adjust and retry from the card, so do not leave one behind.
+        _drop_dc_card(job, dc, str(result.get("message") or "Schedule failed."))
         return False
     sched_fields: dict[str, str] = {}
     if result.get("scheduleStart") and result.get("scheduleStop"):
@@ -5045,13 +5199,13 @@ def _watch_and_power_dc(
     # The demo powers its own VMs on, so report what is actually off rather than
     # what this tool was asked to start.
     powered_off = [vm for vm in (live or []) if not _vm_is_powered_on(vm)]
-    message = _active_card_message(payload.content_export)
+    message = ""
     if failed:
         message = "Power-on finished with errors: " + "; ".join(
             f"{r.get('name')}: {r.get('message')}" for r in failed
         )
     elif not matched and powered_off:
-        message += " Expand Powered off below if you need another VM started."
+        message = "Expand Powered off below if you need another VM started."
     _set_dc(
         job,
         site,
@@ -5355,6 +5509,7 @@ def _shutdown_one_dc(
             match_session=session_id,
             phase="shutting_down",
             message="Telling each guest OS to shut down…",
+            _shutdown_waiting=True,
         )
         tok = current_token()
         vms, _, err = list_session_vms(tok, site, session_id)
@@ -5362,12 +5517,26 @@ def _shutdown_one_dc(
             tok, auth_err = recover(tok)
             if auth_err:
                 _release_save_claim(job, dc)
-                _set_dc(job, site, match_session=session_id, phase="error", message=auth_err)
+                _set_dc(
+                    job,
+                    site,
+                    match_session=session_id,
+                    phase="error",
+                    message=auth_err,
+                    _shutdown_waiting=False,
+                )
                 return
             vms, _, err = list_session_vms(tok, site, session_id)
         if err:
             _release_save_claim(job, dc)
-            _set_dc(job, site, match_session=session_id, phase="error", message=err)
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                phase="error",
+                message=err,
+                _shutdown_waiting=False,
+            )
             return
         dc_vms = dc.get("vms") or []
         preferred = [vm for vm in dc_vms if vm.get("selected") is True]
@@ -5396,6 +5565,7 @@ def _shutdown_one_dc(
                 message=_shutdown_wait_message(pending),
                 vms=merged,
                 shutdownResults=results,
+                _shutdown_waiting=True,
             )
 
         _on_shutdown_wait(matched, matched)
@@ -5421,6 +5591,7 @@ def _shutdown_one_dc(
                 match_session=session_id,
                 phase="ready",
                 message="Shutdown & save cancelled before save was submitted.",
+                _shutdown_waiting=False,
             )
             return
         if not waited.get("ok"):
@@ -5443,6 +5614,8 @@ def _shutdown_one_dc(
         phase="saving",
         message="Save submitted — waiting for dCloud.",
         shutdownResults=results,
+        saveSubmitted=True,
+        _shutdown_waiting=False,
     )
     saved = save_session(
         current_token(),
@@ -7599,6 +7772,7 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
         name = str(item.name or (details or {}).get("name") or "").strip()
         topology_uid = extract_content_topology_uid(details or {}, site)
         root = extract_root_content_id(details or {}, saved_id=saved_id)
+        root_is_self = not root and root_content_id_is_self(details or {}, saved_id=saved_id)
         rows.append(
             {
                 "site": site,
@@ -7607,7 +7781,9 @@ def api_saved_ids_add(body: SavedIdsAddPayload) -> dict[str, Any]:
                 "name": name,
                 "parentId": published or str(item.parent_id or "").strip(),
                 "rootDemoId": root,
-                "rootLookupDone": bool(root),
+                "rootIsSelf": root_is_self,
+                "rootLookupDone": bool(root or root_is_self),
+                "rootLookupVersion": ROOT_LOOKUP_VERSION if (root or root_is_self) else 0,
                 "contentViewUrl": (
                     tbv3_edit_url(topology_uid)
                     or edit_topology_url(site, saved_id, details)
@@ -7658,6 +7834,7 @@ def api_saved_ids_lookup_parent(body: SavedIdsLookupPayload) -> dict[str, Any]:
             "rootLookupDone": found.answered,
             "rootNote": found.note,
             "rootIsSelf": found.is_self,
+            "rootLookupVersion": ROOT_LOOKUP_VERSION if found.answered else 0,
             "publishedLookupDone": True,
         }],
         overwrite_keys=ROOT_FIELDS,

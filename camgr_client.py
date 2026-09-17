@@ -544,6 +544,21 @@ def list_camgr_servers(cookie_header: str) -> dict[str, Any]:
     return {"ok": True, "loggedIn": True, "servers": servers}
 
 
+# CAMGR answers with fkrootDemoId on some demos and _rootDemoId on others, so
+# match the name with underscores and case ignored rather than guessing.
+_ROOT_KEYS = {"fkrootdemoid", "rootdemoid", "rootid"}
+
+
+def _root_demo_id(body: dict[str, Any]) -> str:
+    for key, raw in body.items():
+        if str(key).replace("_", "").lower() not in _ROOT_KEYS:
+            continue
+        value = str(raw or "").strip()
+        if value.isdigit():
+            return value
+    return ""
+
+
 def fetch_camgr_demo(cookie_header: str, site: str, saved_id: str) -> dict[str, Any]:
     saved = str(saved_id or "").strip()
     if not saved:
@@ -557,7 +572,7 @@ def fetch_camgr_demo(cookie_header: str, site: str, saved_id: str) -> dict[str, 
             last_err = err or last_err
             continue
         demo_id = str(body.get("pkdemoId") or saved).strip()
-        root_id = str(body.get("fkrootDemoId") or body.get("fkRootDemoId") or "").strip()
+        root_id = _root_demo_id(body)
         # A demo that points at itself is the original base, which is different
         # from CAMGR not knowing a root at all.
         root_is_self = bool(root_id) and (root_id == demo_id or root_id == saved)
