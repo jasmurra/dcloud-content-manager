@@ -2950,13 +2950,46 @@ def vm_action(
     return {"ok": ok, "name": name, "mor": vmid, "uid": vm.get("uid") or "", "message": message}
 
 
-def vm_needs_hard_power_off(vm: dict[str, Any]) -> bool:
-    """vCUBE has no working guest shutdown — dCloud accepts the call, then the VM reboots."""
+def _vm_name_blob(vm: dict[str, Any]) -> str:
     blob = " ".join(
         str(vm.get(key) or "") for key in ("name", "displayName", "shortName")
     ).lower()
-    compact = blob.replace("-", "").replace("_", "").replace(" ", "")
-    return "vcube" in compact
+    return blob.replace("-", "").replace("_", "").replace(" ", "")
+
+
+def vm_needs_hard_power_off(vm: dict[str, Any]) -> bool:
+    """vCUBE has no working guest shutdown — dCloud accepts the call, then the VM reboots."""
+    return "vcube" in _vm_name_blob(vm)
+
+
+# Cisco UC guests often take several minutes to halt. A short "then power off
+# whoever is left" would yank CUCM mid-shutdown. Name match is conservative.
+_SLOW_GUEST_SHUTDOWN_MARKERS = (
+    "cucm",
+    "ucmpub",
+    "ucmsub",
+    "unity",
+    "imp",
+    "imandp",
+    "presence",
+    "uccx",
+    "finesse",
+    "cvp",
+    "pcce",
+    "ucce",
+    "expressway",
+    "meetingserver",
+    "cer",
+)
+
+
+def vm_is_slow_guest_shutdown(vm: dict[str, Any]) -> bool:
+    if vm_needs_hard_power_off(vm):
+        return False
+    compact = _vm_name_blob(vm)
+    if "cuc" in compact:
+        return True
+    return any(marker in compact for marker in _SLOW_GUEST_SHUTDOWN_MARKERS)
 
 
 def power_on_vms(

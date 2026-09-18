@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.12.4** | After 10 minutes of guest shutdown, choose keep waiting or hard power off remaining VMs; UC guests are not yanked on a timer |
 | **1.12.3** | vCUBE VMs are powered off during Guest shutdown & save, so the save no longer waits forever on a VM that restarts |
 | **1.12.2** | A re-submitted CAMGR transfer is followed instead of leaving the row stuck on the first attempt's ERROR |
 | **1.12.1** | dCloud sign-in is refreshed in the background, so burn-in still schedules after a long transfer and integrate |

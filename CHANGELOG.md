@@ -1,3 +1,9 @@
+## 1.12.4 — 2026-09-18
+
+- Guest shutdown now **waits as long as the VMs need**, including slow UC guests. After 10 minutes a prompt asks whether to keep waiting or hard power off remaining VMs (and save, when this was Guest shutdown & save). Walking away keeps waiting; leftover VMs are not yanked on a timer
+- **Guest shutdown all powered-on VMs** on a card guest-shuts everything that is on (vCUBE is still powered off) and does not save. The card keeps reporting which VMs are still shutting down
+- The card names slow UC VMs as ones that will not be powered off unless you choose that after the 10-minute prompt
+
 ## 1.12.3 — 2026-09-18
 
 - **vCUBE is powered off instead of guest-shut-down.** dCloud accepts a guest shutdown on vCUBE and the VM restarts instead of stopping, so the save sat forever on “Waiting for VMs to shut down before saving: VCUBE”. Guest shutdown & save now sends a power off for those VMs and a real guest shutdown for everything else

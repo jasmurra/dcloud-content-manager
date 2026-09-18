@@ -244,6 +244,15 @@
       flex: 1;
       min-width: 0;
     }
+    .card .warn-box {
+      margin-bottom: 0;
+    }
+    .shutdown-prompt-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
+    }
     .banner-dismiss {
       flex-shrink: 0;
       background: transparent;
@@ -1590,6 +1599,18 @@
       </div>
     </div>
 
+    <div id="shutdown-wait-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shutdown-wait-alert-title">
+      <div class="modal-backdrop" id="shutdown-wait-alert-backdrop"></div>
+      <div class="modal-card action-modal-card">
+        <h2 id="shutdown-wait-alert-title">VMs still shutting down</h2>
+        <p id="shutdown-wait-alert-body"></p>
+        <div class="actions">
+          <button type="button" id="shutdown-wait-keep">Keep waiting</button>
+          <button type="button" class="danger" id="shutdown-wait-power">Power off remaining VMs</button>
+        </div>
+      </div>
+    </div>
+
     <div id="prompt-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-alert-title">
       <div class="modal-backdrop" id="prompt-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
@@ -2570,6 +2591,7 @@
     let authPauseAlertShown = false;
     let actionAlertScrollTarget = null;
     let confirmAlertResolver = null;
+    let shutdownWaitAlertKey = "";
     let promptAlertResolver = null;
     let unifiedSearchLastData = null;
     let unifiedSearchRequest = 0;
@@ -4560,6 +4582,11 @@
       return blob.replace(/[-_\s]/g, "").includes("vcube");
     }
 
+    function isPoweredOnState(value) {
+      const key = String(value || "").toLowerCase().replace(/[\s_-]/g, "");
+      return ["poweredon", "poweron", "on", "running"].includes(key);
+    }
+
     function renderVms() {
       $("vm-wrap").classList.toggle("hidden", vms.length === 0);
       $("vm-body").innerHTML = vms.map((vm, i) => `
@@ -4941,6 +4968,8 @@
         canReset: dc.canReset,
         owner: dc.owner,
         ownedByMe: dc.ownedByMe,
+        shutdownPrompt: dc.shutdownPrompt || null,
+        _manual_shutdown_waiting: Boolean(dc._manual_shutdown_waiting),
         vms: (dc.vms || []).map((vm) => ({
           name: vm.name,
           displayName: vm.displayName || vm.name,
@@ -5121,6 +5150,23 @@
       );
     }
 
+    function renderShutdownPrompt(dc, cardData, prompt) {
+      const names = (prompt.vms || []).join(", ") || "some VMs";
+      const powerLabel = prompt.saveAfter
+        ? "Power off remaining VMs and save"
+        : "Power off remaining VMs";
+      const saveBit = prompt.saveAfter
+        ? " Powering them off will then save this session."
+        : " This does not save the session.";
+      return `<div class="warn-box shutdown-prompt" style="margin-top:0.55rem">
+        <div>Guest shutdown has been waiting more than 10 minutes. Still on: ${escapeHtml(names)}. Keep waiting, or hard power off remaining VMs.${saveBit}</div>
+        <div class="shutdown-prompt-actions">
+          <button type="button" class="btn-shutdown-wait" ${cardData}>Keep waiting</button>
+          <button type="button" class="danger btn-shutdown-power-off" ${cardData}>${powerLabel}</button>
+        </div>
+      </div>`;
+    }
+
     function renderSessionCard(dc, { monitor = false, openVmMore = new Set(), checkedCards = new Set() } = {}) {
       const cardKey = sessionKey(dc.site, dc.sessionId || dc.demoId);
       const vmsHtml = renderVmGroups(dc, cardKey, openVmMore);
@@ -5152,7 +5198,15 @@
         ? "Same as Reset in the dCloud dashboard — rebuilds this session under the same demo and session ID."
         : "Reset is offered when dCloud says the session failed or can be reset.";
       const saveFailed = dc.phase === "save_failed" || (dc.phase === "error" && /save failed/i.test(dc.message || ""));
-      const canSave = (dc.phase === "ready" || saveFailed) && dc.ownedByMe !== false;
+      const shutdownPrompt = dc.shutdownPrompt && dc.shutdownPrompt.needed ? dc.shutdownPrompt : null;
+      const shutdownWatching = Boolean(dc._manual_shutdown_waiting || shutdownPrompt);
+      const canSave = (dc.phase === "ready" || saveFailed)
+        && dc.ownedByMe !== false
+        && !shutdownWatching;
+      const canShutdownAll = dc.phase === "ready"
+        && dc.ownedByMe !== false
+        && !shutdownWatching
+        && (dc.vms || []).some((vm) => isPoweredOnState(vm.powerState));
       const saveLabel = saveFailed ? "Retry save" : "Guest shutdown &amp; save";
       const saveTip = dc.ownedByMe === false
         ? `Only ${escapeHtml(dc.owner || "the owner")} can shut down and save this session.`
@@ -5224,6 +5278,7 @@
             ${saved}
             ${sharedLine}
             ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
+            ${shutdownPrompt ? renderShutdownPrompt(dc, cardData, shutdownPrompt) : ""}
             ${conflictDetails}
             ${view}
             ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
@@ -5236,6 +5291,7 @@
                   ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
                   ${shareBtn}
                   <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
+                  ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
                   ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                   <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend</button>
                   <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
@@ -5331,6 +5387,7 @@
       if (job && document.querySelector(".found-session")) {
         markFoundSessionsOnCards(job);
       }
+      maybeShowShutdownWaitAlert(job);
     }
 
     let lastSavedIdRows = [];
@@ -8142,6 +8199,13 @@
       return (job?.dcs || []).some((dc) => ["saving", "shutting_down"].includes(dc.phase));
     }
 
+    function jobHasManualShutdownInProgress(job) {
+      return (job?.dcs || []).some((dc) => (
+        Boolean(dc._manual_shutdown_waiting)
+        || Boolean(dc.shutdownPrompt && dc.shutdownPrompt.needed)
+      ));
+    }
+
     function jobNeedsVmRefresh(job) {
       if (!job) return false;
       const ready = (job.dcs || []).filter((dc) => dcNeedsVmRefresh(dc));
@@ -8162,6 +8226,8 @@
       if (activeJobPhases.has(job.phase)) return true;
       if (jobNeedsVmRefresh(job)) return true;
       if (jobHasSaveInProgress(job)) return true;
+      if (jobHasManualShutdownInProgress(job)) return true;
+      if ((job.dcs || []).some((dc) => dc.shutdownPrompt && dc.shutdownPrompt.needed)) return true;
       return (job.dcs || []).some((dc) => [
         "waiting", "queued", "scheduling", "powering", "shutting_down", "saving", "ending", "save_failed", "resetting",
       ].includes(dc.phase));
@@ -8837,6 +8903,109 @@
         showError(err.message);
         noteLog(`${site}: ${label.toLowerCase()} failed: ${err.message}`);
         btn.disabled = false;
+      }
+    }
+
+    async function guestShutdownAll(btn) {
+      if (!jobId) { showError("Restore or attach sessions first."); return; }
+      if (!ensureTokenReady("guest-shutting down VMs")) return;
+      closeVmMenuFrom(btn);
+      btn.disabled = true;
+      showError("");
+      const site = (btn.dataset.site || "").toUpperCase();
+      noteLog(`${site}: guest shutdown requested for all powered-on VMs (no save)…`);
+      try {
+        const job = await api(`/api/jobs/${jobId}/guest-shutdown-all`, {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site: btn.dataset.site,
+            session_id: btn.dataset.session || "",
+          }),
+        });
+        renderJob(job, { forceCards: true });
+        startPolling();
+      } catch (err) {
+        showError(err.message);
+        noteLog(`${site}: guest shutdown all failed: ${err.message}`);
+        btn.disabled = false;
+      }
+    }
+
+    function shutdownPromptKey(job, dc) {
+      const prompt = dc?.shutdownPrompt;
+      if (!job || !prompt?.needed) return "";
+      return [job.id, dc.site, dc.sessionId, prompt.at || "", (prompt.vms || []).join(",")].join("|");
+    }
+
+    function hideShutdownWaitAlert() {
+      $("shutdown-wait-alert")?.classList.add("hidden");
+    }
+
+    function maybeShowShutdownWaitAlert(job) {
+      const modal = $("shutdown-wait-alert");
+      const body = $("shutdown-wait-alert-body");
+      if (!modal || !body) return;
+      const pending = (job?.dcs || []).find((dc) => dc.shutdownPrompt && dc.shutdownPrompt.needed);
+      if (!pending) {
+        shutdownWaitAlertKey = "";
+        hideShutdownWaitAlert();
+        return;
+      }
+      const key = shutdownPromptKey(job, pending);
+      if (key && key === shutdownWaitAlertKey && !modal.classList.contains("hidden")) return;
+      if (key && key === shutdownWaitAlertKey) return;
+      shutdownWaitAlertKey = key;
+      const prompt = pending.shutdownPrompt;
+      const names = (prompt.vms || []).join(", ") || "some VMs";
+      const saveBit = prompt.saveAfter
+        ? " Powering them off will then save this session."
+        : " This does not save the session.";
+      body.textContent = (
+        `${String(pending.site || "").toUpperCase()} guest shutdown has been waiting more than 10 minutes. `
+        + `Still powered on: ${names}. Keep waiting, or hard power off remaining VMs.${saveBit}`
+      );
+      const powerBtn = $("shutdown-wait-power");
+      if (powerBtn) {
+        powerBtn.textContent = prompt.saveAfter
+          ? "Power off remaining VMs and save"
+          : "Power off remaining VMs";
+        powerBtn.dataset.site = pending.site || "";
+        powerBtn.dataset.session = pending.sessionId || "";
+      }
+      const keepBtn = $("shutdown-wait-keep");
+      if (keepBtn) {
+        keepBtn.dataset.site = pending.site || "";
+        keepBtn.dataset.session = pending.sessionId || "";
+      }
+      modal.classList.remove("hidden");
+      keepBtn?.focus();
+    }
+
+    async function submitShutdownChoice(site, sessionId, choice) {
+      if (!jobId) { showError("Restore or attach sessions first."); return; }
+      try {
+        const job = await api(`/api/jobs/${jobId}/shutdown-choice`, {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site,
+            session_id: sessionId || "",
+            choice,
+          }),
+        });
+        hideShutdownWaitAlert();
+        renderJob(job, { forceCards: true });
+        startPolling();
+        noteLog(
+          `${String(site || "").toUpperCase()}: `
+          + (choice === "wait"
+            ? "keeping the guest-shutdown wait."
+            : "powering off remaining VMs.")
+        );
+      } catch (err) {
+        showError(err.message);
+        noteLog(`Shutdown choice failed: ${err.message}`);
       }
     }
 
@@ -11046,6 +11215,29 @@
           .finally(() => closeVmMenuFrom(saveBtn));
         return;
       }
+      const shutdownAllBtn = ev.target.closest(".btn-dc-shutdown-all");
+      if (shutdownAllBtn) {
+        ev.preventDefault();
+        if (shutdownAllBtn.disabled) return;
+        guestShutdownAll(shutdownAllBtn)
+          .catch((err) => showError(err.message))
+          .finally(() => closeVmMenuFrom(shutdownAllBtn));
+        return;
+      }
+      const waitBtn = ev.target.closest(".btn-shutdown-wait");
+      if (waitBtn) {
+        ev.preventDefault();
+        submitShutdownChoice(waitBtn.dataset.site, waitBtn.dataset.session, "wait")
+          .catch((err) => showError(err.message));
+        return;
+      }
+      const powerBtn = ev.target.closest(".btn-shutdown-power-off");
+      if (powerBtn) {
+        ev.preventDefault();
+        submitShutdownChoice(powerBtn.dataset.site, powerBtn.dataset.session, "power_off")
+          .catch((err) => showError(err.message));
+        return;
+      }
       const resetBtn = ev.target.closest(".btn-dc-reset");
       if (resetBtn) {
         ev.preventDefault();
@@ -11668,6 +11860,10 @@
         hideConfirmAlert(false);
         return;
       }
+      if (!$("shutdown-wait-alert")?.classList.contains("hidden")) {
+        hideShutdownWaitAlert();
+        return;
+      }
       if (!$("action-alert").classList.contains("hidden")) {
         hideActionAlert();
         return;
@@ -11680,6 +11876,20 @@
     $("confirm-alert-ok")?.addEventListener("click", () => hideConfirmAlert(true));
     $("confirm-alert-cancel")?.addEventListener("click", () => hideConfirmAlert(false));
     $("confirm-alert-backdrop")?.addEventListener("click", () => hideConfirmAlert(false));
+
+    $("shutdown-wait-keep")?.addEventListener("click", () => {
+      const btn = $("shutdown-wait-keep");
+      hideShutdownWaitAlert();
+      submitShutdownChoice(btn?.dataset.site, btn?.dataset.session, "wait")
+        .catch((err) => showError(err.message));
+    });
+    $("shutdown-wait-power")?.addEventListener("click", () => {
+      const btn = $("shutdown-wait-power");
+      hideShutdownWaitAlert();
+      submitShutdownChoice(btn?.dataset.site, btn?.dataset.session, "power_off")
+        .catch((err) => showError(err.message));
+    });
+    $("shutdown-wait-alert-backdrop")?.addEventListener("click", () => hideShutdownWaitAlert());
 
     $("prompt-alert-ok")?.addEventListener("click", () => hidePromptAlert(promptSaveValues()));
     $("prompt-alert-cancel")?.addEventListener("click", () => hidePromptAlert(null));

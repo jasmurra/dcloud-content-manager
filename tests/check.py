@@ -366,6 +366,43 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("vCUBE is detected", dcloud_client.vm_needs_hard_power_off({"name": "VCUBE"}) is True)
     check("v-CUBE is detected", dcloud_client.vm_needs_hard_power_off({"displayName": "Cisco v-CUBE"}) is True)
     check("CUCM is not forced off", dcloud_client.vm_needs_hard_power_off({"name": "CUCM"}) is False)
+    check("CUCM is treated as a slow guest shutdown", dcloud_client.vm_is_slow_guest_shutdown({"name": "CUCM-PUB"}) is True)
+    check("Unity Connection is treated as slow", dcloud_client.vm_is_slow_guest_shutdown({"name": "CUC"}) is True)
+    check("vCUBE is not treated as a slow guest", dcloud_client.vm_is_slow_guest_shutdown({"name": "VCUBE"}) is False)
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = source.index("def _shutdown_one_dc(")
+    body = source[start : source.index("def _shutdown_job(")]
+    wait_fn = source[source.index("def _wait_until_vms_off(") : source.index("def _vm_power_summary(")]
+    check("the save wait uses the shared shutdown waiter", "_wait_until_vms_off(" in body)
+    check(
+        "accepted guest shutdowns are never force-powered-off later",
+        "still on after 5 minutes — powering off" not in body and "grace_seconds = 5 * 60" not in body,
+    )
+    check(
+        "slow UC shutdown waits without a final timeout",
+        'while not waited.get("ok") and not job["stop"].is_set()' in wait_fn,
+    )
+    check(
+        "the wait asks after 10 minutes instead of yanking VMs",
+        "SHUTDOWN_PROMPT_SECONDS = 10 * 60" in source
+        and "_set_shutdown_prompt(" in wait_fn
+        and "dc[\"shutdownPrompt\"]" in source,
+    )
+    check(
+        "the save never starts after a shutdown timeout",
+        "Starting save anyway" not in body,
+    )
+    long_msg = app._long_shutdown_wait_message(
+        [{"name": "CUCM"}, {"name": "WIN-DC"}]
+    )
+    check(
+        "the card promises not to power off slow UC",
+        "will not be powered off: CUCM" in long_msg,
+    )
+    check(
+        "the card still names other pending VMs",
+        "WIN-DC" in long_msg,
+    )
     guest_src = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     guest_fn = guest_src[
         guest_src.index("def guest_shutdown_vms(") : guest_src.index("def list_dashboard_sessions(")
@@ -374,15 +411,43 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("vCUBE is powered off instead", '"vmPowerOff"' in guest_fn and "reason" in guest_fn)
     check("the card hides Guest shutdown on vCUBE", "vmNeedsHardPowerOff(vm)" in INDEX)
     check("the API rewrites vCUBE guest shutdown", "vCUBE has no guest shutdown" in (ROOT / "app.py").read_text(encoding="utf-8"))
+    check(
+        "the card can shut down all powered-on VMs without saving",
+        "Guest shutdown all powered-on VMs" in INDEX,
+    )
+    check(
+        "the no-save action has its own endpoint",
+        "/guest-shutdown-all" in INDEX and '"/api/jobs/{job_id}/guest-shutdown-all"' in source,
+    )
+    check(
+        "manual shutdown keeps checking until all VMs are off",
+        "def _guest_shutdown_all_worker(" in source
+        and "All VMs are powered off. No save was submitted" in source,
+    )
+    check(
+        "the page keeps polling while manual shutdown is monitored",
+        "jobHasManualShutdownInProgress" in INDEX,
+    )
+    check(
+        "a 10-minute shutdown wait can keep waiting or power off",
+        '"/api/jobs/{job_id}/shutdown-choice"' in source
+        and "Keep waiting" in INDEX
+        and "Power off remaining VMs" in INDEX
+        and "shutdown-wait-alert" in INDEX,
+    )
+    check(
+        "hard power-off of leftover VMs is only after the user chooses it",
+        'choice == "power_off"' in wait_fn and "vmPowerOff" in wait_fn,
+    )
 
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     start = source.index("def _shutdown_one_dc(")
     body = source[start : source.index("def _shutdown_job(")]
     check(
         "save is after the powered-off wait",
-        body.index("wait_for_power_state") < body.index("save_session("),
+        body.index("_wait_until_vms_off(") < body.index("save_session("),
     )
-    check("the wait is for powered off", "want_on=False" in body)
+    check("the wait is for powered off", "want_on=False" in wait_fn)
     check(
         "the old fire-and-save message is gone",
         "dCloud handles shutdown on save" not in body,

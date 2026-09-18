@@ -96,6 +96,7 @@ from dcloud_client import (
     format_status,
     guest_shutdown_vms,
     vm_needs_hard_power_off,
+    vm_is_slow_guest_shutdown,
     is_active_status,
     is_auth_error,
     is_failed_status,
@@ -925,6 +926,17 @@ class ShutdownPayload(TokenPayload):
     # Per-session names so one bulk save can cover different demos.
     save_names: list[SessionSaveName] = Field(default_factory=list)
     save_description: str = ""
+
+
+class GuestShutdownAllPayload(TokenPayload):
+    site: str = ""
+    session_id: str = ""
+
+
+class ShutdownChoicePayload(TokenPayload):
+    site: str = ""
+    session_id: str = ""
+    choice: str = ""
 
 
 class EndPayload(TokenPayload):
@@ -2674,6 +2686,187 @@ def _shutdown_wait_message(pending: list[dict[str, Any]]) -> str:
     return " ".join(parts)
 
 
+def _long_shutdown_wait_message(pending: list[dict[str, Any]]) -> str:
+    slow = [_vm_card_label(vm) for vm in pending if vm_is_slow_guest_shutdown(vm)]
+    other = [_vm_card_label(vm) for vm in pending if not vm_is_slow_guest_shutdown(vm)]
+    parts: list[str] = []
+    if slow:
+        parts.append(
+            "Still waiting for long-shutdown VMs — they will not be powered off: "
+            + ", ".join(slow)
+        )
+    if other:
+        parts.append("Still waiting for powered-off confirmation: " + ", ".join(other))
+    return " ".join(parts) or "All VMs are powered off — starting save."
+
+
+SHUTDOWN_PROMPT_SECONDS = 10 * 60
+
+
+def _dc_choice_key(dc: dict[str, Any]) -> str:
+    return f"{str(dc.get('site') or '').lower()}|{str(dc.get('sessionId') or '').strip()}"
+
+
+def _vms_still_on(vms: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return [vm for vm in (vms or []) if not is_powered_off(vm.get("powerState"))]
+
+
+def _clear_shutdown_prompt(job: dict[str, Any], dc: dict[str, Any]) -> None:
+    dc.pop("shutdownPrompt", None)
+    dc["_shutdown_choice"] = ""
+    events = job.get("_shutdown_choice_events")
+    if isinstance(events, dict):
+        events.pop(_dc_choice_key(dc), None)
+
+
+def _set_shutdown_prompt(
+    job: dict[str, Any],
+    dc: dict[str, Any],
+    pending: list[dict[str, Any]],
+    *,
+    save_after: bool,
+) -> threading.Event:
+    key = _dc_choice_key(dc)
+    events = job.setdefault("_shutdown_choice_events", {})
+    event = events.get(key)
+    if not isinstance(event, threading.Event):
+        event = threading.Event()
+        events[key] = event
+    event.clear()
+    dc["_shutdown_choice"] = ""
+    names = [_vm_card_label(vm) for vm in pending]
+    dc["shutdownPrompt"] = {
+        "needed": True,
+        "waitMinutes": 10,
+        "vms": names,
+        "saveAfter": bool(save_after),
+        "at": time.time(),
+    }
+    _persist_job(job)
+    return event
+
+
+def _wait_until_vms_off(
+    job: dict[str, Any],
+    dc: dict[str, Any],
+    targets: list[dict[str, Any]],
+    *,
+    progress: Callable[[str], None],
+    current_token: Callable[[], str],
+    recover: Callable[[str], tuple[str, str | None]],
+    on_wait: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None],
+    save_after: bool,
+) -> dict[str, Any]:
+    """Wait until every target is off. After 10 minutes, ask whether to keep waiting."""
+    site = str(dc.get("site") or "")
+    session_id = str(dc.get("sessionId") or "")
+    waited = wait_for_power_state(
+        current_token(),
+        site,
+        session_id,
+        targets,
+        want_on=False,
+        timeout_seconds=SHUTDOWN_PROMPT_SECONDS,
+        poll_seconds=10,
+        progress=progress,
+        should_stop=job["stop"].is_set,
+        get_token=current_token,
+        refresh_auth=recover,
+        on_wait=on_wait,
+    )
+    while not waited.get("ok") and not job["stop"].is_set():
+        wait_message = str(waited.get("message") or "")
+        if wait_message and "Timed out waiting" not in wait_message:
+            return waited
+        still = _vms_still_on(waited.get("vms") or targets)
+        if not still:
+            return {"ok": True, "vms": waited.get("vms") or targets}
+        live = _find_dc(job, site, session_id) or dc
+        names = ", ".join(_vm_card_label(vm) for vm in still)
+        progress(
+            f"{site.upper()}: VMs still shutting down after 10 minutes: {names}. "
+            "Waiting for you to keep waiting, or power off remaining VMs."
+        )
+        event = _set_shutdown_prompt(job, live, still, save_after=save_after)
+        choice = ""
+        while not job["stop"].is_set() and not choice:
+            waited = wait_for_power_state(
+                current_token(),
+                site,
+                session_id,
+                targets,
+                want_on=False,
+                timeout_seconds=15,
+                poll_seconds=5,
+                progress=progress,
+                should_stop=lambda: job["stop"].is_set() or event.is_set(),
+                get_token=current_token,
+                refresh_auth=recover,
+                on_wait=on_wait,
+            )
+            if waited.get("ok") or not _vms_still_on(waited.get("vms") or targets):
+                _clear_shutdown_prompt(job, live)
+                return {"ok": True, "vms": waited.get("vms") or targets}
+            if event.is_set():
+                choice = str(live.get("_shutdown_choice") or "wait").strip().lower()
+                break
+            wait_message = str(waited.get("message") or "")
+            if (
+                wait_message
+                and "Timed out waiting" not in wait_message
+                and wait_message != "Stopped by user."
+            ):
+                _clear_shutdown_prompt(job, live)
+                return waited
+        _clear_shutdown_prompt(job, live)
+        if job["stop"].is_set():
+            break
+        if choice == "power_off":
+            still = _vms_still_on(waited.get("vms") or still)
+            if still:
+                progress(
+                    f"{site.upper()}: powering off remaining VMs at your request: "
+                    + ", ".join(_vm_card_label(vm) for vm in still)
+                )
+                tok = current_token()
+                for vm in still:
+                    hard = vm_action(tok, site, session_id, vm, "vmPowerOff")
+                    progress(
+                        f"{site.upper()}: power off {_vm_card_label(vm)}: "
+                        f"{hard.get('message') or ('accepted' if hard.get('ok') else 'failed')}"
+                    )
+            waited = wait_for_power_state(
+                current_token(),
+                site,
+                session_id,
+                targets,
+                want_on=False,
+                timeout_seconds=SHUTDOWN_PROMPT_SECONDS,
+                poll_seconds=10,
+                progress=progress,
+                should_stop=job["stop"].is_set,
+                get_token=current_token,
+                refresh_auth=recover,
+                on_wait=on_wait,
+            )
+            continue
+        waited = wait_for_power_state(
+            current_token(),
+            site,
+            session_id,
+            targets,
+            want_on=False,
+            timeout_seconds=SHUTDOWN_PROMPT_SECONDS,
+            poll_seconds=10,
+            progress=progress,
+            should_stop=job["stop"].is_set,
+            get_token=current_token,
+            refresh_auth=recover,
+            on_wait=on_wait,
+        )
+    return waited
+
+
 def _vm_power_summary(vms: list[dict[str, Any]]) -> str:
     on = sum(1 for vm in vms if _vm_is_powered_on(vm))
     off = len(vms) - on
@@ -2720,7 +2913,7 @@ def _refresh_dc_save_progress(job: dict[str, Any], dc: dict[str, Any], token: st
     # replaced that text made the card flip between the VM list and a save
     # message for a save that had not been submitted yet, so leave the message
     # alone while that wait owns the card. Anything terminal still speaks up.
-    wait_owns_message = bool(dc.get("_shutdown_waiting"))
+    wait_owns_message = bool(dc.get("_shutdown_waiting") or dc.get("shutdownPrompt"))
     save_submitted = bool(
         dc.get("saveSubmitted") or dc.get("saveConfirmed") or dc.get("savedId")
     )
@@ -2998,6 +3191,13 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         )
         return
     if is_active_status(public) or is_active_status(numeric):
+        if dc.get("_manual_shutdown_waiting") or dc.get("shutdownPrompt"):
+            # The no-save shutdown worker owns the progress message. A normal
+            # Active refresh must not blank its list of VMs still shutting down.
+            vm_err = _load_dc_vms(job, dc, token)
+            if vm_err:
+                bump(message=f"VM shutdown monitoring: {vm_err}")
+            return
         vm_err = _load_dc_vms(job, dc, token)
         # A healthy Active card says nothing: the buttons are the instructions.
         message = ""
@@ -3209,6 +3409,13 @@ def _load_last_job() -> None:
     # otherwise keep its stale VM list and never take a message from the poll.
     for dc in job["dcs"]:
         dc.pop("_shutdown_waiting", None)
+        dc.pop("shutdownPrompt", None)
+        dc.pop("_shutdown_choice", None)
+        if dc.pop("_manual_shutdown_waiting", None):
+            dc["message"] = (
+                "VM shutdown monitoring was interrupted by the app restart. "
+                "Refresh this card to check which VMs are still powered on."
+            )
     if _prune_old_cards(job):
         _persist_job(job)
     with _jobs_lock:
@@ -5616,8 +5823,17 @@ def _shutdown_one_dc(
         if not matched:
             matched = preferred
         tok = current_token()
-        results = guest_shutdown_vms(tok, site, session_id, matched, progress=progress)
+        shutdown_targets = [
+            vm for vm in matched if not is_powered_off(vm.get("powerState"))
+        ]
+        results = guest_shutdown_vms(
+            tok, site, session_id, shutdown_targets, progress=progress
+        )
+        if not shutdown_targets:
+            progress(f"{site.upper()}: all selected VMs are already powered off.")
         progress(f"{site.upper()}: shutdown requests sent — waiting for VMs to power off before save.")
+
+        long_wait_mode = False
 
         def _on_shutdown_wait(
             observed: list[dict[str, Any]],
@@ -5630,29 +5846,31 @@ def _shutdown_one_dc(
                 site,
                 match_session=session_id,
                 phase="shutting_down",
-                message=_shutdown_wait_message(pending),
+                message=(
+                    _long_shutdown_wait_message(pending)
+                    if long_wait_mode
+                    else _shutdown_wait_message(pending)
+                ),
                 vms=merged,
                 shutdownResults=results,
                 _shutdown_waiting=True,
             )
 
         _on_shutdown_wait(matched, matched)
-        waited = wait_for_power_state(
-            tok,
-            site,
-            session_id,
+        long_wait_mode = True
+        waited = _wait_until_vms_off(
+            job,
+            dc,
             matched,
-            want_on=False,
-            timeout_seconds=10 * 60,
-            poll_seconds=10,
             progress=progress,
-            should_stop=job["stop"].is_set,
-            get_token=current_token,
-            refresh_auth=recover,
+            current_token=current_token,
+            recover=recover,
             on_wait=_on_shutdown_wait,
+            save_after=True,
         )
         if job["stop"].is_set():
             _release_save_claim(job, dc)
+            _clear_shutdown_prompt(job, dc)
             _set_dc(
                 job,
                 site,
@@ -5663,18 +5881,19 @@ def _shutdown_one_dc(
             )
             return
         if not waited.get("ok"):
-            still = [
-                _vm_card_label(vm)
-                for vm in (waited.get("vms") or [])
-                if not is_powered_off(vm.get("powerState"))
-            ]
-            progress(
-                f"{site.upper()}: {waited.get('message') or 'timed out waiting for VMs to power off'}"
-                + (f" — still on: {', '.join(still)}" if still else "")
-                + ". Starting save anyway."
+            wait_message = str(waited.get("message") or "Could not verify VM shutdown.")
+            _release_save_claim(job, dc)
+            _clear_shutdown_prompt(job, dc)
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                phase="error",
+                message=f"Could not verify VM shutdown: {wait_message}",
+                _shutdown_waiting=False,
             )
-        else:
-            progress(f"{site.upper()}: selected VMs are powered off — starting save.")
+            return
+        progress(f"{site.upper()}: selected VMs are powered off — starting save.")
     _set_dc(
         job,
         site,
@@ -6598,6 +6817,11 @@ def _discard_job(job: dict[str, Any]) -> None:
         event = job.get(key)
         if isinstance(event, threading.Event):
             event.set()
+    events = job.get("_shutdown_choice_events")
+    if isinstance(events, dict):
+        for event in events.values():
+            if isinstance(event, threading.Event):
+                event.set()
 
 
 def _drop_local_cards(*, workspace: bool, monitoring: bool) -> None:
@@ -6793,6 +7017,124 @@ def _verify_guest_shutdown(
     _persist_job(job)
 
 
+def _guest_shutdown_all_worker(
+    job: dict[str, Any],
+    dc: dict[str, Any],
+    payload: GuestShutdownAllPayload,
+) -> None:
+    site = str(dc.get("site") or "").lower()
+    session_id = str(dc.get("sessionId") or "")
+
+    def progress(message: str) -> None:
+        _log(job, message)
+
+    try:
+        token = _job_token(job, progress) or _resolve_token(payload, progress)
+        vms, details, err = list_session_vms(token, site, session_id)
+        if is_auth_error(err):
+            token, auth_err = _recover_auth(job, progress, token)
+            if auth_err:
+                raise RuntimeError(auth_err)
+            vms, details, err = list_session_vms(token, site, session_id)
+        if err:
+            raise RuntimeError(err)
+        live, power_err = apply_tbv3_power_states(
+            token, site, session_id, vms, details
+        )
+        if is_auth_error(power_err):
+            token, auth_err = _recover_auth(job, progress, token)
+            if auth_err:
+                raise RuntimeError(auth_err)
+            live, power_err = apply_tbv3_power_states(
+                token, site, session_id, vms, details
+            )
+        if power_err:
+            progress(f"{site.upper()}: {power_err}")
+        powered_on = [vm for vm in live if _vm_is_powered_on(vm)]
+        if not powered_on:
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                vms=live,
+                message=(
+                    "All VMs are already powered off. No save was submitted — "
+                    "use Guest shutdown & save when ready."
+                ),
+                _manual_shutdown_waiting=False,
+            )
+            return
+
+        results = guest_shutdown_vms(
+            token, site, session_id, powered_on, progress=progress
+        )
+
+        def on_wait(
+            observed: list[dict[str, Any]],
+            pending: list[dict[str, Any]],
+        ) -> None:
+            current = _find_dc(job, site, session_id) or dc
+            merged = _merge_observed_vm_power(
+                list(current.get("vms") or []), observed, pending
+            )
+            message = _long_shutdown_wait_message(pending)
+            if pending and not any(vm_is_slow_guest_shutdown(vm) for vm in pending):
+                message = _shutdown_wait_message(pending)
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                vms=merged,
+                message=message + (" No save has been submitted." if pending else ""),
+                shutdownResults=results,
+                _manual_shutdown_waiting=bool(pending),
+            )
+
+        on_wait(powered_on, powered_on)
+        waited = _wait_until_vms_off(
+            job,
+            dc,
+            powered_on,
+            progress=progress,
+            current_token=lambda: _job_token(job, progress),
+            recover=lambda stale: _recover_auth(job, progress, stale),
+            on_wait=on_wait,
+            save_after=False,
+        )
+        if job["stop"].is_set():
+            _clear_shutdown_prompt(job, dc)
+            return
+        if not waited.get("ok"):
+            raise RuntimeError(waited.get("message") or "Could not verify VM shutdown.")
+        if waited.get("ok"):
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                message=(
+                    "All VMs are powered off. No save was submitted — "
+                    "use Guest shutdown & save when ready."
+                ),
+                vms=waited.get("vms") or live,
+                shutdownResults=results,
+                _manual_shutdown_waiting=False,
+            )
+            progress(
+                f"{site.upper()}: all powered-on VMs finished shutting down; "
+                "no save was submitted."
+            )
+    except Exception as exc:
+        _clear_shutdown_prompt(job, dc)
+        _set_dc(
+            job,
+            site,
+            match_session=session_id,
+            message=f"Could not monitor VM shutdown: {exc}",
+            _manual_shutdown_waiting=False,
+        )
+        progress(f"{site.upper()}: guest shutdown all failed: {exc}")
+
+
 @app.post("/api/jobs/{job_id}/vm-action")
 def api_vm_action(job_id: str, body: VmActionPayload) -> dict[str, Any]:
     job = _job(job_id)
@@ -6849,6 +7191,68 @@ def api_vm_action(job_id: str, body: VmActionPayload) -> dict[str, Any]:
             daemon=True,
         ).start()
     return {"ok": bool(result.get("ok")), "result": result, "job": _public_job(job)}
+
+
+@app.post("/api/jobs/{job_id}/guest-shutdown-all")
+def api_guest_shutdown_all(
+    job_id: str, body: GuestShutdownAllPayload
+) -> dict[str, Any]:
+    job = _job(job_id)
+    site = str(body.site or "").strip().lower()
+    session_id = str(body.session_id or "").strip()
+    dc = _find_dc(job, site, session_id)
+    if not dc:
+        raise HTTPException(400, f"No card found for {site.upper()} session {session_id}.")
+    if _dc_owned_by_me(job, dc) is False:
+        raise HTTPException(400, _not_my_sessions_message([dc], "shut down"))
+    if str(dc.get("phase") or "") != "ready":
+        raise HTTPException(400, "The session must be active before shutting down its VMs.")
+    if dc.get("_manual_shutdown_waiting"):
+        raise HTTPException(400, "This card is already monitoring VM shutdown.")
+    dc["_manual_shutdown_waiting"] = True
+    dc["message"] = "Checking powered-on VMs before guest shutdown…"
+    _persist_job(job)
+    threading.Thread(
+        target=_guest_shutdown_all_worker,
+        args=(job, dc, body),
+        daemon=True,
+    ).start()
+    return _public_job(job)
+
+
+@app.post("/api/jobs/{job_id}/shutdown-choice")
+def api_shutdown_choice(job_id: str, body: ShutdownChoicePayload) -> dict[str, Any]:
+    job = _job(job_id)
+    choice = str(body.choice or "").strip().lower().replace("-", "_")
+    if choice in {"poweroff", "hard_power_off", "hard_off"}:
+        choice = "power_off"
+    if choice not in {"wait", "power_off"}:
+        raise HTTPException(400, "Choose wait or power_off.")
+    site = str(body.site or "").strip().lower()
+    session_id = str(body.session_id or "").strip()
+    dc = _find_dc(job, site, session_id)
+    if not dc:
+        raise HTTPException(400, f"No card found for {site.upper()} session {session_id}.")
+    prompt = dc.get("shutdownPrompt")
+    if not isinstance(prompt, dict) or not prompt.get("needed"):
+        raise HTTPException(400, "This session is not waiting for a shutdown choice.")
+    with _jobs_lock:
+        dc["_shutdown_choice"] = choice
+        events = job.get("_shutdown_choice_events")
+        event = events.get(_dc_choice_key(dc)) if isinstance(events, dict) else None
+    if isinstance(event, threading.Event):
+        event.set()
+    _log(
+        job,
+        f"{site.upper()}: "
+        + (
+            "keeping the guest-shutdown wait."
+            if choice == "wait"
+            else "powering off remaining VMs at your request."
+        ),
+    )
+    _persist_job(job)
+    return _public_job(job)
 
 
 @app.post("/api/jobs/{job_id}/rename-session")
