@@ -1,3 +1,9 @@
+## 1.12.1 — 2026-09-18
+
+- The dCloud token is now kept fresh in the background, refreshed about every 4 minutes and always before it expires. A CAMGR transfer plus CAI integrate can run for hours, and the post-integration burn-in sessions used to fail at the end because the sign-in had quietly gone stale
+- Burn-in and job actions now use your **live** sign-in instead of the refresh token copied onto the job when it was created. dCloud retires that old token as soon as anything else refreshes, so the copy could be dead by the time integration finished
+- Leave `start.command` running and the app tab open for a long transfer. You do not need to refresh the page — the token refresh happens in the app, not the browser
+
 ## 1.12 — 2026-09-17
 
 - The **Schedule** button now reports back under itself: “Scheduling 2 sessions…” while dCloud works, then the session IDs it got. With Job workspace collapsed the click used to produce no visible result at all. **Show in Job workspace** opens the panel when you want the cards, so it is not a popup you have to dismiss

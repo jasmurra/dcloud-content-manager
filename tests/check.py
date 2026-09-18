@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -443,6 +444,22 @@ def test_token_refresh_is_not_raced() -> None:
     check("a live token is reused", app._access_token_is_usable("t", 0) is True)
     check("an expired token is not reused", app._access_token_is_usable("t", 1.0) is False)
     check("no token is never usable", app._access_token_is_usable("", 0) is False)
+    soon = time.time() + 60
+    check(
+        "a token inside the 5-minute window is refreshed early",
+        app._access_token_is_usable("t", soon) is False,
+    )
+    later = time.time() + 20 * 60
+    check("a token with plenty of life is reused", app._access_token_is_usable("t", later) is True)
+    keepalive = source[
+        source.index("def _auth_keepalive_loop(") : source.index("def _start_auth_keepalive(")
+    ]
+    check("keepalive refreshes the dCloud token too", '"dcloud": _dcloud_keepalive' in keepalive)
+    check(
+        "jobs use the live session, not a copied refresh token",
+        "_ensure_user_access_token(progress, force=force)" in source,
+    )
+    check("the page pings auth every 4 minutes", "4 * 60 * 1000" in INDEX)
     # A failed call has to correct the button, not wait for the next poll.
     check("a sign-in failure re-checks auth", "refreshAuth().catch(() => {});" in INDEX)
 

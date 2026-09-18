@@ -289,6 +289,9 @@ _auth_keepalive_lock = threading.Lock()
 _auth_keepalive_started = False
 # While signed in, touch the services now and then to keep the sessions warm.
 AUTH_KEEPALIVE_SECONDS = 240
+# Refresh the dCloud access JWT this long before it expires, so a long CAMGR
+# transfer + CAI integrate still has a live token when burn-in schedules.
+DCLOUD_REFRESH_BEFORE_SECONDS = 5 * 60
 # While signed out, look for a fresh Chrome login often so nobody has to click Connect.
 AUTH_WATCH_SECONDS = 15
 # Reading every Chrome profile is slow, so back off between failed auto-imports.
@@ -633,15 +636,23 @@ def _read_user_session() -> tuple[str, float, str, str]:
 
 
 def _access_token_is_usable(token: str, expires_at: float) -> bool:
-    return bool(token) and (not expires_at or time.time() < expires_at - 60)
+    if not token:
+        return False
+    if not expires_at:
+        expires_at = float(jwt_expires_at(token) or 0)
+    if not expires_at:
+        return True
+    return time.time() < expires_at - DCLOUD_REFRESH_BEFORE_SECONDS
 
 
 def _ensure_user_access_token(
     progress: Callable[[str], None] | None = None,
+    *,
+    force: bool = False,
 ) -> str:
     """Return a valid access token, refreshing from dc_p_r in memory when the JWT expired."""
     token, expires_at, refresh, site = _read_user_session()
-    if _access_token_is_usable(token, expires_at):
+    if not force and _access_token_is_usable(token, expires_at):
         return token
     if refresh:
         # dCloud hands back a new refresh token, which retires the old one. Two
@@ -651,12 +662,12 @@ def _ensure_user_access_token(
         # session after the wait in case someone else just refreshed it.
         with _token_refresh_lock:
             token, expires_at, refresh, site = _read_user_session()
-            if _access_token_is_usable(token, expires_at):
+            if not force and _access_token_is_usable(token, expires_at):
                 return token
             if not refresh:
-                return ""
+                return token if _access_token_is_usable(token, expires_at) else ""
             return _refresh_with_any_site(refresh, site, progress)
-    return ""
+    return token if (not force and _access_token_is_usable(token, expires_at)) else ""
 
 
 def _refresh_with_any_site(
@@ -721,24 +732,17 @@ def _refresh_session_token(
 def _refresh_job_token(
     job: dict[str, Any],
     progress: Callable[[str], None] | None = None,
+    *,
+    force: bool = False,
 ) -> tuple[str, str | None]:
-    refresh = (job.get("refresh_token") or "").strip()
-    site = (job.get("site") or "rtp").strip().lower()
-    if not refresh:
-        with _user_auth_lock:
-            refresh = (_user_auth.get("refresh_token") or "").strip()
-            if _user_auth.get("site"):
-                site = (_user_auth.get("site") or site).strip().lower()
-    if not refresh:
+    """Copy the live user session onto the job. Never spend a retired job refresh token."""
+    access = _ensure_user_access_token(progress, force=force)
+    if not access:
         return "", "No refresh token — log in or import from Chrome again."
-    access, new_refresh, expires_at, err = _refresh_session_token(refresh, site, progress)
-    if err or not access:
-        return "", err
     job["token"] = access
     job["token_at"] = time.time()
-    job["token_expires_at"] = expires_at
-    job["refresh_token"] = new_refresh
-    job["site"] = site
+    job["token_source"] = job.get("token_source") or "browser"
+    _copy_session_to_job(job)
     return access, None
 
 
@@ -1152,7 +1156,6 @@ def _resolve_token(payload: TokenPayload, progress: Callable[[str], None] | None
 
 
 OAUTH_REFRESH_AFTER = 40 * 60
-BROWSER_REFRESH_BEFORE = 5 * 60
 AUTH_PAUSE_HINT = (
     "Token expired (401). Use Sign in to dCloud at the top of the page to log in or "
     "import from browser, then Continue."
@@ -1177,13 +1180,10 @@ def _job_token(job: dict[str, Any], progress: Callable[[str], None] | None = Non
             return fresh
         if progress and err:
             progress(err)
-    expires_at = float(job.get("token_expires_at") or 0)
-    if (
-        source in {"browser", "login", "paste"}
-        and (job.get("refresh_token") or _user_auth.get("refresh_token"))
-        and expires_at
-        and time.time() >= expires_at - BROWSER_REFRESH_BEFORE
-    ):
+    if source in {"browser", "login", "paste"} or job.get("refresh_token"):
+        # Use the live user session, not the refresh token copied onto the job
+        # hours ago. dCloud retires that old refresh token the first time
+        # keepalive refreshes, and burn-in would otherwise fail after integrate.
         fresh, err = _refresh_job_token(job, progress)
         if fresh:
             return fresh
@@ -1216,8 +1216,15 @@ def _recover_auth(
         if source in {"browser", "login", "paste"} and (
             job.get("refresh_token") or _user_auth.get("refresh_token")
         ):
-            fresh, err = _refresh_job_token(job, progress)
-            if fresh:
+            live = _ensure_user_access_token(progress)
+            if live and live != stale_token:
+                job["token"] = live
+                job["token_at"] = time.time()
+                _copy_session_to_job(job)
+                progress("Refreshed dCloud token after 401.")
+                return live, None
+            fresh, err = _refresh_job_token(job, progress, force=True)
+            if fresh and fresh != stale_token:
                 progress("Refreshed dCloud token after 401.")
                 return fresh, None
             if err and progress:
@@ -3375,9 +3382,20 @@ def _cai_auto_connect() -> dict[str, Any]:
 def _auth_keepalive_loop() -> None:
     # Signed in, this just keeps the sessions warm. Signed out, it watches Chrome
     # so finishing Duo in a tab reconnects the tool on its own.
-    checked_at = {"camgr": 0.0, "cai": 0.0}
-    connected = {"camgr": False, "cai": False}
-    probes = {"camgr": _camgr_auto_connect, "cai": _cai_auto_connect}
+    checked_at = {"camgr": 0.0, "cai": 0.0, "dcloud": 0.0}
+    connected = {"camgr": False, "cai": False, "dcloud": False}
+
+    def _dcloud_keepalive() -> dict[str, Any]:
+        token, _expires_at, refresh, _site = _read_user_session()
+        if not token and not refresh:
+            return {"loggedIn": False}
+        return {"loggedIn": bool(_ensure_user_access_token())}
+
+    probes = {
+        "camgr": _camgr_auto_connect,
+        "cai": _cai_auto_connect,
+        "dcloud": _dcloud_keepalive,
+    }
     while True:
         time.sleep(AUTH_WATCH_SECONDS)
         now = time.time()
