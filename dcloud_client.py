@@ -2950,6 +2950,15 @@ def vm_action(
     return {"ok": ok, "name": name, "mor": vmid, "uid": vm.get("uid") or "", "message": message}
 
 
+def vm_needs_hard_power_off(vm: dict[str, Any]) -> bool:
+    """vCUBE has no working guest shutdown — dCloud accepts the call, then the VM reboots."""
+    blob = " ".join(
+        str(vm.get(key) or "") for key in ("name", "displayName", "shortName")
+    ).lower()
+    compact = blob.replace("-", "").replace("_", "").replace(" ", "")
+    return "vcube" in compact
+
+
 def power_on_vms(
     token: str,
     site: str,
@@ -2974,10 +2983,37 @@ def guest_shutdown_vms(
     *,
     fallback_power_off: bool = True,
 ) -> list[dict[str, Any]]:
-    """Fire guest-shutdown requests; do not wait for VMs to power off. Fall back to hard power-off on failure."""
+    """Fire guest-shutdown requests; do not wait for VMs to power off.
+
+    vCUBE has no guest OS shutdown — the API call is accepted, then the VM
+    restarts. Power those off instead. Other VMs still fall back to hard
+    power-off if guest shutdown is rejected.
+    """
     results = []
     for vm in vms:
         name = str(vm.get("name") or vm.get("mor") or "VM")
+        if vm_needs_hard_power_off(vm):
+            if progress:
+                progress(
+                    f"{site.upper()}: {name} has no guest shutdown (vCUBE) — powering off…"
+                )
+            hard = vm_action(token, site, session_id, vm, "vmPowerOff")
+            results.append(
+                {
+                    **hard,
+                    "name": name,
+                    "forcedPowerOff": True,
+                    "reason": "vcube",
+                }
+            )
+            if progress:
+                if hard.get("ok"):
+                    progress(f"{site.upper()}: power off {name}: {hard.get('message') or 'accepted'}")
+                else:
+                    progress(
+                        f"{site.upper()}: power off failed for {name} — continuing to save anyway."
+                    )
+            continue
         if progress:
             progress(f"{site.upper()}: guest shutdown {name}…")
         result = vm_action(token, site, session_id, vm, "guestShutdown")

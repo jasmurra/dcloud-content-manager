@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.12.3** | vCUBE VMs are powered off during Guest shutdown & save, so the save no longer waits forever on a VM that restarts |
 | **1.12.2** | A re-submitted CAMGR transfer is followed instead of leaving the row stuck on the first attempt's ERROR |
 | **1.12.1** | dCloud sign-in is refreshed in the background, so burn-in still schedules after a long transfer and integrate |
 | **1.12** | Schedule reports its result under the button; a failed schedule leaves no card; fixed the 400 under a green Sign in button |

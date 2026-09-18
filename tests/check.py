@@ -358,6 +358,23 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("a verified VM leaves the pending list", merged[0]["powerState"] == "Powered Off")
     check("a live VM stays marked as shutting down", merged[1]["shutdownPending"] is True)
 
+    vcube_msg = app._shutdown_wait_message([{"name": "VCUBE"}, {"name": "CUCM"}])
+    check("vCUBE is called out as a power-off", "Powering off (no guest shutdown): VCUBE" in vcube_msg)
+    check("other VMs still wait for guest shutdown", "CUCM" in vcube_msg)
+
+    import dcloud_client
+    check("vCUBE is detected", dcloud_client.vm_needs_hard_power_off({"name": "VCUBE"}) is True)
+    check("v-CUBE is detected", dcloud_client.vm_needs_hard_power_off({"displayName": "Cisco v-CUBE"}) is True)
+    check("CUCM is not forced off", dcloud_client.vm_needs_hard_power_off({"name": "CUCM"}) is False)
+    guest_src = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    guest_fn = guest_src[
+        guest_src.index("def guest_shutdown_vms(") : guest_src.index("def list_dashboard_sessions(")
+    ]
+    check("vCUBE skips guest shutdown", "vm_needs_hard_power_off(vm)" in guest_fn)
+    check("vCUBE is powered off instead", '"vmPowerOff"' in guest_fn and "reason" in guest_fn)
+    check("the card hides Guest shutdown on vCUBE", "vmNeedsHardPowerOff(vm)" in INDEX)
+    check("the API rewrites vCUBE guest shutdown", "vCUBE has no guest shutdown" in (ROOT / "app.py").read_text(encoding="utf-8"))
+
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     start = source.index("def _shutdown_one_dc(")
     body = source[start : source.index("def _shutdown_job(")]

@@ -1,3 +1,9 @@
+## 1.12.3 — 2026-09-18
+
+- **vCUBE is powered off instead of guest-shut-down.** dCloud accepts a guest shutdown on vCUBE and the VM restarts instead of stopping, so the save sat forever on “Waiting for VMs to shut down before saving: VCUBE”. Guest shutdown & save now sends a power off for those VMs and a real guest shutdown for everything else
+- The card says which is which: “Powering off (no guest shutdown): VCUBE” alongside the normal waiting line
+- A VM’s own **Guest shutdown** button is replaced with a “No guest shutdown” note on vCUBE, and the API turns a guest shutdown on one into a power off rather than letting it bounce
+
 ## 1.12.2 — 2026-09-18
 
 - A transfer you **re-submit after a failure** is now followed properly. Each row remembers one CAMGR job, and a finished job used to win that match outright, so the row kept reporting the old **ERROR** while CAMGR showed the second attempt importing. A live job for the same demo, source DC, and owner now takes over, and the row stores the new job

@@ -95,6 +95,7 @@ from dcloud_client import (
     fetch_session_shared_with,
     format_status,
     guest_shutdown_vms,
+    vm_needs_hard_power_off,
     is_active_status,
     is_auth_error,
     is_failed_status,
@@ -2637,20 +2638,40 @@ def _merge_observed_vm_power(
         key = str(live.get("mor") or live.get("uid") or live.get("name") or "").strip().lower()
         still_on = key in pending_keys
         hit["shutdownPending"] = still_on
+        hard = vm_needs_hard_power_off(hit) or vm_needs_hard_power_off(live)
         if still_on:
-            hit["lastAction"] = "Guest shutdown requested — waiting for powered-off confirmation."
+            hit["lastAction"] = (
+                "Power off requested (vCUBE has no guest shutdown) — waiting for powered-off confirmation."
+                if hard
+                else "Guest shutdown requested — waiting for powered-off confirmation."
+            )
         else:
-            hit["lastAction"] = "Guest shutdown verified — VM is powered off."
+            hit["lastAction"] = (
+                "Power off verified — VM is powered off."
+                if hard
+                else "Guest shutdown verified — VM is powered off."
+            )
     return merged
 
 
 def _shutdown_wait_message(pending: list[dict[str, Any]]) -> str:
-    names = [_vm_card_label(vm) for vm in pending]
-    if not names:
+    hard: list[str] = []
+    guest: list[str] = []
+    for vm in pending:
+        name = _vm_card_label(vm)
+        (hard if vm_needs_hard_power_off(vm) else guest).append(name)
+    if not hard and not guest:
         return "All VMs are powered off — starting save."
-    listed = ", ".join(names[:8])
-    extra = f" (+{len(names) - 8} more)" if len(names) > 8 else ""
-    return f"Waiting for VMs to shut down before saving: {listed}{extra}"
+    parts: list[str] = []
+    if guest:
+        listed = ", ".join(guest[:8])
+        extra = f" (+{len(guest) - 8} more)" if len(guest) > 8 else ""
+        parts.append(f"Waiting for VMs to shut down before saving: {listed}{extra}")
+    if hard:
+        listed = ", ".join(hard[:8])
+        extra = f" (+{len(hard) - 8} more)" if len(hard) > 8 else ""
+        parts.append(f"Powering off (no guest shutdown): {listed}{extra}")
+    return " ".join(parts)
 
 
 def _vm_power_summary(vms: list[dict[str, Any]]) -> str:
@@ -5555,7 +5576,7 @@ def _shutdown_one_dc(
             site,
             match_session=session_id,
             phase="shutting_down",
-            message="Telling each guest OS to shut down…",
+            message="Shutting down guests; vCUBE VMs are powered off…",
             _shutdown_waiting=True,
         )
         tok = current_token()
@@ -5596,7 +5617,7 @@ def _shutdown_one_dc(
             matched = preferred
         tok = current_token()
         results = guest_shutdown_vms(tok, site, session_id, matched, progress=progress)
-        progress(f"{site.upper()}: guest shutdown requests sent — waiting for VMs to power off before save.")
+        progress(f"{site.upper()}: shutdown requests sent — waiting for VMs to power off before save.")
 
         def _on_shutdown_wait(
             observed: list[dict[str, Any]],
@@ -6793,6 +6814,18 @@ def api_vm_action(job_id: str, body: VmActionPayload) -> dict[str, Any]:
         raise HTTPException(400, f"{site.upper()} does not have a session yet.")
     token = job.get("token") or _resolve_token(body)
     target = {"name": body.name, "mor": body.mor, "uid": body.uid}
+    for vm in dc.get("vms") or []:
+        same_mor = body.mor and vm.get("mor") == body.mor
+        same_uid = body.uid and vm.get("uid") == body.uid
+        same_name = body.name and (
+            vm.get("name") == body.name or vm.get("displayName") == body.name
+        )
+        if same_mor or same_uid or same_name:
+            target = {**vm, **{k: v for k, v in target.items() if v}}
+            break
+    if action == "guestShutdown" and vm_needs_hard_power_off(target):
+        action = "vmPowerOff"
+        label, power_state = ("Power off (vCUBE has no guest shutdown)", "Powered Off")
     result = vm_action(token, site, session_id, target, action)
     _log(job, f"{site.upper()}: {label.lower()} {body.name or body.mor}: {result.get('message')}")
     with _jobs_lock:

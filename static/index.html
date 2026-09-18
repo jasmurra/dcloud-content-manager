@@ -4555,6 +4555,11 @@
       return String(vm.shortName || vm.name || "").trim();
     }
 
+    function vmNeedsHardPowerOff(vm) {
+      const blob = `${vmDisplayName(vm)} ${vmShortName(vm)} ${vm?.name || ""}`.toLowerCase();
+      return blob.replace(/[-_\s]/g, "").includes("vcube");
+    }
+
     function renderVms() {
       $("vm-wrap").classList.toggle("hidden", vms.length === 0);
       $("vm-body").innerHTML = vms.map((vm, i) => `
@@ -4638,7 +4643,9 @@
                   ${links.join("")}
                   <button type="button" class="btn-vm-on" ${vmData} ${canAct ? "" : "disabled"} data-tip="Powers on this VM in dCloud.">Power on</button>
                   <button type="button" class="btn-vm-hard-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Hard power off this VM (not a graceful guest shutdown).">Power off</button>
-                  <button type="button" class="btn-vm-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Sends a guest shutdown to this VM only.">Guest shutdown</button>
+                  ${vmNeedsHardPowerOff(vm)
+                    ? `<span class="hint" title="vCUBE has no guest OS shutdown — dCloud would restart it. Use Power off.">No guest shutdown</span>`
+                    : `<button type="button" class="btn-vm-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Sends a guest shutdown to this VM only.">Guest shutdown</button>`}
                 </div>
               </details>
             </div>
