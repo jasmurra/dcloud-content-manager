@@ -887,10 +887,117 @@ def test_staggered_session_copies() -> None:
     """Delay + number of sessions: first at the chosen start, later copies wait."""
     from dcloud_client import parse_schedule_datetime, schedule_copy_offsets_minutes
 
-    check("a single session's delay is baked into start_at", schedule_copy_offsets_minutes(60, 1) == [0])
+    check("a lone session's delay pushes out its own start", schedule_copy_offsets_minutes(60, 1) == [60])
     check("three sessions stagger by the delay", schedule_copy_offsets_minutes(15, 3) == [0, 15, 30])
-    check("three sessions with no delay share a start", schedule_copy_offsets_minutes(0, 3) == [0, 0, 0])
     check("copies cap at 20", len(schedule_copy_offsets_minutes(1, 99)) == 20)
+    # dCloud delays a same-demo session that starts at the same moment, so five
+    # copies with no delay of our own still go out 4 minutes apart.
+    check(
+        "copies of one demo keep a 4-minute floor",
+        schedule_copy_offsets_minutes(0, 5) == [0, 4, 8, 12, 16],
+    )
+    check(
+        "different demos with no delay still share a start",
+        schedule_copy_offsets_minutes(0, 1, 3) == [0, 0, 0],
+    )
+    check(
+        "a round of demos counts toward the same-demo gap",
+        schedule_copy_offsets_minutes(0, 2, 3) == [0, 0, 0, 4, 4, 4],
+    )
+    check(
+        "a delay wide enough is left alone",
+        schedule_copy_offsets_minutes(30, 3) == [0, 30, 60],
+    )
+    # Mario: three saved items + a 30 minute delay all started at the same time,
+    # because only extra copies were staggered.
+    check(
+        "three different demos stagger too",
+        schedule_copy_offsets_minutes(30, 1, 3) == [0, 30, 60],
+    )
+    check(
+        "copies keep their place in the same stagger",
+        schedule_copy_offsets_minutes(30, 2, 2) == [0, 30, 60, 90],
+    )
+
+
+def test_extend_offers_the_farthest_bookable_stop() -> None:
+    from dcloud_client import (
+        _dcloud_timestamp,
+        extend_is_capacity_blocked,
+        probe_max_extend_stop,
+        parse_schedule_datetime,
+        resolve_extended_stop_by_minutes,
+    )
+
+    booked = "Can't extend session: Resources are fully booked out after the session"
+    check("fully booked is treated as capacity", extend_is_capacity_blocked(booked))
+
+    current = datetime(2026, 9, 20, 18, 20, tzinfo=timezone.utc)
+    requested = current + timedelta(days=1)
+    limit = current + timedelta(hours=4)
+    current_s = _dcloud_timestamp(current)
+    requested_s = _dcloud_timestamp(requested)
+    five, err = resolve_extended_stop_by_minutes(current_stop=current_s, extra_minutes=5 * 24 * 60)
+    check("five days is one extend", err is None and parse_schedule_datetime(five) == current + timedelta(days=5))
+
+    calls: list[str] = []
+
+    def put(stop: str) -> dict:
+        calls.append(stop)
+        when = parse_schedule_datetime(stop)
+        if when is None:
+            return {"ok": False, "message": "bad stop"}
+        if when > limit:
+            return {"ok": False, "message": booked}
+        return {"ok": True, "stop": stop}
+
+    result = probe_max_extend_stop(
+        "token",
+        "rtp",
+        "1358088",
+        requested_stop=requested_s,
+        current_stop=current_s,
+        put=put,
+    )
+    check("the full day is not applied", not result.get("applied") and bool(result.get("offer")), str(result))
+    got = parse_schedule_datetime(str(result.get("suggested_stop") or ""))
+    check(
+        "the offer is about 4 hours out",
+        got is not None and abs((got - limit).total_seconds()) <= 15 * 60,
+        str(result),
+    )
+    check("the requested stop is tried first", bool(calls) and calls[0] == requested_s)
+    check("a successful probe is reverted", current_s in calls)
+
+    full = probe_max_extend_stop(
+        "token",
+        "rtp",
+        "1358088",
+        requested_stop=requested_s,
+        current_stop=current_s,
+        put=lambda stop: {"ok": True, "stop": stop},
+    )
+    check("a free window is applied", bool(full.get("applied")) and not full.get("offer"), str(full))
+
+    blocked = probe_max_extend_stop(
+        "token",
+        "rtp",
+        "1358088",
+        requested_stop=requested_s,
+        current_stop=current_s,
+        put=lambda stop: {"ok": False, "message": booked},
+    )
+    check("no shorter window means no offer", not blocked.get("offer") and not blocked.get("applied"), str(blocked))
+
+    check("extend by days is on the page", 'id="extend-days"' in INDEX and 'id="extend-hours"' in INDEX)
+    check("the page probes before applying a shorter extend", "/api/jobs/${jobId}/probe-extend" in INDEX)
+    check("the page asks before taking the farthest time", "Extend to that time?" in INDEX)
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check("probe-extend is a real endpoint", "/api/jobs/{job_id}/probe-extend" in app_source)
+
+
+def test_staggered_session_copies_cards() -> None:
+    from dcloud_client import parse_schedule_datetime
 
     import app
     from app import DemoIds, RunPayload
@@ -913,11 +1020,63 @@ def test_staggered_session_copies() -> None:
     check("the gap is 15 minutes", gap == 900 and gap2 == 900, f"{gap}, {gap2}")
     check("all three still need scheduling", all(app._dc_needs_schedule(card) for card in cards))
 
+    # Three saved items checked together are one session each, 30 minutes apart.
+    spread = payload.model_copy(update={"delay_minutes": 30, "session_count": 1})
+    picked = app._expand_schedule_cards(
+        [("rtp", "1391087"), ("rtp", "1391098"), ("rtp", "1391093")], spread
+    )
+    when = [parse_schedule_datetime(card["requestedStart"]) for card in picked]
+    check(
+        "different demos are 30 minutes apart",
+        [(item - when[0]).total_seconds() for item in when] == [0, 1800, 3600],
+        str(when),
+    )
+    check(
+        "only the first card in a DC answers the conflict prompt",
+        [bool(card.get("scheduleDecisionCard")) for card in picked] == [True, False, False],
+    )
+    lone = app._expand_schedule_cards(
+        [("sjc", "480730")], payload.model_copy(update={"delay_minutes": 30, "session_count": 1})
+    )
+    check("a single session still waits out the delay", lone[0]["scheduleOffsetMinutes"] == 30)
+    check(
+        "the page sends the start unshifted now that the server staggers",
+        "const firstDelay" not in INDEX and 'shiftedScheduleIso("sched-start", 0)' in INDEX,
+    )
+    copies = payload.model_copy(update={"delay_minutes": 0, "session_count": 5})
+    spaced = app._expand_schedule_cards([("sjc", "480730")], copies)
+    check(
+        "five copies with no delay are 4 minutes apart",
+        [card["scheduleOffsetMinutes"] for card in spaced] == [0, 4, 8, 12, 16],
+    )
+    check(
+        "the page explains the same-demo floor",
+        "MIN_SAME_DEMO_GAP_MINUTES = 4" in INDEX,
+    )
+
     days = INDEX.find('id="days"')
     delay = INDEX.find('id="sched-delay"')
     copies = INDEX.find('id="sched-copies"')
     start = INDEX.find('id="sched-start"')
     check("delay and copies sit next to duration", -1 < days < delay < copies < start)
+    check(
+        "saved-content scheduling is its own card",
+        'id="panel-saved-schedule"' in INDEX
+        and "Schedule sessions from your own saved content across all DCs" in INDEX,
+    )
+    check(
+        "cleanup no longer holds the saved-content scheduler",
+        "Start new sessions from saved content" not in INDEX,
+    )
+    check(
+        "the schedule finder is separate from the delete finder",
+        'id="btn-find-schedule-saved"' in INDEX and 'id="btn-find-saved"' in INDEX,
+    )
+    check(
+        "the saved-content scheduler has the nearby-slot checkbox",
+        "saved-auto-next-available" in INDEX
+        and INDEX.count("Use a nearby slot when resources are busy") >= 2,
+    )
 
 
 def test_schedule_capacity_explains_and_stays_nearby() -> None:
@@ -1186,11 +1345,12 @@ if (!single.text.trimEnd().endsWith(".")) {{
 
     hint_src = js_function("scheduleCopyHintText")
     hint_src += """
+const MIN_SAME_DEMO_GAP_MINUTES = 4;
 const cases = [
   [0, 1, ""],
-  [60, 1, "60 minutes after the start time"],
+  [60, 1, "one every 60 minutes"],
   [15, 3, "one every 15 minutes"],
-  [0, 3, "at the same start time"],
+  [0, 3, "4 minutes apart"],
 ];
 for (const [delay, copies, expected] of cases) {
   const text = scheduleCopyHintText(delay, copies);

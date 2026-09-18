@@ -416,18 +416,36 @@ def resolve_schedule_window(
 
 
 MAX_SCHEDULE_COPIES = 20
+# dCloud itself holds back a second session of the same demo that starts at the
+# same moment, so copies of one demo are never scheduled closer than this.
+MIN_SAME_DEMO_GAP_MINUTES = 4
 
 
-def schedule_copy_offsets_minutes(delay_minutes: int = 0, session_count: int = 1) -> list[int]:
-    """Minutes to add to the first-session start for each copy.
+def schedule_copy_offsets_minutes(
+    delay_minutes: int = 0,
+    session_count: int = 1,
+    target_count: int = 1,
+) -> list[int]:
+    """Minutes to add to the chosen start, one per session, in creation order.
 
-    start_at is already the first session: a single session with delay 60 has
-    that 60 baked into start_at, so the only offset is 0. Several sessions
-    keep the first at start_at and stagger the rest by delay_minutes.
+    Every session after the first waits one more delay, whether it is another
+    demo checked in the same click or another copy of the same one. A session
+    scheduled on its own has nothing to follow, so the delay pushes out its own
+    start instead.
+
+    Sessions are created one round of demos at a time, so two copies of the same
+    demo sit target_count apart. That spacing is widened to
+    MIN_SAME_DEMO_GAP_MINUTES when the delay would stack them up.
     """
     delay = max(0, int(delay_minutes or 0))
-    count = max(1, min(int(session_count or 1), MAX_SCHEDULE_COPIES))
-    return [delay * index for index in range(count)]
+    copies = max(1, min(int(session_count or 1), MAX_SCHEDULE_COPIES))
+    targets = max(1, int(target_count or 1))
+    total = copies * targets
+    if total == 1:
+        return [delay]
+    round_gap = delay * targets
+    bump = max(0, MIN_SAME_DEMO_GAP_MINUTES - round_gap) if copies > 1 else 0
+    return [delay * index + bump * (index // targets) for index in range(total)]
 
 
 def _dcloud_timestamp(when: datetime) -> str:
@@ -3272,6 +3290,76 @@ def resolve_extended_stop(
     return _dcloud_timestamp(new_stop), None
 
 
+def resolve_extended_stop_by_minutes(
+    *,
+    current_stop: str,
+    extra_minutes: int,
+    session_start: str = "",
+) -> tuple[str, str | None]:
+    extra = int(extra_minutes or 0)
+    if extra < 30:
+        return "", "Extend by at least 30 minutes."
+    stop = parse_schedule_datetime(current_stop)
+    if stop is None:
+        return "", "Could not read the current session end time."
+    new_stop = stop + timedelta(minutes=extra)
+    start = parse_schedule_datetime(session_start)
+    if start is not None and new_stop <= start:
+        return "", "Extended stop must be after session start."
+    return _dcloud_timestamp(new_stop), None
+
+
+def extend_is_capacity_blocked(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return (
+        "fully booked" in text
+        or "resources are fully booked" in text
+        or "booked out after" in text
+        or ("resource" in text and "unavailable" in text)
+    )
+
+
+def _floor_minutes(when: datetime, step: int = 5) -> datetime:
+    when = when.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    return when.replace(minute=when.minute - (when.minute % step))
+
+
+def shorter_extend_stops(current_stop: str, requested_stop: str) -> list[str]:
+    """Later-to-earlier stops to try when the requested extend is booked.
+
+    dCloud often has room for a few hours even when the next full day is full.
+    """
+    current = parse_schedule_datetime(current_stop)
+    requested = parse_schedule_datetime(requested_stop)
+    if current is None or requested is None or requested <= current:
+        return []
+    extra = requested - current
+    floor = current + timedelta(minutes=30)
+    if requested <= floor:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(when: datetime) -> None:
+        when = _floor_minutes(when, 5)
+        if when < floor or when >= requested:
+            return
+        stamp = _dcloud_timestamp(when)
+        if stamp in seen:
+            return
+        seen.add(stamp)
+        out.append(stamp)
+
+    for frac in (0.75, 0.5, 0.25):
+        add(current + extra * frac)
+    for hours in (12, 6, 3, 2, 1):
+        add(current + timedelta(hours=hours))
+    add(current + timedelta(minutes=30))
+    return out
+
+
 def extend_session(
     token: str,
     site: str,
@@ -3308,6 +3396,151 @@ def extend_session(
         "message": message if message else ("Session extended." if ok else "Extend failed."),
         "stop": new_stop,
         "session": session if isinstance(session, dict) else {},
+    }
+
+
+def probe_max_extend_stop(
+    token: str,
+    site: str,
+    session_id: str,
+    *,
+    requested_stop: str,
+    current_stop: str = "",
+    put: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Try the requested stop, then find the farthest shorter stop that dCloud will take.
+
+    A successful shorter probe is reverted so nothing is kept until the user confirms.
+    """
+    sid = (session_id or "").strip()
+    put_fn = put or (lambda stop: extend_session(token, site, sid, stop_at=stop))
+    requested = (requested_stop or "").strip()
+    original = (current_stop or "").strip()
+    first = put_fn(requested)
+    if first.get("ok"):
+        return {
+            "ok": True,
+            "applied": True,
+            "offer": False,
+            "sessionId": sid,
+            "stop": str(first.get("stop") or requested).strip(),
+            "requested_stop": requested,
+            "message": first.get("message") or "Session extended.",
+        }
+    if not extend_is_capacity_blocked(first.get("message") or ""):
+        return {
+            "ok": False,
+            "applied": False,
+            "offer": False,
+            "sessionId": sid,
+            "requested_stop": requested,
+            "message": first.get("message") or "Extend failed.",
+        }
+
+    current = parse_schedule_datetime(original)
+    want = parse_schedule_datetime(requested)
+    if current is None or want is None or want <= current + timedelta(minutes=30):
+        return {
+            "ok": False,
+            "applied": False,
+            "offer": False,
+            "sessionId": sid,
+            "requested_stop": requested,
+            "message": first.get("message") or "Resources are fully booked after the session.",
+        }
+
+    lo = current + timedelta(minutes=30)
+    hi = want
+    best_stamp = ""
+    last = first
+
+    def revert() -> dict[str, Any]:
+        return put_fn(original)
+
+    for _ in range(14):
+        if hi - lo < timedelta(minutes=5):
+            break
+        mid = _floor_minutes(lo + (hi - lo) / 2, 5)
+        if mid <= lo:
+            mid = _floor_minutes(lo + timedelta(minutes=5), 5)
+        if mid >= hi:
+            break
+        stamp = _dcloud_timestamp(mid)
+        result = put_fn(stamp)
+        last = result
+        if result.get("ok"):
+            best_stamp = str(result.get("stop") or stamp).strip()
+            undone = revert()
+            if not undone.get("ok"):
+                return {
+                    "ok": True,
+                    "applied": True,
+                    "offer": False,
+                    "sessionId": sid,
+                    "stop": best_stamp,
+                    "requested_stop": requested,
+                    "message": (
+                        f"Extended until {best_stamp} (requested {requested}; "
+                        "could not restore the original end after probing)."
+                    ),
+                }
+            lo = mid
+            continue
+        if extend_is_capacity_blocked(result.get("message") or ""):
+            hi = mid
+            continue
+        return {
+            "ok": False,
+            "applied": False,
+            "offer": False,
+            "sessionId": sid,
+            "requested_stop": requested,
+            "message": result.get("message") or "Extend failed.",
+        }
+
+    if not best_stamp:
+        floor_stamp = _dcloud_timestamp(_floor_minutes(lo, 5))
+        if parse_schedule_datetime(floor_stamp) and parse_schedule_datetime(floor_stamp) < want:
+            result = put_fn(floor_stamp)
+            last = result
+            if result.get("ok"):
+                best_stamp = str(result.get("stop") or floor_stamp).strip()
+                undone = revert()
+                if not undone.get("ok"):
+                    return {
+                        "ok": True,
+                        "applied": True,
+                        "offer": False,
+                        "sessionId": sid,
+                        "stop": best_stamp,
+                        "requested_stop": requested,
+                        "message": (
+                            f"Extended until {best_stamp} (requested {requested}; "
+                            "could not restore the original end after probing)."
+                        ),
+                    }
+
+    if best_stamp:
+        return {
+            "ok": False,
+            "applied": False,
+            "offer": True,
+            "sessionId": sid,
+            "suggested_stop": best_stamp,
+            "requested_stop": requested,
+            "current_stop": original,
+            "message": (
+                "Resources are fully booked after the session. "
+                f"The farthest you can go is {best_stamp}."
+            ),
+        }
+    return {
+        "ok": False,
+        "applied": False,
+        "offer": False,
+        "sessionId": sid,
+        "requested_stop": requested,
+        "message": last.get("message") or first.get("message") or "Resources are fully booked after the session.",
     }
 
 

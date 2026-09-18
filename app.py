@@ -77,9 +77,12 @@ from dcloud_client import (
     edit_topology_url,
     end_session,
     extend_session,
+    probe_max_extend_stop,
     parse_schedule_datetime,
+    resolve_extended_stop_by_minutes,
     resolve_schedule_window,
     schedule_copy_offsets_minutes,
+    MAX_SCHEDULE_COPIES,
     _dcloud_timestamp,
     fetch_content,
     fetch_admin_records,
@@ -904,6 +907,7 @@ class CamgrImportJobsPayload(BaseModel):
 class SessionRef(BaseModel):
     site: str
     session_id: str = ""
+    stop_at: str = ""
 
 
 class SessionSaveName(BaseModel):
@@ -967,6 +971,7 @@ class LocalResetPayload(BaseModel):
 class ExtendPayload(TokenPayload):
     sessions: list[SessionRef] = Field(default_factory=list)
     stop_at: str = ""
+    extra_minutes: int = Field(default=0, ge=0, le=60 * 24 * 30)
 
 
 class AttachSession(BaseModel):
@@ -5193,9 +5198,10 @@ def _schedule_one_dc(
     kind = "exported" if payload.content_export else "regular"
     decision = _site_schedule_decision(payload, site)
     offset = int(dc.get("scheduleOffsetMinutes") or 0)
-    # Skip / next-slot answers came from checking the first window. Later
-    # copies have their own start and should still be sent to dCloud.
-    if offset == 0 and decision and decision.action == "skip":
+    # A skip answer came from checking the first window. Everything staggered
+    # behind it has its own start and should still be sent to dCloud.
+    takes_decision = bool(dc.get("scheduleDecisionCard", offset == 0))
+    if takes_decision and decision and decision.action == "skip":
         _update_dc_card(
             job,
             dc,
@@ -5206,9 +5212,11 @@ def _schedule_one_dc(
     schedule_start = str(dc.get("requestedStart") or payload.start_at or "")
     schedule_stop = str(dc.get("requestedStop") or payload.stop_at or "")
     auto_next = payload.auto_next_available
-    if offset == 0 and decision and decision.action == "schedule_next":
-        schedule_start = decision.start_at or schedule_start
-        schedule_stop = decision.stop_at or schedule_stop
+    if decision and decision.action == "schedule_next":
+        # Move the whole DC to the slot the user picked, keeping each session's
+        # place in the stagger instead of collapsing them onto one start.
+        schedule_start = _shift_timestamp(decision.start_at, offset) or schedule_start
+        schedule_stop = _shift_timestamp(decision.stop_at, offset) or schedule_stop
     _update_dc_card(job, dc, phase="scheduling", message="Asking dCloud for a slot…")
     tok = current_token()
     result = schedule_exported_session(
@@ -5547,6 +5555,13 @@ def _new_demo_dc_card(site: str, demo_id: str, *, content_export: bool) -> dict[
     }
 
 
+def _shift_timestamp(when: str, offset_minutes: int) -> str:
+    parsed = parse_schedule_datetime(str(when or ""))
+    if not parsed:
+        return ""
+    return _dcloud_timestamp(parsed + timedelta(minutes=max(0, int(offset_minutes or 0))))
+
+
 def _stamp_schedule_window(card: dict[str, Any], payload: RunPayload, offset_minutes: int) -> None:
     window = resolve_schedule_window(
         days=payload.days,
@@ -5568,16 +5583,24 @@ def _expand_schedule_cards(
     targets: list[tuple[str, str]] | list[tuple[str, str, str]],
     payload: RunPayload,
 ) -> list[dict[str, Any]]:
-    offsets = schedule_copy_offsets_minutes(payload.delay_minutes, payload.session_count)
+    copies = max(1, min(int(payload.session_count or 1), MAX_SCHEDULE_COPIES))
+    ordered = [item for _ in range(copies) for item in targets]
+    offsets = schedule_copy_offsets_minutes(
+        payload.delay_minutes, copies, len(targets)
+    )
     cards: list[dict[str, Any]] = []
-    for offset in offsets:
-        for item in targets:
-            site, demo_id = item[0], item[1]
-            card = _new_demo_dc_card(site, demo_id, content_export=payload.content_export)
-            if len(item) > 2 and item[2]:
-                card["name"] = item[2]
-            _stamp_schedule_window(card, payload, offset)
-            cards.append(card)
+    decided: set[str] = set()
+    for offset, item in zip(offsets, ordered):
+        site, demo_id = item[0], item[1]
+        card = _new_demo_dc_card(site, demo_id, content_export=payload.content_export)
+        if len(item) > 2 and item[2]:
+            card["name"] = item[2]
+        _stamp_schedule_window(card, payload, offset)
+        # A conflict answer was given once per DC, against the first window.
+        if site not in decided:
+            decided.add(site)
+            card["scheduleDecisionCard"] = True
+        cards.append(card)
     return cards
 
 
@@ -6196,25 +6219,10 @@ def _reset_job(job: dict[str, Any], payload: "ResetPayload") -> None:
     _ensure_status_watch(job)
 
 
-def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
-    def progress(message: str) -> None:
-        _log(job, message)
-
-    token = job.get("token") or _resolve_token(payload, progress)
-    job["token"] = token
+def _ready_extend_targets(job: dict[str, Any], payload: ExtendPayload) -> tuple[list[dict[str, Any]], str]:
     session_pairs = _session_ref_pairs(payload.sessions)
     if not session_pairs:
-        job["error"] = "Select at least one session card to extend."
-        _persist_job(job)
-        return
-
-    stop = parse_schedule_datetime(payload.stop_at)
-    if stop is None:
-        job["error"] = "Pick a new end date and time for the extension."
-        _persist_job(job)
-        return
-    stop_iso = _dcloud_timestamp(stop)
-
+        return [], "Select at least one session card to extend."
     targets = [
         dc
         for dc in job.get("dcs") or []
@@ -6228,11 +6236,73 @@ def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
         and str(dc.get("phase") or "") == "ready"
     ]
     if not targets:
-        job["error"] = "No active session cards to extend — wait until sessions finish starting."
+        return [], "No active session cards to extend — wait until sessions finish starting."
+    return targets, ""
+
+
+def _requested_extend_stop(dc: dict[str, Any], payload: ExtendPayload, override: str = "") -> tuple[str, str | None]:
+    chosen = (override or "").strip()
+    if chosen:
+        parsed = parse_schedule_datetime(chosen)
+        if parsed is None:
+            return "", "Could not read the new end time."
+        return _dcloud_timestamp(parsed), None
+    extra = int(payload.extra_minutes or 0)
+    current_stop = str(dc.get("scheduleStop") or "").strip()
+    if extra >= 30:
+        return resolve_extended_stop_by_minutes(
+            current_stop=current_stop,
+            extra_minutes=extra,
+            session_start=str(dc.get("scheduleStart") or ""),
+        )
+    stop = parse_schedule_datetime(payload.stop_at)
+    if stop is None:
+        return "", "Pick a new end date and time for the extension."
+    return _dcloud_timestamp(stop), None
+
+
+def _extend_put(
+    job: dict[str, Any],
+    progress: Callable[[str], None],
+    token_box: list[str],
+    site: str,
+    session_id: str,
+    stop_at: str,
+) -> dict[str, Any]:
+    tok = token_box[0]
+    result = extend_session(tok, site, session_id, stop_at=stop_at)
+    if not result.get("ok") and is_auth_error(result.get("message")):
+        new_tok, auth_err = _recover_auth(job, progress, tok)
+        if auth_err:
+            return {"ok": False, "message": auth_err, "sessionId": session_id}
+        token_box[0] = new_tok
+        job["token"] = new_tok
+        result = extend_session(new_tok, site, session_id, stop_at=stop_at)
+    return result
+
+
+def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
+    def progress(message: str) -> None:
+        _log(job, message)
+
+    token = job.get("token") or _resolve_token(payload, progress)
+    job["token"] = token
+    targets, err = _ready_extend_targets(job, payload)
+    if err:
+        job["error"] = err
         _persist_job(job)
         return
 
-    progress(f"Extending {len(targets)} session(s) until {stop_iso}…")
+    override_stops = {
+        ((ref.site or "").strip().lower(), str(ref.session_id or "").strip()): str(ref.stop_at or "").strip()
+        for ref in payload.sessions
+        if str(ref.stop_at or "").strip()
+    }
+    extra = int(payload.extra_minutes or 0)
+    if extra >= 30 and not override_stops:
+        progress(f"Extending {len(targets)} session(s) by {extra} minutes from each current end…")
+    else:
+        progress(f"Extending {len(targets)} session(s)…")
     ok_count = 0
     token_box = [token]
 
@@ -6241,8 +6311,16 @@ def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
         site = str(dc.get("site") or "").lower()
         session_id = str(dc.get("sessionId") or "").strip()
         current_stop = str(dc.get("scheduleStop") or "").strip()
+        stop_iso, stop_err = _requested_extend_stop(
+            dc, payload, override_stops.get((site, session_id), "")
+        )
+        if stop_err or not stop_iso:
+            _set_dc(job, site, match_session=session_id, message=stop_err or "Could not compute a new end time.")
+            progress(f"{site.upper()}: {stop_err or 'could not compute a new end time.'}")
+            return
+        stop = parse_schedule_datetime(stop_iso)
         cur_stop = parse_schedule_datetime(current_stop) if current_stop else None
-        if cur_stop is not None and stop <= cur_stop:
+        if stop is not None and cur_stop is not None and stop <= cur_stop:
             _set_dc(
                 job,
                 site,
@@ -6251,16 +6329,7 @@ def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
             )
             progress(f"{site.upper()}: new end must be after current scheduled end.")
             return
-        tok = token_box[0]
-        result = extend_session(tok, site, session_id, stop_at=stop_iso)
-        if not result.get("ok") and is_auth_error(result.get("message")):
-            new_tok, auth_err = _recover_auth(job, progress, tok)
-            if auth_err:
-                _set_dc(job, site, match_session=session_id, message=auth_err)
-                return
-            token_box[0] = new_tok
-            job["token"] = new_tok
-            result = extend_session(new_tok, site, session_id, stop_at=stop_iso)
+        result = _extend_put(job, progress, token_box, site, session_id, stop_iso)
         if result.get("ok"):
             ok_count += 1
             new_stop = str(result.get("stop") or stop_iso).strip()
@@ -6291,6 +6360,90 @@ def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
     else:
         job["error"] = "No sessions were extended."
     _persist_job(job)
+
+
+def _probe_extend_job(job: dict[str, Any], payload: ExtendPayload) -> list[dict[str, Any]]:
+    def progress(message: str) -> None:
+        _log(job, message)
+
+    token = job.get("token") or _resolve_token(payload, progress)
+    job["token"] = token
+    targets, err = _ready_extend_targets(job, payload)
+    if err:
+        job["error"] = err
+        _persist_job(job)
+        return []
+
+    progress(f"Checking how far {len(targets)} session(s) can extend…")
+    token_box = [token]
+    results: list[dict[str, Any]] = []
+
+    def _one(dc: dict[str, Any]) -> dict[str, Any]:
+        site = str(dc.get("site") or "").lower()
+        session_id = str(dc.get("sessionId") or "").strip()
+        stop_iso, stop_err = _requested_extend_stop(dc, payload)
+        row = {
+            "site": site,
+            "session_id": session_id,
+            "name": str(dc.get("name") or "").strip(),
+        }
+        if stop_err or not stop_iso:
+            row.update({"ok": False, "applied": False, "offer": False, "message": stop_err or "Could not compute a new end time."})
+            _set_dc(job, site, match_session=session_id, message=row["message"])
+            return row
+        probe = probe_max_extend_stop(
+            token_box[0],
+            site,
+            session_id,
+            requested_stop=stop_iso,
+            current_stop=str(dc.get("scheduleStop") or "").strip(),
+            put=lambda stop, s=site, sid=session_id: _extend_put(job, progress, token_box, s, sid, stop),
+        )
+        row.update(probe)
+        if probe.get("applied"):
+            new_stop = str(probe.get("stop") or stop_iso).strip()
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                scheduleStop=new_stop,
+                message=f"Extended until {new_stop}.",
+            )
+            progress(f"{site.upper()}: session {session_id} extended.")
+        elif probe.get("offer"):
+            suggested = str(probe.get("suggested_stop") or "").strip()
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                message=f"Can't extend that far. Farthest available: {suggested}. Waiting for confirmation.",
+            )
+            progress(f"{site.upper()}: farthest available is {suggested}.")
+        else:
+            _set_dc(
+                job,
+                site,
+                match_session=session_id,
+                message=probe.get("message") or "Extend failed.",
+            )
+            progress(f"{site.upper()}: extend failed: {probe.get('message')}")
+        return row
+
+    with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+        futures = [pool.submit(_one, dc) for dc in targets]
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    applied = sum(1 for row in results if row.get("applied"))
+    offers = sum(1 for row in results if row.get("offer"))
+    if applied:
+        progress(f"Extended {applied} of {len(targets)} session(s) to the requested time.")
+    if offers:
+        progress(f"{offers} session(s) can only go out as far as a shorter window — confirm to apply.")
+    if not applied and not offers:
+        job["error"] = "No sessions were extended."
+    _persist_job(job)
+    return results
 
 
 def _ensure_status_watch(job: dict[str, Any]) -> None:
@@ -7341,6 +7494,16 @@ def api_extend_sessions(job_id: str, body: ExtendPayload) -> dict[str, Any]:
     job = _job(job_id)
     threading.Thread(target=_extend_job, args=(job, body), daemon=True).start()
     return _public_job(job)
+
+
+@app.post("/api/jobs/{job_id}/probe-extend")
+def api_probe_extend(job_id: str, body: ExtendPayload) -> dict[str, Any]:
+    job = _job(job_id)
+    job["error"] = ""
+    results = _probe_extend_job(job, body)
+    public = _public_job(job)
+    public["extendProbe"] = results
+    return public
 
 
 def _unified_content_result(site: str, item: dict[str, Any]) -> dict[str, Any]:

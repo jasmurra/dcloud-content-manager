@@ -1801,11 +1801,11 @@
         </div>
         <div>
           <label for="sched-delay">Delay (minutes)</label>
-          <input id="sched-delay" type="number" min="0" step="1" value="0" autocomplete="off" data-tip="For one session, this waits that many minutes after the start time (Now + 60 starts in an hour). For several sessions, the first uses the start time and each extra copy waits this long after the previous one." />
+          <input id="sched-delay" type="number" min="0" step="1" value="0" autocomplete="off" data-tip="Gap between sessions. The first starts at the start time below and each one after it waits this much longer — whether they are different demo IDs scheduled together or extra copies of the same ones. One session scheduled on its own just starts this many minutes later (Now + 60 starts in an hour)." />
         </div>
         <div>
           <label for="sched-copies">Number of sessions</label>
-          <input id="sched-copies" type="number" min="1" max="20" step="1" value="1" autocomplete="off" data-tip="How many sessions to create from the demo IDs above. 3 with a 15 minute delay schedules one now, one 15 minutes later, and one 30 minutes later." />
+          <input id="sched-copies" type="number" min="1" max="20" step="1" value="1" autocomplete="off" data-tip="How many sessions to create from the demo IDs above. 3 with a 15 minute delay schedules one now, one 15 minutes later, and one 30 minutes later. With no delay, copies of the same demo are still spaced 4 minutes apart, because dCloud holds back same-demo sessions that start together." />
         </div>
         <!-- How long the tool watches for Active before it stops polling. dCloud keeps
              building the session either way, so there is nothing to tune here. -->
@@ -1858,11 +1858,11 @@
       <p class="hint">
         Start/stop fill from now for the duration above (1 day = now until this time tomorrow).
         Click a date if you need a later window.
-        <strong>Delay</strong> waits after that start (60 with one session = Now plus an hour).
-        <strong>Number of sessions</strong> repeats the demo IDs; with delay 15 and 3 sessions, the first starts now, the next 15 minutes later, then 15 minutes after that.
+        <strong>Delay</strong> is the gap between sessions: with three demo IDs and delay 15, the first starts now, the next 15 minutes later, then 15 after that. One session on its own just starts that much later (60 = Now plus an hour).
+        <strong>Number of sessions</strong> repeats the demo IDs, and each copy keeps its place in the same stagger. Copies of one demo stay at least 4 minutes apart even with no delay, because dCloud holds back same-demo sessions that start together.
         When <strong>Use next available slot</strong> is checked, the tool reads dCloud’s calendar per pool and shifts busy DCs to the next open time automatically.
         When unchecked, a conflict prompts you to schedule the next slot or skip that datacenter before anything is sent to dCloud.
-        The same schedule appears under Cleanup → saved content scheduling.
+        To start sessions from a saved-content list instead of typing IDs, use <strong>Schedule sessions from your own saved content across all DCs</strong> below.
       </p>
       <div id="dt-popup" class="dt-popup hidden" role="dialog" aria-label="Choose date">
         <div class="dt-header">
@@ -1906,47 +1906,32 @@
           <button type="button" class="secondary" id="btn-restore-job" data-tip="Brings back the last saved job even if it is older than the auto-restore window. Re-checks dCloud and drops saved or ended sessions from the cards.">Restore last job</button>
         </div>
       </details>
-      <details class="advanced" id="panel-cleanup">
-        <summary>Cleanup — surveys and saved content</summary>
-        <p class="hint">
-          After sessions end, dCloud session feedback surveys can pile up in each DC — decline them here.
-          After a mass save, you can also remove saved content from each DC.
-          Topology Builder v3 saved/promoted content can be deleted here. Promoted content built in
-          Topology Builder v2 must use EOL in the
-          <a href="https://dcloud-camgr.cisco.com/#/catalogue" target="_blank" rel="noopener noreferrer">Content Catalog</a>.
-        </p>
-        <p class="step-label">Session feedback surveys</p>
-        <p class="hint">“How was your session?” prompts on the dCloud dashboard after sessions end — not saved lab content.</p>
-        <div class="actions">
-          <button type="button" class="secondary" id="btn-decline-all-surveys" data-tip="Finds and declines every pending session feedback survey in SJC, RTP, LON, SNG, and SYD (same as Decline on the dashboard).">Decline all surveys (all DCs)</button>
-        </div>
-        <p class="step-label" style="margin-top:1rem">Saved content</p>
-        <div class="actions">
-          <button type="button" class="secondary" id="btn-find-saved" data-tip="Lists saved content in each DC. TBv3 content can be deleted here; promoted TBv2 content uses EOL.">Find saved content</button>
-        </div>
-        <details id="found-saved-panel" class="found-sessions-panel hidden">
-          <summary id="found-saved-summary">Your saved content</summary>
-          <div class="found-sessions-body">
-          <div class="actions">
-            <button type="button" class="danger" id="btn-delete-saved" disabled data-tip="Permanently deletes checked saved content. TBv3 promoted content is supported; promoted TBv2 content uses EOL.">Delete selected saved content</button>
-          </div>
+      </div>
+    </details>
+
+    <details class="panel panel-collapse" id="panel-saved-schedule">
+      <summary class="panel-collapse-summary">Schedule sessions from your own saved content across all DCs</summary>
+      <div class="panel-collapse-body">
+      <p class="hint">
+        Find your saved copies, check the ones to spin up, then schedule.
+        Duration, delay, start/stop, and the nearby-slot option stay in sync with the demo-ID scheduler above.
+        <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs.
+      </p>
+      <div class="actions">
+        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Lists saved content in each DC so you can check rows and schedule new sessions from them.">Find saved content</button>
+      </div>
+      <details id="found-schedule-saved-panel" class="found-sessions-panel hidden">
+        <summary id="found-schedule-saved-summary">Your saved content</summary>
+        <div class="found-sessions-body">
           <div class="list-toolbar">
-            <button type="button" class="secondary" id="btn-check-all-saved">Check all</button>
-            <button type="button" class="secondary" id="btn-uncheck-all-saved">Uncheck all</button>
-            <button type="button" class="secondary" id="btn-recheck-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save). Use if you unchecked them by mistake.">Recheck saved IDs</button>
-            <button type="button" class="secondary" id="btn-expand-saved">Expand all DCs</button>
-            <button type="button" class="secondary" id="btn-collapse-saved">Collapse all</button>
+            <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check all</button>
+            <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck all</button>
+            <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
+            <button type="button" class="secondary" id="btn-expand-schedule-saved">Expand all DCs</button>
+            <button type="button" class="secondary" id="btn-collapse-schedule-saved">Collapse all</button>
           </div>
-          <div id="found-saved" style="margin-top:0.35rem"></div>
-          <p class="step-label" style="margin-top:1rem">Start new sessions from saved content</p>
-          <p class="hint">
-            Check rows in the list above, then click <strong>Schedule checked saved content</strong> below.
-            That spins up <strong>new</strong> dCloud sessions from those saved copies (same idea as Schedule sessions, but using saved IDs instead of demo IDs).
-          </p>
-          <p class="hint">
-            <strong>Which VMs power on</strong> comes from the VM checkboxes in Load VMs — or from a restored job if you used Restore last job.
-          </p>
-          <p class="step-label" style="margin-top:0.85rem">Session schedule</p>
+          <div id="found-schedule-saved" style="margin-top:0.35rem"></div>
+          <p class="step-label" style="margin-top:1rem">Session schedule</p>
           <div class="row">
             <div>
               <label for="saved-days">Duration (days)</label>
@@ -2006,23 +1991,60 @@
             </div>
           </div>
           <p class="hint">
-            Start/stop stay in sync with Schedule sessions. One day = now until this time tomorrow — open the calendar if you need a later window.
+            Start/stop stay in sync with the demo-ID scheduler. One day = now until this time tomorrow — open the calendar if you need a later window.
             Delay and number of sessions stay in sync too.
           </p>
-          <p class="hint">
-            After you save sessions, the <strong>Content Automation Hub</strong> list shows those new IDs.
-            The first <strong>Find saved content</strong> search checks matching rows here automatically.
-            <strong>Recheck saved IDs</strong> (button above) re-applies those checks if you unchecked some by mistake.
-          </p>
+          <label class="check-line" for="saved-auto-next-available">
+            <input type="checkbox" id="saved-auto-next-available" checked />
+            <span>Use a nearby slot when resources are busy (only if it starts within the next 24 hours)</span>
+          </label>
           <label class="hint" style="display:flex;align-items:flex-start;gap:0.45rem;margin:0.5rem 0;">
             <input type="checkbox" id="saved-schedule-export" style="width:auto;margin-top:0.2rem" />
             <span>Schedule as exported sessions (unchecked = regular sessions)</span>
           </label>
           <div class="actions">
-            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs. All selected DCs run in parallel.">Schedule checked saved content</button>
+            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs.">Schedule checked saved content</button>
           </div>
+        </div>
+      </details>
+      </div>
+    </details>
+
+    <details class="panel panel-collapse" id="panel-cleanup">
+      <summary class="panel-collapse-summary">Cleanup — surveys and delete saved content</summary>
+      <div class="panel-collapse-body">
+      <p class="hint">
+        After sessions end, dCloud session feedback surveys can pile up in each DC — decline them here.
+        After a mass save, delete the leftover copies here. Scheduling from a saved list is in
+        <strong>Schedule sessions from your own saved content across all DCs</strong> above.
+        Topology Builder v3 saved/promoted content can be deleted here. Promoted content built in
+        Topology Builder v2 must use EOL in the
+        <a href="https://dcloud-camgr.cisco.com/#/catalogue" target="_blank" rel="noopener noreferrer">Content Catalog</a>.
+      </p>
+      <p class="step-label">Session feedback surveys</p>
+      <p class="hint">“How was your session?” prompts on the dCloud dashboard after sessions end — not saved lab content.</p>
+      <div class="actions">
+        <button type="button" class="secondary" id="btn-decline-all-surveys" data-tip="Finds and declines every pending session feedback survey in SJC, RTP, LON, SNG, and SYD (same as Decline on the dashboard).">Decline all surveys (all DCs)</button>
+      </div>
+      <p class="step-label" style="margin-top:1rem">Delete saved content</p>
+      <div class="actions">
+        <button type="button" class="secondary" id="btn-find-saved" data-tip="Lists saved content in each DC so you can delete finished copies. TBv3 content can be deleted here; promoted TBv2 content uses EOL.">Find saved content</button>
+      </div>
+      <details id="found-saved-panel" class="found-sessions-panel hidden">
+        <summary id="found-saved-summary">Your saved content</summary>
+        <div class="found-sessions-body">
+          <div class="actions">
+            <button type="button" class="danger" id="btn-delete-saved" disabled data-tip="Permanently deletes checked saved content. TBv3 promoted content is supported; promoted TBv2 content uses EOL.">Delete selected saved content</button>
           </div>
-        </details>
+          <div class="list-toolbar">
+            <button type="button" class="secondary" id="btn-check-all-saved">Check all</button>
+            <button type="button" class="secondary" id="btn-uncheck-all-saved">Uncheck all</button>
+            <button type="button" class="secondary" id="btn-recheck-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save). Use if you unchecked them by mistake.">Recheck saved IDs</button>
+            <button type="button" class="secondary" id="btn-expand-saved">Expand all DCs</button>
+            <button type="button" class="secondary" id="btn-collapse-saved">Collapse all</button>
+          </div>
+          <div id="found-saved" style="margin-top:0.35rem"></div>
+        </div>
       </details>
       </div>
     </details>
@@ -2098,7 +2120,16 @@
         </div>
         <div class="row" style="margin-bottom:0.75rem">
           <div>
-            <label for="extend-date-btn">Extend checked until</label>
+            <label for="extend-days">Extend by</label>
+            <div class="dt-time-row">
+              <input id="extend-days" type="number" min="0" max="30" step="1" value="1" autocomplete="off" aria-label="Extend days" style="width:4.5rem" />
+              <span>days</span>
+              <input id="extend-hours" type="number" min="0" max="23" step="1" value="0" autocomplete="off" aria-label="Extend hours" style="width:4.5rem" />
+              <span>hours</span>
+            </div>
+          </div>
+          <div>
+            <label for="extend-date-btn">Until</label>
             <input id="sched-extend" type="hidden" value="" />
             <button type="button" class="dt-trigger" id="extend-date-btn" aria-haspopup="dialog" aria-expanded="false">
               <span class="dt-label" id="extend-date-label">Pick date</span>
@@ -2117,9 +2148,10 @@
             </div>
           </div>
           <div style="align-self:flex-end">
-            <button type="button" class="secondary" id="btn-extend-checked" data-tip="Sets a new scheduled stop time in dCloud for each checked session (PUT /api/sessions/{id}).">Extend checked</button>
+            <button type="button" class="secondary" id="btn-extend-checked" data-tip="Adds the days and hours to each checked session's current end. If that window is booked, you are asked whether to take the farthest time that is still free.">Extend checked</button>
           </div>
         </div>
+        <p class="hint" style="margin:0 0 0.75rem">Each session is pushed this far past its own end. Five days is one click. If resources are booked, the tool finds the farthest time that still fits and asks before applying it. Set days and hours to 0 to use the until time as an exact stop for every checked session.</p>
         <div class="actions">
         <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh all session statuses</button>
         <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down checked ready cards, waits for their VMs to power off, then saves. Uses all remaining ready cards if none are checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest shutdown &amp; save</button>
@@ -3101,7 +3133,7 @@
         return "Schedule sessions — info needed";
       }
       if (t.includes("saved content") || t.includes("find saved") || t.includes("find sessions")) {
-        return "Cleanup / attach";
+        return t.includes("delete") || t.includes("survey") ? "Cleanup / attach" : "Schedule sessions — saved content";
       }
       return "Action needed";
     }
@@ -3139,8 +3171,11 @@
       ) {
         return "#panel-step3";
       }
-      if (t.includes("saved content") || t.includes("delete") || t.includes("recheck saved")) {
+      if (t.includes("delete") || t.includes("recheck saved") || t.includes("survey")) {
         return "#panel-cleanup";
+      }
+      if (t.includes("saved content") || t.includes("find saved")) {
+        return "#panel-saved-schedule";
       }
       if (t.includes("find sessions") || t.includes("attach")) {
         return "#panel-monitoring";
@@ -4221,6 +4256,10 @@
       }));
     }
 
+    // dCloud delays a second session of the same demo that starts at the same
+    // moment, so the tool spaces copies out instead of letting it happen.
+    const MIN_SAME_DEMO_GAP_MINUTES = 4;
+
     function scheduleCopySettings() {
       const delay = Math.max(0, Math.round(Number($("sched-delay")?.value || 0)) || 0);
       const copies = Math.min(20, Math.max(1, Math.round(Number($("sched-copies")?.value || 1)) || 1));
@@ -4229,13 +4268,14 @@
 
     function scheduleCopyHintText(delay, copies) {
       if (copies <= 1 && delay <= 0) return "";
+      const every = `${delay} minute${delay === 1 ? "" : "s"}`;
       if (copies <= 1) {
-        return `This session starts ${delay} minute${delay === 1 ? "" : "s"} after the start time above.`;
+        return `Sessions start one every ${every}, in the order listed. A single session on its own starts ${every} after the start time above.`;
       }
       if (delay <= 0) {
-        return `Schedules ${copies} sessions of each DC ID at the same start time.`;
+        return `Schedules ${copies} sessions of each DC ID, ${MIN_SAME_DEMO_GAP_MINUTES} minutes apart — dCloud holds back a second session of the same demo that starts at the same moment.`;
       }
-      return `Schedules ${copies} sessions of each DC ID: the first at the start time above, then one every ${delay} minute${delay === 1 ? "" : "s"}.`;
+      return `Schedules ${copies} sessions of each DC ID: the first at the start time above, then one every ${every} (copies of one demo never closer than ${MIN_SAME_DEMO_GAP_MINUTES} minutes).`;
     }
 
     function syncScheduleCopyHint() {
@@ -4258,11 +4298,11 @@
 
     function scheduleFields() {
       const { delay, copies } = scheduleCopySettings();
-      const firstDelay = copies <= 1 ? delay : 0;
+      // The server staggers each session from this start, so send it unshifted.
       return {
         days: Number($("days").value || 1),
-        start_at: shiftedScheduleIso("sched-start", firstDelay),
-        stop_at: shiftedScheduleIso("sched-stop", firstDelay),
+        start_at: shiftedScheduleIso("sched-start", 0),
+        stop_at: shiftedScheduleIso("sched-stop", 0),
         delay_minutes: delay,
         session_count: copies,
         active_timeout_minutes: Number($("timeout").value || 90),
@@ -5006,15 +5046,41 @@
     }
 
     function suggestExtendDate(job) {
-      const stops = visibleWorkspaceDcs(job)
-        .filter((dc) => dc.scheduleStop)
+      refreshExtendUntilPreview(job);
+    }
+
+    function extendByMinutes() {
+      const days = Math.max(0, parseInt($("extend-days")?.value || "0", 10) || 0);
+      const hours = Math.max(0, parseInt($("extend-hours")?.value || "0", 10) || 0);
+      return days * 24 * 60 + hours * 60;
+    }
+
+    function formatExtendAmount(minutes) {
+      const days = Math.floor(minutes / (24 * 60));
+      const hours = Math.floor((minutes % (24 * 60)) / 60);
+      const parts = [];
+      if (days) parts.push(days === 1 ? "1 day" : `${days} days`);
+      if (hours) parts.push(hours === 1 ? "1 hour" : `${hours} hours`);
+      return parts.join(" ") || "0";
+    }
+
+    function refreshExtendUntilPreview(job, sessions) {
+      const extraMs = extendByMinutes() * 60 * 1000;
+      if (!extraMs) return;
+      const rows = Array.isArray(sessions) && sessions.length
+        ? sessions
+        : [];
+      const dcs = rows.length
+        ? rows.map((row) => findDcCard(row.site, row.session_id)).filter(Boolean)
+        : visibleWorkspaceDcs(job || lastRenderedJob);
+      const stops = dcs
+        .filter((dc) => dc?.scheduleStop)
         .map((dc) => new Date(dc.scheduleStop))
         .filter((date) => !Number.isNaN(date.getTime()));
       let base = stops.length
         ? new Date(Math.max(...stops.map((date) => date.getTime())))
         : new Date();
-      base = new Date(base.getTime() + 24 * 60 * 60 * 1000);
-      applyDateToControls("extend", roundUp5(base));
+      applyDateToControls("extend", roundUp5(new Date(base.getTime() + extraMs)));
     }
 
     function setCardChecks(checked) {
@@ -5225,8 +5291,8 @@
       const canExtend = canExtendSession(dc);
       const extendTip = canExtend
         ? (monitor
-          ? "Extend this session in dCloud."
-          : "Extend this session using the date/time picker below the cards.")
+          ? "Extend this session in dCloud. If the full window is booked, you will be asked whether to take the farthest time that is still free."
+          : "Extend this session by the days and hours below the cards. If that window is booked, you will be asked whether to take the farthest time that is still free.")
         : "Extend is available once the session is active (starting sessions cannot be extended in dCloud).";
       const cardData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-demo-id="${escapeHtml(dc.demoId || "")}"`;
       const checked = checkedCards.has(sessionKey(dc.site, dc.sessionId)) ? " checked" : "";
@@ -7822,6 +7888,9 @@
       const stop = parseLocalInput($("sched-stop").value);
       if (start) applyDateToControls("savedStart", start);
       if (stop) applyDateToControls("savedStop", stop);
+      if ($("saved-auto-next-available") && $("auto-next-available")) {
+        $("saved-auto-next-available").checked = $("auto-next-available").checked;
+      }
       syncScheduleCopyHint();
     }
 
@@ -7830,6 +7899,9 @@
       $("days").value = $("saved-days").value;
       if ($("sched-delay") && $("saved-sched-delay")) $("sched-delay").value = $("saved-sched-delay").value;
       if ($("sched-copies") && $("saved-sched-copies")) $("sched-copies").value = $("saved-sched-copies").value;
+      if ($("auto-next-available") && $("saved-auto-next-available")) {
+        $("auto-next-available").checked = $("saved-auto-next-available").checked;
+      }
       applyDateToControls("start", dateFromControls("savedStart"));
       applyDateToControls("stop", dateFromControls("savedStop"));
       syncScheduleCopyHint();
@@ -8142,13 +8214,15 @@
         }
       }
       const { delay, copies } = scheduleCopySettings();
-      if (copies > 1) {
+      const idCount = Object.values(demoIds()).filter((id) => id).length;
+      if (copies > 1 || (delay > 0 && idCount * copies > 1)) {
+        const total = idCount * copies;
         const gap = delay > 0
           ? `the first at the start time above, then one every ${delay} minute${delay === 1 ? "" : "s"}`
-          : "all at the same start time";
+          : `copies of the same demo ${MIN_SAME_DEMO_GAP_MINUTES} minutes apart`;
         if (!await confirmAction(
-          `Schedule ${copies} sessions of each demo ID (${gap})? Each copy gets its own session ID.`,
-          { title: "Schedule several sessions", okLabel: `Schedule ${copies}`, cancelLabel: "Go back" }
+          `Schedule ${total} session${total === 1 ? "" : "s"} (${gap})? Each one gets its own session ID.`,
+          { title: "Schedule several sessions", okLabel: `Schedule ${total}`, cancelLabel: "Go back" }
         )) {
           $("btn-run").disabled = false;
           return;
@@ -8549,9 +8623,15 @@
       $("found-saved").innerHTML = "";
       setFoundSavedPanelVisible(false);
       lastFoundSavedByMount.cleanup = null;
+      syncDeleteSavedButton();
+    }
+
+    function resetSavedScheduleUi() {
+      if ($("found-schedule-saved")) $("found-schedule-saved").innerHTML = "";
+      setScheduleSavedPanelVisible(false);
+      lastFoundSavedByMount.schedule = null;
       const exportBox = $("saved-schedule-export");
       if (exportBox) exportBox.checked = false;
-      syncDeleteSavedButton();
       syncScheduleSavedButton();
     }
 
@@ -8607,9 +8687,14 @@
         hint: "Per-DC IDs, catalog hints, duration, and dates.",
       },
       {
+        id: "saved-schedule",
+        label: "Schedule sessions from your own saved content",
+        hint: "Saved-content search results used to spin up sessions, and their checked rows.",
+      },
+      {
         id: "cleanup",
         label: "Cleanup lists",
-        hint: "Saved content search results in Cleanup and their checked rows.",
+        hint: "Saved content search results in Cleanup used to delete finished copies.",
       },
       {
         id: "cards",
@@ -8699,6 +8784,7 @@
       }
       if (picked.has("step2")) resetStep2Ui();
       if (picked.has("step3")) resetStep3Ui();
+      if (picked.has("saved-schedule")) resetSavedScheduleUi();
       if (picked.has("cleanup")) resetCleanupUi();
       if (clearWorkspace) resetWorkspaceUi();
       if (clearMonitoring) resetMonitoringUi();
@@ -8837,29 +8923,68 @@
         showError("Check at least one active session card to extend.");
         return;
       }
+      const extraMinutes = extendByMinutes();
+      refreshExtendUntilPreview(lastRenderedJob, targets);
       const stopDate = dateFromControls("extend");
-      if (Number.isNaN(stopDate.getTime())) {
-        showError("Pick a new end date and time below the cards.");
+      if (extraMinutes < 30 && Number.isNaN(stopDate.getTime())) {
+        showError("Set days or hours to extend, or pick a new end date and time.");
         return;
       }
-      const stopAt = stopDate.toISOString();
+      if (extraMinutes < 30 && extraMinutes > 0) {
+        showError("Extend by at least 1 hour, or set days and hours to 0 and pick an until time.");
+        return;
+      }
+      const stopAt = Number.isNaN(stopDate.getTime()) ? "" : stopDate.toISOString();
       const list = formatBulkSessionList(targets);
       const summary = bulkSessionLabels(targets).join("; ");
-      if (!await confirmAction(
-        `Extend these sessions until ${formatSessionWhen(stopAt)}?\n\n${list}`,
-        { title: "Extend sessions" }
-      )) {
+      const confirmMsg = extraMinutes >= 30
+        ? `Extend these sessions by ${formatExtendAmount(extraMinutes)} from each session's current end?\n\n${list}`
+        : `Extend these sessions until ${formatSessionWhen(stopAt)}?\n\n${list}`;
+      if (!await confirmAction(confirmMsg, { title: "Extend sessions" })) {
         return;
       }
       showError("");
-      noteLog(`Extend requested for ${summary}…`);
+      noteLog(`Checking how far ${summary} can extend…`);
       try {
-        const job = await api(`/api/jobs/${jobId}/extend-sessions`, {
+        const probed = await api(`/api/jobs/${jobId}/probe-extend`, {
           method: "POST",
           body: JSON.stringify({
             ...tokenPayload(),
             sessions: targets,
             stop_at: stopAt,
+            extra_minutes: extraMinutes >= 30 ? extraMinutes : 0,
+          }),
+        });
+        renderJob(probed, { forceCards: true });
+        startPolling();
+        const rows = Array.isArray(probed.extendProbe) ? probed.extendProbe : [];
+        const offers = rows.filter((row) => row.offer && row.suggested_stop);
+        if (!offers.length) return;
+        const offerList = offers.map((row) => {
+          const label = [row.site && String(row.site).toUpperCase(), row.name, row.session_id && `(session ${row.session_id})`]
+            .filter(Boolean)
+            .join(" · ");
+          return `• ${label}: ${formatSessionWhen(row.suggested_stop)}`;
+        }).join("\n");
+        const proceed = await confirmAction(
+          `You can only go out this far — resources are booked after the session.\n\n${offerList}\n\nExtend to that time?`,
+          { title: "Extend as far as available", okLabel: "Extend to that time" }
+        );
+        if (!proceed) {
+          noteLog("Shorter extend declined.");
+          return;
+        }
+        noteLog(`Extending ${offers.length} session(s) to the farthest available time…`);
+        const job = await api(`/api/jobs/${jobId}/extend-sessions`, {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            extra_minutes: 0,
+            sessions: offers.map((row) => ({
+              site: row.site,
+              session_id: row.session_id,
+              stop_at: row.suggested_stop,
+            })),
           }),
         });
         renderJob(job, { forceCards: true });
@@ -9169,6 +9294,8 @@
     const DEFAULT_SECTION_ORDER = [
       "panel-step2",
       "panel-step3",
+      "panel-saved-schedule",
+      "panel-cleanup",
       "panel-job-cards",
       "panel-monitoring",
       "saved-ids-panel",
@@ -9181,6 +9308,7 @@
       "details.task-group",
       "details.found-sessions-panel",
       "details#found-saved-panel",
+      "details#found-schedule-saved-panel",
       "details#saved-ids-found-panel",
       "details#saved-promoted-group",
       "details#saved-ids-promoted-group",
@@ -9188,7 +9316,7 @@
     const TOP_LEVEL_PANEL_SELECTOR = "details.panel-collapse";
     const DEFAULT_PANEL_OPEN = new Map();
     const PERSIST_VM_MORE_SELECTOR = "#cards details.vm-more, #monitor-cards details.vm-more";
-    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #found-saved details.dc-group, #saved-ids-found details.dc-group";
+    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #found-saved details.dc-group, #found-schedule-saved details.dc-group, #saved-ids-found details.dc-group";
 
     function canonicalDatacenter(value) {
       const text = String(value || "").trim().toLowerCase();
@@ -9430,7 +9558,7 @@
         .filter((el) => el.open && el.dataset.key)
         .map((el) => el.dataset.key);
       const dcGroups = {};
-      for (const containerId of ["found-sessions", "found-saved", "saved-ids-found"]) {
+      for (const containerId of ["found-sessions", "found-saved", "found-schedule-saved", "saved-ids-found"]) {
         const root = $(containerId);
         if (!root) continue;
         dcGroups[containerId] = {};
@@ -9853,7 +9981,7 @@
       return [...(rows || [])].sort((a, b) => compareFoundSavedRows(a, b, key, dir));
     }
 
-    let lastFoundSavedByMount = { cleanup: null, "saved-ids": null };
+    let lastFoundSavedByMount = { cleanup: null, schedule: null, "saved-ids": null };
     let savedIdsFoundSort = { key: "savedAt", dir: "desc" };
 
     function captureFoundContentChecks(itemClass) {
@@ -9960,15 +10088,28 @@
     let foundSavedMount = "cleanup";
 
     function foundSavedContainerId(mount = foundSavedMount) {
-      return mount === "saved-ids" ? "saved-ids-found" : "found-saved";
+      if (mount === "saved-ids") return "saved-ids-found";
+      if (mount === "schedule") return "found-schedule-saved";
+      return "found-saved";
     }
 
     function foundSavedItemClass(mount = foundSavedMount) {
-      return mount === "saved-ids" ? "saved-ids-found-content" : "found-saved-content";
+      if (mount === "saved-ids") return "saved-ids-found-content";
+      if (mount === "schedule") return "schedule-saved-content";
+      return "found-saved-content";
     }
 
     function foundSavedDcHeadClass(mount = foundSavedMount) {
-      return mount === "saved-ids" ? "saved-ids-found-dc-head" : "found-saved-dc-head";
+      if (mount === "saved-ids") return "saved-ids-found-dc-head";
+      if (mount === "schedule") return "schedule-saved-dc-head";
+      return "found-saved-dc-head";
+    }
+
+    function setScheduleSavedPanelVisible(visible) {
+      const panel = $("found-schedule-saved-panel");
+      if (!panel) return;
+      panel.classList.toggle("hidden", !visible);
+      if (visible) panel.open = persistedPanelOpen("found-schedule-saved-panel", true);
     }
 
     function clearFoundSavedResults(mount) {
@@ -9976,6 +10117,11 @@
         if ($("found-saved")) $("found-saved").innerHTML = "";
         setFoundSavedPanelVisible(false);
         lastFoundSavedByMount.cleanup = null;
+      }
+      if (!mount || mount === "schedule") {
+        if ($("found-schedule-saved")) $("found-schedule-saved").innerHTML = "";
+        setScheduleSavedPanelVisible(false);
+        lastFoundSavedByMount.schedule = null;
       }
       if (!mount || mount === "saved-ids") {
         if ($("saved-ids-found")) $("saved-ids-found").innerHTML = "";
@@ -10032,6 +10178,32 @@
         restoreFoundContentChecks(itemClass, checkedKeys);
         syncGroupChecks("", `.${itemClass}`, dcHeadClass);
         syncDeleteSavedButton();
+        syncMainScheduleToSaved();
+        return;
+      }
+      if (mount === "schedule") {
+        const groups = groupRowsBySite(rows).filter((group) => group.rows.length > 0);
+        const tableOpts = { deletable: true, itemClass, dcHeadClass, showEolBadge: true };
+        const body = groups.length
+          ? groups.map(({ site, rows: siteRows }) => {
+              const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
+              return `
+            <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
+              <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span></summary>
+              ${renderSavedContentTable(site, siteRows, tableOpts)}
+            </details>`;
+            }).join("")
+          : `<p class="hint">No saved custom content found in any DC.</p>`;
+        if (container) {
+          container.innerHTML = `
+            ${renderErrorHints(data.errors)}
+            <p class="hint">${rows.length ? `${rows.length} saved content item(s). Check the ones to schedule.` : ""}</p>
+            ${body}
+          `;
+        }
+        setScheduleSavedPanelVisible(rows.length > 0);
+        restoreFoundContentChecks(itemClass, checkedKeys);
+        syncScheduleSavedAll();
         syncMainScheduleToSaved();
         return;
       }
@@ -10116,6 +10288,15 @@
       syncFoundAll();
     }
 
+    function setScheduleSavedChecks(checked) {
+      setGroupChecks(checked, ".schedule-saved-content", "schedule-saved-dc-head");
+      syncScheduleSavedAll();
+    }
+
+    function syncScheduleSavedAll() {
+      syncGroupChecks("", ".schedule-saved-content", "schedule-saved-dc-head");
+    }
+
     function setFoundSavedChecks(checked) {
       setGroupChecks(checked, ".found-saved-content", "found-saved-dc-head");
       syncFoundSavedAll();
@@ -10159,7 +10340,7 @@
       const keys = savedIdKeys();
       if (!keys.size) return 0;
       let marked = 0;
-      document.querySelectorAll(".found-saved-content, .saved-ids-found-content").forEach((box) => {
+      document.querySelectorAll(".found-saved-content, .schedule-saved-content, .saved-ids-found-content").forEach((box) => {
         const key = `${box.dataset.site}:${box.dataset.contentId}`;
         if (keys.has(key)) {
           box.checked = true;
@@ -10167,6 +10348,7 @@
         }
       });
       syncFoundSavedAll();
+      syncScheduleSavedAll();
       syncSavedIdsFoundAll();
       return marked;
     }
@@ -10181,12 +10363,13 @@
       syncAddSavedButtons();
     }
 
-    function recheckSavedIdsOnFoundContent() {
+    function recheckSavedIdsOnFoundContent({ forSchedule = false } = {}) {
       if (!lastSavedIdRows.length) {
         showError("No Saved content IDs yet — complete a save first, or restore a job that has them.");
         return;
       }
-      if (!document.querySelector(".found-saved-content")) {
+      const selector = forSchedule ? ".schedule-saved-content" : ".found-saved-content";
+      if (!document.querySelector(selector)) {
         showError("Click Find saved content first, then use Recheck saved IDs.");
         return;
       }
@@ -10238,11 +10421,15 @@
     async function findSavedContents(mount = "cleanup") {
       if (!ensureTokenReady("finding saved content")) return;
       showError("");
-      const thisMount = mount === "saved-ids" ? "saved-ids" : "cleanup";
+      const thisMount = mount === "saved-ids" || mount === "schedule" ? mount : "cleanup";
       foundSavedMount = thisMount;
       if (thisMount === "cleanup") {
         const cleanup = $("panel-cleanup");
         if (cleanup) cleanup.open = true;
+      }
+      if (thisMount === "schedule") {
+        const panel = $("panel-saved-schedule");
+        if (panel) panel.open = true;
       }
       try {
         const data = await api("/api/contents/mine", {
@@ -10390,13 +10577,13 @@
 
     async function scheduleSelectedSaved() {
       if (!ensureTokenReady("scheduling saved content")) return;
-      const selected = [...document.querySelectorAll(".found-saved-content:checked")].map((box) => ({
+      const selected = [...document.querySelectorAll(".schedule-saved-content:checked")].map((box) => ({
         site: box.dataset.site,
         content_id: box.dataset.contentId,
         name: box.dataset.name || "",
       }));
       if (!selected.length) {
-        showError("Find saved content first, then check the items to schedule.");
+        showError("Find saved content in Schedule sessions from your own saved content, then check the items to schedule.");
         return;
       }
       const selectedVms = selectedVmsForSchedule();
@@ -10420,12 +10607,16 @@
       const more = selected.length > 12 ? `\n…and ${selected.length - 12} more` : "";
       const kind = exportedSaved ? "exported" : "regular";
       const { delay, copies } = scheduleCopySettings();
+      const totalSessions = selected.length * copies;
       const copyNote = copies > 1
         ? `\n\nThis will create ${copies} sessions of each checked item`
-          + (delay > 0 ? `, ${delay} minute(s) apart.` : " at the same start time.")
+          + (delay > 0 ? "." : `, ${MIN_SAME_DEMO_GAP_MINUTES} minutes apart (dCloud delays same-demo sessions that start together).`)
+        : "";
+      const gapNote = delay > 0 && totalSessions > 1
+        ? `\n\nThe ${totalSessions} sessions start ${delay} minute(s) apart, in the order listed.`
         : "";
       if (!await confirmAction(
-        `Schedule ${selected.length} saved content item(s) as ${kind} sessions?\n\n${preview}${more}${copyNote}\n\nAll selected DCs are scheduled in parallel (multiple sessions per DC are allowed).`,
+        `Schedule ${selected.length} saved content item(s) as ${kind} sessions?\n\n${preview}${more}${copyNote}${gapNote}\n\nAll selected DCs are scheduled in parallel (multiple sessions per DC are allowed).`,
         { title: "Schedule saved content" }
       )) {
         return;
@@ -11265,7 +11456,8 @@
         const dc = (lastRenderedJob?.dcs || []).find(
           (row) => row.site === cardSite && String(row.sessionId || "") === cardSession
         );
-        if (dc?.scheduleStop) {
+        refreshExtendUntilPreview(lastRenderedJob, [{ site: cardSite, session_id: cardSession }]);
+        if (!extendByMinutes() && dc?.scheduleStop) {
           const base = new Date(dc.scheduleStop);
           if (!Number.isNaN(base.getTime())) {
             applyDateToControls("extend", roundUp5(new Date(base.getTime() + 24 * 60 * 60 * 1000)));
@@ -11341,6 +11533,8 @@
     $("export-sessions").addEventListener("change", () => syncRunButton());
     $("days").addEventListener("change", () => syncScheduleStop());
     $("days").addEventListener("input", () => syncScheduleStop());
+    $("auto-next-available")?.addEventListener("change", () => { syncMainScheduleToSaved(); });
+    $("saved-auto-next-available")?.addEventListener("change", () => { syncSavedScheduleToMain(); });
     $("sched-delay")?.addEventListener("input", () => { syncMainScheduleToSaved(); });
     $("sched-copies")?.addEventListener("input", () => { syncMainScheduleToSaved(); });
     $("saved-days").addEventListener("change", () => {
@@ -11389,6 +11583,10 @@
     $("saved-start-now").addEventListener("click", () => setControlToNow("savedStart"));
     $("extend-hour").addEventListener("change", onExtendTimeChange);
     $("extend-minute").addEventListener("change", onExtendTimeChange);
+    $("extend-days")?.addEventListener("change", () => refreshExtendUntilPreview(lastRenderedJob));
+    $("extend-hours")?.addEventListener("change", () => refreshExtendUntilPreview(lastRenderedJob));
+    $("extend-days")?.addEventListener("input", () => refreshExtendUntilPreview(lastRenderedJob));
+    $("extend-hours")?.addEventListener("input", () => refreshExtendUntilPreview(lastRenderedJob));
     $("start-now").addEventListener("click", () => setControlToNow("start"));
     $("dt-prev").addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -11518,6 +11716,7 @@
     });
     $("btn-decline-all-surveys").addEventListener("click", () => declineAllSurveys().catch((err) => showError(err.message)));
     $("btn-find-saved").addEventListener("click", () => findSavedContents("cleanup").catch((err) => showError(err.message)));
+    $("btn-find-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule").catch((err) => showError(err.message)));
     $("btn-delete-saved").addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
     $("btn-schedule-saved").addEventListener("click", () => scheduleSelectedSaved().catch((err) => showError(err.message)));
     $("saved-schedule-export").addEventListener("change", () => syncScheduleSavedButton());
@@ -11530,6 +11729,11 @@
     $("btn-check-all-saved").addEventListener("click", () => setFoundSavedChecks(true));
     $("btn-uncheck-all-saved").addEventListener("click", () => setFoundSavedChecks(false));
     $("btn-recheck-saved-ids").addEventListener("click", () => recheckSavedIdsOnFoundContent());
+    $("btn-expand-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", true));
+    $("btn-collapse-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", false));
+    $("btn-check-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(true));
+    $("btn-uncheck-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(false));
+    $("btn-recheck-schedule-saved-ids")?.addEventListener("click", () => recheckSavedIdsOnFoundContent({ forSchedule: true }));
     $("btn-attach-sessions").addEventListener("click", () => attachSelectedSessions().catch((err) => showError(err.message)));
     $("found-sessions").addEventListener("click", (ev) => {
       const addBtn = ev.target.closest(".btn-add-found-session");
@@ -11555,6 +11759,7 @@
       if (ev.target.classList.contains("found-session")) syncFoundAll();
     });
     bindFoundSavedListEvents("found-saved", "found-saved-content", "found-saved-dc-head", syncFoundSavedAll);
+    bindFoundSavedListEvents("found-schedule-saved", "schedule-saved-content", "schedule-saved-dc-head", syncScheduleSavedAll);
     bindFoundSavedListEvents("saved-ids-found", "saved-ids-found-content", "saved-ids-found-dc-head", syncSavedIdsFoundAll);
     $("btn-saved-ids-find").addEventListener("click", () => findSavedContents("saved-ids").catch((err) => showError(err.message)));
     $("btn-hub-manual-add").addEventListener("click", () => addManualHubContent().catch((err) => showError(err.message)));
@@ -11941,7 +12146,7 @@
       for (let node = el?.parentElement; node; node = node.parentElement) {
         if (node.tagName === "DETAILS") node.open = true;
       }
-      if (target === "#panel-recovery" || target === "#panel-cleanup") {
+      if (target === "#panel-recovery" || target === "#panel-cleanup" || target === "#panel-saved-schedule") {
         if (el) el.open = true;
       }
       const scroll = () => {

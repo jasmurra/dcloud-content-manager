@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.12.5** | Extend by days and hours in one click, and take the farthest available time when resources are booked; delay spaces every session; copies of one demo stay 4 minutes apart; saved-content scheduling is its own card, not under Cleanup |
 | **1.12.4** | After 10 minutes of guest shutdown, choose keep waiting or hard power off remaining VMs; UC guests are not yanked on a timer |
 | **1.12.3** | vCUBE VMs are powered off during Guest shutdown & save, so the save no longer waits forever on a VM that restarts |
 | **1.12.2** | A re-submitted CAMGR transfer is followed instead of leaving the row stuck on the first attempt's ERROR |

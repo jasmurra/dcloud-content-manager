@@ -1,3 +1,12 @@
+## 1.12.5 — 2026-09-18
+
+- **Delay now spaces out every session, not just extra copies.** Checking three saved demos with a 30 minute delay used to schedule all three at the same time, because the delay only applied when **Number of sessions** was above 1. Each session now waits one more delay than the one before it, in the order listed, from the saved content list and from manual demo IDs alike
+- A session scheduled on its own is unchanged: the delay still pushes out its own start (60 = Now plus an hour)
+- **Copies of one demo are never scheduled closer than 4 minutes**, even with the delay at 0. dCloud holds back a second session of the same demo that comes up at the same moment, so spinning one demo up 5 times now goes out at 0, 4, 8, 12, and 16 minutes. Different demos with no delay still start together
+- When a capacity conflict sends a datacenter to the next open slot, its sessions keep their spacing instead of collapsing onto one start time
+- **Schedule from saved content is its own card** (**Schedule sessions from your own saved content across all DCs**). Cleanup keeps Find saved content only for deleting finished copies and declining surveys
+- **Extend by days and hours** from each session's current end (5 days is one click). If resources are booked after the session, the tool finds the farthest time that still fits and asks **Extend to that time?** before applying it
+
 ## 1.12.4 — 2026-09-18
 
 - Guest shutdown now **waits as long as the VMs need**, including slow UC guests. After 10 minutes a prompt asks whether to keep waiting or hard power off remaining VMs (and save, when this was Guest shutdown & save). Walking away keeps waiting; leftover VMs are not yanked on a timer
