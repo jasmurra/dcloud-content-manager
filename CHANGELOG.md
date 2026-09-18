@@ -1,3 +1,10 @@
+## 1.12.2 — 2026-09-18
+
+- A transfer you **re-submit after a failure** is now followed properly. Each row remembers one CAMGR job, and a finished job used to win that match outright, so the row kept reporting the old **ERROR** while CAMGR showed the second attempt importing. A live job for the same demo, source DC, and owner now takes over, and the row stores the new job
+- A row that reads ERROR no longer stops checking. It asks CAMGR again every couple of minutes, so a retry is picked up instead of freezing on the failure forever
+- A still-running job is never second-guessed, and a transfer that really did fail with no retry still reports ERROR
+- The job log says when the row switches: “following the re-submitted CAMGR transfer … The earlier attempt failed”
+
 ## 1.12.1 — 2026-09-18
 
 - The dCloud token is now kept fresh in the background, refreshed about every 4 minutes and always before it expires. A CAMGR transfer plus CAI integrate can run for hours, and the post-integration burn-in sessions used to fail at the end because the sign-in had quietly gone stale

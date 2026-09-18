@@ -319,6 +319,8 @@ _auto_integrate_busy: set[str] = set()
 _AUTO_INTEGRATE_MAX_ATTEMPTS = 36
 _burn_in_lock = threading.Lock()
 _burn_in_busy: set[str] = set()
+# How often a failed transfer row asks CAMGR again, in case it was re-submitted.
+_CAMGR_ERROR_RECHECK_SECONDS = 120
 
 
 def _load_cai_session() -> None:
@@ -3759,6 +3761,21 @@ def _try_auto_integrate_transfer(job: dict[str, Any] | None, item: dict[str, Any
             _auto_integrate_busy.discard(key)
 
 
+def _camgr_error_row_is_due(item: dict[str, Any]) -> bool:
+    """A failed transfer is usually re-submitted, and that is a new CAMGR job.
+
+    Keep checking now and then so the row can follow the retry. Without this it
+    froze on the old ERROR while CAMGR showed the second attempt importing.
+    """
+    if str(item.get("status") or "").strip().lower() != "error":
+        return False
+    try:
+        last = float(item.get("errorCheckedAt") or 0)
+    except (TypeError, ValueError):
+        last = 0.0
+    return (time.time() - last) >= _CAMGR_ERROR_RECHECK_SECONDS
+
+
 def _refresh_camgr_transfer_statuses(job: dict[str, Any] | None) -> dict[str, Any]:
     cookie = _require_camgr_cookie()
     items = []
@@ -3792,7 +3809,12 @@ def _refresh_camgr_transfer_statuses(job: dict[str, Any] | None) -> dict[str, An
                     changed = True
                 elif auto_hit.get("waiting") or auto_hit.get("message"):
                     changed = True
-            continue
+                continue
+            if not _camgr_error_row_is_due(item):
+                continue
+            # Fall through and ask CAMGR again: this row may have been re-submitted.
+            item["errorCheckedAt"] = time.time()
+            _upsert_camgr_transfer(job, item)
         refreshed = refresh_camgr_job(
             cookie,
             guid=str(item.get("guid") or ""),
@@ -3837,7 +3859,14 @@ def _refresh_camgr_transfer_statuses(job: dict[str, Any] | None) -> dict[str, An
                 }
             )
             _upsert_camgr_transfer(job, item)
-            if job is not None and new_status in {"complete", "error"}:
+            if job is not None and status == "error" and new_status not in {"complete", "error"}:
+                _log(
+                    job,
+                    f"{str(item.get('site') or '').upper()}: following the re-submitted CAMGR "
+                    f"transfer for {item.get('savedId')} ({new_raw or new_status}). "
+                    "The earlier attempt failed.",
+                )
+            elif job is not None and new_status in {"complete", "error"}:
                 _log(
                     job,
                     f"{str(item.get('site') or '').upper()}: CAMGR transfer "

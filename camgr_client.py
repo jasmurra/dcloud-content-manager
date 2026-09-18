@@ -881,6 +881,24 @@ def _dcs_base(values: list[Any]) -> list[str]:
     return out
 
 
+TERMINAL_CAMGR_STATUSES = frozenset({"complete", "error"})
+
+
+def camgr_job_is_terminal(item: dict[str, Any]) -> bool:
+    return str(item.get("status") or "").strip().lower() in TERMINAL_CAMGR_STATUSES
+
+
+def camgr_job_stamp(item: dict[str, Any]) -> int:
+    for key in ("updateAt", "at"):
+        try:
+            value = int(item.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value:
+            return value
+    return 0
+
+
 def match_camgr_job(
     jobs: list[dict[str, Any]],
     *,
@@ -892,10 +910,15 @@ def match_camgr_job(
     owner: str = "",
 ) -> dict[str, Any] | None:
     wanted_guid = str(guid or "").strip()
+    guid_hit: dict[str, Any] | None = None
     if wanted_guid:
         for item in jobs:
             if str(item.get("guid") or "").strip() == wanted_guid:
-                return item
+                guid_hit = item
+                break
+        # Still running, so it is definitely the job this row is about.
+        if guid_hit is not None and not camgr_job_is_terminal(guid_hit):
+            return guid_hit
     demo = str(demo_id or "").strip()
     source = str(source_dc or "").strip().upper()
     wanted_servers = set(_server_ids(servers or []))
@@ -926,9 +949,20 @@ def match_camgr_job(
             stamp = 0
         ranked.append((score, stamp, item))
     if not ranked:
-        return None
-    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
-    return ranked[0][2]
+        return guid_hit
+    # Re-submitting a failed transfer creates a brand new CAMGR job, so a live one
+    # outranks the finished job this row was following. Otherwise the tool keeps
+    # reporting the old ERROR while the retry is importing.
+    ranked.sort(
+        key=lambda row: (not camgr_job_is_terminal(row[2]), row[0], row[1]),
+        reverse=True,
+    )
+    best = ranked[0][2]
+    if guid_hit is not None and (
+        camgr_job_is_terminal(best) or camgr_job_stamp(best) < camgr_job_stamp(guid_hit)
+    ):
+        return guid_hit
+    return best
 
 
 def submit_camgr_transfer(

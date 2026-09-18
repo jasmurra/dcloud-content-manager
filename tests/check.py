@@ -477,6 +477,71 @@ def test_schedule_button_reports_back() -> None:
     check("it stops updating once settled", "runWatch.settled = true;" in INDEX)
 
 
+def test_resubmitted_transfer_is_followed() -> None:
+    """A retry is a new CAMGR job. The row used to stay stuck on the old ERROR."""
+    import app
+    from camgr_client import match_camgr_job
+
+    failed = {
+        "guid": "job-22",
+        "demoId": "1389488",
+        "dc": "RTP",
+        "owner": "mgianni",
+        "status": "ERROR",
+        "dcs": ["RTP", "SJC"],
+        "servers": list(range(22)),
+        "updateAt": 1_000,
+    }
+    retry = {
+        "guid": "job-23",
+        "demoId": "1389488",
+        "dc": "RTP",
+        "owner": "mgianni",
+        "status": "IMPORTING",
+        "dcs": ["RTP", "SJC"],
+        "servers": list(range(23)),
+        "updateAt": 2_000,
+    }
+    args = {
+        "demo_id": "1389488",
+        "source_dc": "RTP",
+        "dest_dcs": ["RTP", "SJC"],
+        "owner": "mgianni",
+    }
+    # The row is still pointed at the failed job, which is what Mario hit.
+    hit = match_camgr_job([failed, retry], guid="job-22", **args)
+    check("a live retry wins over the failed job it replaced", hit is retry, str(hit))
+    # A job that is still running is never second-guessed.
+    running = dict(failed, status="XFRING")
+    hit = match_camgr_job([running, retry], guid="job-22", **args)
+    check("a running job stays matched by guid", hit is running)
+    # Nothing newer to move to, so keep reporting the failure.
+    hit = match_camgr_job([failed], guid="job-22", **args)
+    check("a lone failure is still reported", hit is failed)
+    older = dict(retry, guid="job-21", updateAt=10, status="IMPORTING")
+    hit = match_camgr_job([failed, older], guid="job-22", **args)
+    check("an older job is not adopted", hit is failed)
+
+    now = time.time()
+    check(
+        "a failed row asks CAMGR again",
+        app._camgr_error_row_is_due({"status": "error", "errorCheckedAt": 0}) is True,
+    )
+    check(
+        "it does not ask on every poll",
+        app._camgr_error_row_is_due({"status": "error", "errorCheckedAt": now}) is False,
+    )
+    check(
+        "a completed row is left alone",
+        app._camgr_error_row_is_due({"status": "complete", "errorCheckedAt": 0}) is False,
+    )
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check(
+        "the log says it switched to the retry",
+        "following the re-submitted CAMGR" in source,
+    )
+
+
 def test_failed_schedule_leaves_no_card() -> None:
     """A card with no session is nothing to act on, so it should not need clearing."""
     source = (ROOT / "app.py").read_text(encoding="utf-8")
