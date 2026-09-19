@@ -14,3 +14,5 @@ managed-saved-ids.json
 .python-runtime-cache/
 .github-update-cache/
 runtime/
+.dcloud-install.json
+usage.json

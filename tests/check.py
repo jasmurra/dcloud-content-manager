@@ -226,12 +226,79 @@ def test_zip_contents() -> None:
 
     for rel in pack_for_mac.FILES:
         check(f"packed file exists: {rel}", (ROOT / rel).is_file())
-    for maintainer_only in ("pack_for_mac.py", "share-for-mac.command", "share-for-mac-with-python.command"):
+    for maintainer_only in (
+        "pack_for_mac.py",
+        "share-for-mac.command",
+        "share-for-mac-with-python.command",
+        "collect_usage.py",
+        "show_usage.py",
+    ):
         check(
             f"updater skips maintainer file: {maintainer_only}",
             maintainer_only in update_from_github.SKIP_FILE_NAMES,
         )
     check("updater skips this tests folder", "tests" in update_from_github.SKIP_DIR_NAMES)
+    check("updater skips GitHub workflows", ".github" in update_from_github.SKIP_DIR_NAMES)
+    check("install id stays on the machine", ".dcloud-install.json" in update_from_github.SKIP_FILE_NAMES)
+
+
+def test_anonymous_update_usage() -> None:
+    import hashlib
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import collect_usage
+    import update_from_github
+
+    posted: list[bytes] = []
+
+    def post(request):
+        posted.append(request.data)
+        class _Resp:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+        return _Resp()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        install = Path(tmp) / ".dcloud-install.json"
+        real_install = update_from_github.INSTALL_FILE
+        update_from_github.INSTALL_FILE = install
+        try:
+            ok = update_from_github.record_anonymous_usage(
+                version="1.12.6",
+                config={"usage_topic": "dcloud-cm-usage-a8f31c9e"},
+                force=True,
+                post=post,
+            )
+            check("a usage ping is sent", ok and len(posted) == 1)
+            payload = json.loads(posted[0].decode())
+            check("the ping has no name fields", set(payload) <= {"id", "version"})
+            check("the ping version is the app version", payload["version"] == "1.12.6")
+            ident = str(payload["id"])
+            check("the install id is a short hash", len(ident) == 16 and ident.isalnum())
+            raw = json.loads(install.read_text())["id"]
+            check(
+                "the raw uuid is not what is sent",
+                ident != raw and ident == hashlib.sha256(f"dcloud-content-manager:{raw}".encode()).hexdigest()[:16],
+            )
+            skipped = update_from_github.record_anonymous_usage(
+                version="1.12.6",
+                config={"usage_topic": "dcloud-cm-usage-a8f31c9e"},
+                now=float(json.loads(install.read_text())["last_ping"]) + 60,
+                post=post,
+            )
+            check("pings are throttled", skipped is False and len(posted) == 1)
+        finally:
+            update_from_github.INSTALL_FILE = real_install
+
+    data = {"v": 1, "installs": {}}
+    collect_usage.merge_ping(data, {"id": "0123456789abcdef", "version": "1.12.6", "seen": "2026-09-19T12:00:00Z"})
+    collect_usage.merge_ping(data, {"id": "not-a-hash", "version": "1.12.6"})
+    check("only hashed ids are stored", list(data["installs"]) == ["0123456789abcdef"])
+    check("github-update names a usage topic", "usage_topic=" in (ROOT / "github-update.txt").read_text())
 
 
 # --------------------------------------------------------------------------
@@ -992,8 +1059,47 @@ def test_extend_offers_the_farthest_bookable_stop() -> None:
     check("extend by days is on the page", 'id="extend-days"' in INDEX and 'id="extend-hours"' in INDEX)
     check("the page probes before applying a shorter extend", "/api/jobs/${jobId}/probe-extend" in INDEX)
     check("the page asks before taking the farthest time", "Extend to that time?" in INDEX)
+    check("card Extend opens an amount prompt", "extendCardSession(extendBtn)" in INDEX)
+    amount_source = js_function("parseExtensionAmount")
+    amount_source += """
+const cases = [
+  ["5", 7200],
+  ["5d", 7200],
+  ["6h", 360],
+  ["5 days 6 hours", 7560],
+  ["garbage", 0],
+];
+for (const [text, expected] of cases) {
+  const actual = parseExtensionAmount(text);
+  if (actual !== expected) {
+    console.error(`${text}: expected ${expected}, got ${actual}`);
+    process.exit(1);
+  }
+}
+"""
+    run_node(amount_source, "card Extend accepts days and hours")
+
     app_source = (ROOT / "app.py").read_text(encoding="utf-8")
     check("probe-extend is a real endpoint", "/api/jobs/{job_id}/probe-extend" in app_source)
+
+    import app
+
+    recovered = {
+        "phase": "error",
+        "error": "No sessions reached the ready state.",
+        "dcs": [{"phase": "ready"}],
+    }
+    app._sync_job_phase(recovered)
+    check(
+        "an active session clears the stale no-ready error",
+        recovered["phase"] == "ready_to_patch" and recovered["error"] == "",
+        str(recovered),
+    )
+    check(
+        "startup timeout keeps watching instead of becoming an error",
+        'job["phase"] = "waiting_active"' in app_source
+        and "Sessions are still starting. The cards will keep checking for Active." in app_source,
+    )
 
 
 def test_staggered_session_copies_cards() -> None:
@@ -1039,6 +1145,40 @@ def test_staggered_session_copies_cards() -> None:
         [("sjc", "480730")], payload.model_copy(update={"delay_minutes": 30, "session_count": 1})
     )
     check("a single session still waits out the delay", lone[0]["scheduleOffsetMinutes"] == 30)
+
+    now = datetime(2026, 9, 19, 17, 30, tzinfo=timezone.utc)
+    stale = now - timedelta(minutes=20)
+    mario = payload.model_copy(
+        update={
+            "demo_ids": DemoIds(rtp="1349630"),
+            "start_at": stale.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "stop_at": (stale + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "delay_minutes": 5,
+            "session_count": 1,
+            "days": 1,
+        }
+    )
+    waited = app._expand_schedule_cards([("rtp", "1349630")], mario, now=now)
+    got = parse_schedule_datetime(waited[0]["requestedStart"])
+    check(
+        "a stale start plus a 5 minute delay is now plus 5 minutes",
+        got == now + timedelta(minutes=5),
+        str(got),
+    )
+    later = now + timedelta(hours=2)
+    future = mario.model_copy(
+        update={
+            "start_at": later.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "stop_at": (later + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+    )
+    kept = app._expand_schedule_cards([("rtp", "1349630")], future, now=now)
+    check(
+        "a future start is left alone",
+        parse_schedule_datetime(kept[0]["requestedStart"]) == later + timedelta(minutes=5),
+        str(kept[0].get("requestedStart")),
+    )
+    check("the page refreshes a stale start before scheduling", "bumpScheduleStartIfPast" in INDEX)
     check(
         "the page sends the start unshifted now that the server staggers",
         "const firstDelay" not in INDEX and 'shiftedScheduleIso("sched-start", 0)' in INDEX,

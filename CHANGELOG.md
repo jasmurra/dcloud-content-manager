@@ -1,3 +1,9 @@
+## 1.12.6 — 2026-09-19
+
+- **Extend on a session card now asks how much longer to run.** Enter `5`, `5d`, `6h`, or `5d 6h`; a bare number means days. The card no longer silently uses the one-day default from the bulk controls
+- A session that takes longer than the initial startup watch no longer raises the misleading red **No sessions reached the ready state** banner. Its card keeps checking for Active, and an old copy of that message is cleared once a session is active
+- **A stale start time is moved to now before the delay is applied.** Leaving the picker at 13:10 and clicking Schedule at 13:30 with a 5 minute delay now starts at 13:35, instead of sending 13:15 which dCloud treats as immediately
+
 ## 1.12.5 — 2026-09-18
 
 - **Delay now spaces out every session, not just extra copies.** Checking three saved demos with a 30 minute delay used to schedule all three at the same time, because the delay only applied when **Number of sessions** was above 1. Each session now waits one more delay than the one before it, in the order listed, from the saved content list and from manual demo IDs alike

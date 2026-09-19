@@ -8,6 +8,7 @@ with bundled Python). Local jobs, logins, .venv, and runtime/ are left alone.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import shutil
@@ -18,6 +19,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -25,6 +27,8 @@ ROOT = Path(__file__).resolve().parent
 CONFIG = ROOT / "github-update.txt"
 CACHE = ROOT / ".github-update-cache"
 VERSION_FILE = ROOT / "VERSION"
+INSTALL_FILE = ROOT / ".dcloud-install.json"
+USAGE_PING_SECONDS = 12 * 60 * 60
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -34,6 +38,7 @@ SKIP_DIR_NAMES = {
     ".python-runtime-cache",
     ".dcloud-camgr-chrome",
     ".cursor",
+    ".github",
     "__pycache__",
     # Maintainer regression checks — they stay on GitHub, not in installs.
     "tests",
@@ -46,6 +51,10 @@ SKIP_FILE_NAMES = {
     ".dcloud-session.json",
     ".dcloud-cai-session.json",
     ".dcloud-camgr-session.json",
+    ".dcloud-install.json",
+    "usage.json",
+    "collect_usage.py",
+    "show_usage.py",
     # Maintainer zip-builders — stay on GitHub / the author's Mac only.
     "pack_for_mac.py",
     "share-for-mac.command",
@@ -118,6 +127,90 @@ def load_config() -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip().lower()] = value.strip()
     return values
+
+
+def anonymous_install_hash() -> str:
+    """Random install id, hashed. Never includes a name, email, or hostname."""
+    data: dict[str, object] = {}
+    if INSTALL_FILE.is_file():
+        try:
+            loaded = json.loads(INSTALL_FILE.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            data = {}
+    raw = str(data.get("id") or "").strip()
+    if len(raw) < 16:
+        raw = uuid.uuid4().hex
+        data["id"] = raw
+        try:
+            INSTALL_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+    return hashlib.sha256(f"dcloud-content-manager:{raw}".encode("utf-8")).hexdigest()[:16]
+
+
+def record_anonymous_usage(
+    *,
+    version: str = "",
+    config: dict[str, str] | None = None,
+    force: bool = False,
+    now: float | None = None,
+    post=None,
+) -> bool:
+    """Count distinct installs that check GitHub. No names — hashed id + version only."""
+    cfg = config if config is not None else load_config()
+    topic = str(cfg.get("usage_topic") or "").strip()
+    if not topic or "/" in topic or " " in topic:
+        return False
+    stamp = time.time() if now is None else float(now)
+    data: dict[str, object] = {}
+    if INSTALL_FILE.is_file():
+        try:
+            loaded = json.loads(INSTALL_FILE.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            data = {}
+    last = float(data.get("last_ping") or 0)
+    if not force and last and stamp - last < USAGE_PING_SECONDS:
+        return False
+    payload = {
+        "id": anonymous_install_hash(),
+        "version": str(version or read_version(VERSION_FILE) or "").strip(),
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    url = f"https://ntfy.sh/{urllib.parse.quote(topic, safe='')}"
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Title": "dcloud-cm",
+            "User-Agent": "dcloud-content-manager-usage",
+        },
+    )
+    try:
+        if post:
+            post(request)
+        else:
+            with urllib.request.urlopen(request, timeout=8):
+                pass
+    except (OSError, urllib.error.URLError):
+        return False
+    try:
+        loaded = json.loads(INSTALL_FILE.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            data.update(loaded)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    data["last_ping"] = stamp
+    try:
+        INSTALL_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return True
 
 
 def origin_url() -> str:
@@ -358,10 +451,12 @@ def main() -> int:
             remote_version = (shown.stdout or "").strip().splitlines()[0].strip()
         if not is_newer(remote_version, local):
             log(f"Already on {local}.")
+            record_anonymous_usage(version=local, config=config)
             return 0
         log(f"Updating {local} → {remote_version}…")
         if pull_existing_clone(branch):
             log(f"Updated to {read_version(VERSION_FILE) or remote_version}.")
+        record_anonymous_usage(version=read_version(VERSION_FILE) or remote_version, config=config)
         return 0
 
     # Normal coworker install: query and download the public GitHub archive
@@ -373,6 +468,7 @@ def main() -> int:
         return 0
     if not is_newer(remote_version, local):
         log(f"Already on {local}.")
+        record_anonymous_usage(version=local, config=config)
         return 0
     log(f"Updating {local} → {remote_version}…")
     with tempfile.TemporaryDirectory(prefix="dcloud-content-update-") as tmp:
@@ -386,7 +482,9 @@ def main() -> int:
             log("Could not download the GitHub update. Starting the installed copy instead.")
             return 0
         copied = copy_tree(source)
-    log(f"Updated {copied} file(s) to {read_version(VERSION_FILE) or remote_version}.")
+    installed = read_version(VERSION_FILE) or remote_version
+    log(f"Updated {copied} file(s) to {installed}.")
+    record_anonymous_usage(version=installed, config=config)
     return 0
 
 

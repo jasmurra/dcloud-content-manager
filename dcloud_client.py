@@ -415,6 +415,31 @@ def resolve_schedule_window(
     return start, stop
 
 
+def advance_past_schedule_window(
+    start: datetime,
+    stop: datetime,
+    *,
+    now: datetime | None = None,
+    grace_seconds: int = 15,
+) -> tuple[datetime, datetime, bool]:
+    """If the chosen start is already in the past, slide the whole window forward.
+
+    Delay is applied after this, so a stale 13:10 plus a 5 minute delay becomes
+    now plus 5 minutes instead of a time dCloud treats as 'start immediately'.
+    """
+    current = now or datetime.now(timezone.utc)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if stop.tzinfo is None:
+        stop = stop.replace(tzinfo=timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    if start >= current - timedelta(seconds=max(0, int(grace_seconds or 0))):
+        return start, stop, False
+    shift = current - start
+    return current, stop + shift, True
+
+
 MAX_SCHEDULE_COPIES = 20
 # dCloud itself holds back a second session of the same demo that starts at the
 # same moment, so copies of one demo are never scheduled closer than this.

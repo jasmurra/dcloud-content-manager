@@ -81,6 +81,7 @@ from dcloud_client import (
     parse_schedule_datetime,
     resolve_extended_stop_by_minutes,
     resolve_schedule_window,
+    advance_past_schedule_window,
     schedule_copy_offsets_minutes,
     MAX_SCHEDULE_COPIES,
     _dcloud_timestamp,
@@ -3246,6 +3247,8 @@ def _sync_job_phase(job: dict[str, Any]) -> None:
         return
     if "ready" in phases:
         job["phase"] = "ready_to_patch"
+        if job.get("error") == "No sessions reached the ready state.":
+            job["error"] = ""
         return
 
 
@@ -4864,7 +4867,7 @@ def api_update_check() -> dict[str, Any]:
             "message": "An update check is already running.",
         }
     try:
-        from update_from_github import fetch_public_version, is_newer, load_config
+        from update_from_github import fetch_public_version, is_newer, load_config, record_anonymous_usage
 
         config = load_config()
         repo = str(config.get("repo") or "").strip()
@@ -4879,12 +4882,14 @@ def api_update_check() -> dict[str, Any]:
         current = _read_app_version()
         if not is_newer(remote_version, current):
             _update_check_lock.release()
+            record_anonymous_usage(version=current, config=config)
             return {
                 "ok": True,
                 "updating": False,
                 "version": current,
                 "message": f"Version {current} is already current.",
             }
+        record_anonymous_usage(version=remote_version, config=config)
         threading.Thread(target=_apply_github_update, daemon=True).start()
         return {
             "ok": True,
@@ -5562,6 +5567,25 @@ def _shift_timestamp(when: str, offset_minutes: int) -> str:
     return _dcloud_timestamp(parsed + timedelta(minutes=max(0, int(offset_minutes or 0))))
 
 
+def _payload_with_live_start(payload: RunPayload, *, now: datetime | None = None) -> RunPayload:
+    window = resolve_schedule_window(
+        days=payload.days,
+        start_at=payload.start_at,
+        stop_at=payload.stop_at,
+    )
+    if not isinstance(window, tuple):
+        return payload
+    start, stop, moved = advance_past_schedule_window(window[0], window[1], now=now)
+    if not moved:
+        return payload
+    return payload.model_copy(
+        update={
+            "start_at": _dcloud_timestamp(start),
+            "stop_at": _dcloud_timestamp(stop),
+        }
+    )
+
+
 def _stamp_schedule_window(card: dict[str, Any], payload: RunPayload, offset_minutes: int) -> None:
     window = resolve_schedule_window(
         days=payload.days,
@@ -5582,7 +5606,10 @@ def _stamp_schedule_window(card: dict[str, Any], payload: RunPayload, offset_min
 def _expand_schedule_cards(
     targets: list[tuple[str, str]] | list[tuple[str, str, str]],
     payload: RunPayload,
+    *,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
+    payload = _payload_with_live_start(payload, now=now)
     copies = max(1, min(int(payload.session_count or 1), MAX_SCHEDULE_COPIES))
     ordered = [item for _ in range(copies) for item in targets]
     offsets = schedule_copy_offsets_minutes(
@@ -5759,8 +5786,9 @@ def _run_job(job: dict[str, Any], payload: RunPayload) -> None:
             job["phase"] = "complete"
             progress("Sessions already saved.")
         else:
-            job["phase"] = "error"
-            job["error"] = "No sessions reached the ready state."
+            job["phase"] = "waiting_active"
+            job["error"] = ""
+            progress("Sessions are still starting. The cards will keep checking for Active.")
     except HTTPException as exc:
         job["phase"] = "error"
         job["error"] = str(exc.detail)
@@ -5772,6 +5800,8 @@ def _run_job(job: dict[str, Any], payload: RunPayload) -> None:
         _log(job, traceback.format_exc())
     finally:
         job["worker_alive"] = False
+        if job.get("phase") == "waiting_active":
+            _ensure_status_watch(job)
 
 
 def _shutdown_one_dc(

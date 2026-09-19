@@ -1,0 +1,39 @@
+name: Collect anonymous usage
+
+on:
+  schedule:
+    - cron: "25 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load previous counts
+        run: |
+          git fetch origin usage-data:refs/remotes/origin/usage-data || true
+          if git show origin/usage-data:usage.json > usage.json 2>/dev/null; then
+            echo "Loaded existing usage.json"
+          else
+            printf '%s\n' '{"v": 1, "installs": {}}' > usage.json
+          fi
+      - name: Merge pings
+        run: python3 collect_usage.py
+      - name: Publish
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git show origin/usage-data:usage.json 2>/dev/null | cmp -s - usage.json; then
+            echo "No usage changes"
+            exit 0
+          fi
+          git checkout --orphan usage-data-tmp
+          git reset
+          git add -f usage.json
+          git commit -m "Update anonymous install counts"
+          git push -f origin HEAD:usage-data

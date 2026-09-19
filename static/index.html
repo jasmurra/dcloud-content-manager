@@ -1858,6 +1858,7 @@
       <p class="hint">
         Start/stop fill from now for the duration above (1 day = now until this time tomorrow).
         Click a date if you need a later window.
+        If that start has already passed when you click Schedule, it is moved to now first, then the delay is added — so 5 minutes delay is five minutes from now, not from a stale clock.
         <strong>Delay</strong> is the gap between sessions: with three demo IDs and delay 15, the first starts now, the next 15 minutes later, then 15 after that. One session on its own just starts that much later (60 = Now plus an hour).
         <strong>Number of sessions</strong> repeats the demo IDs, and each copy keeps its place in the same stagger. Copies of one demo stay at least 4 minutes apart even with no delay, because dCloud holds back same-demo sessions that start together.
         When <strong>Use next available slot</strong> is checked, the tool reads dCloud’s calendar per pool and shifts busy DCs to the next open time automatically.
@@ -5064,6 +5065,53 @@
       return parts.join(" ") || "0";
     }
 
+    function parseExtensionAmount(text) {
+      const value = String(text || "").trim().toLowerCase();
+      if (!value) return 0;
+      if (/^\d+$/.test(value)) return Number(value) * 24 * 60;
+      let minutes = 0;
+      let matched = false;
+      const remainder = value.replace(
+        /(\d+)\s*(days?|d|hours?|hrs?|h)\b/g,
+        (_, amount, unit) => {
+          matched = true;
+          const count = Number(amount);
+          minutes += unit.startsWith("d") ? count * 24 * 60 : count * 60;
+          return "";
+        },
+      ).replace(/[\s,+]/g, "");
+      return matched && !remainder ? minutes : 0;
+    }
+
+    async function extendCardSession(button) {
+      const cardSession = button.dataset.session || "";
+      const cardSite = button.dataset.site || "";
+      const current = formatExtendAmount(extendByMinutes()).replaceAll(" days", "d")
+        .replaceAll(" day", "d")
+        .replaceAll(" hours", "h")
+        .replaceAll(" hour", "h");
+      const entered = await promptText(
+        "How much longer should this session run?\n\nExamples: 5, 5d, 6h, or 5d 6h. A number by itself means days.",
+        {
+          title: "Extend session",
+          name: current || "1d",
+          inputLabel: "Extend by",
+          okLabel: "Continue",
+        },
+      );
+      if (entered === null) return;
+      const minutes = parseExtensionAmount(entered);
+      if (minutes < 60 || minutes > 30 * 24 * 60) {
+        showError("Enter 1 hour through 30 days, such as 5d, 6h, or 5d 6h.");
+        return;
+      }
+      $("extend-days").value = String(Math.floor(minutes / (24 * 60)));
+      $("extend-hours").value = String(Math.floor((minutes % (24 * 60)) / 60));
+      const target = [{ site: cardSite, session_id: cardSession }];
+      refreshExtendUntilPreview(lastRenderedJob, target);
+      await extendSessions(target);
+    }
+
     function refreshExtendUntilPreview(job, sessions) {
       const extraMs = extendByMinutes() * 60 * 1000;
       if (!extraMs) return;
@@ -5359,7 +5407,7 @@
                   <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
                   ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
                   ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
-                  <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend</button>
+                  <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
                   <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
                   <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
                 </div>
@@ -7923,6 +7971,20 @@
       syncMainScheduleToSaved();
     }
 
+    function bumpScheduleStartIfPast() {
+      const start = dateFromControls("start");
+      const now = new Date();
+      if (Number.isNaN(start.getTime()) || start.getTime() >= now.getTime() - 15000) return false;
+      const stop = dateFromControls("stop");
+      const durationMs = Number.isNaN(stop.getTime()) ? 0 : Math.max(0, stop.getTime() - start.getTime());
+      const fresh = roundUp5(now);
+      applyDateToControls("start", fresh);
+      if (durationMs) applyDateToControls("stop", new Date(fresh.getTime() + durationMs));
+      else syncScheduleStop();
+      syncMainScheduleToSaved();
+      return true;
+    }
+
     function setControlToNow(which) {
       applyDateToControls(which, new Date(), { exactTime: true });
       if (which === "start") {
@@ -8167,6 +8229,7 @@
 
     async function startJob() {
       if (!ensureTokenReady("scheduling sessions")) return;
+      bumpScheduleStartIfPast();
       showError("");
       setRunResult("");
       runWatch = null;
@@ -10599,6 +10662,7 @@
           return;
         }
       }
+      bumpScheduleStartIfPast();
       if (!validateScheduleWindow()) return;
       const preview = selected
         .slice(0, 12)
@@ -11451,22 +11515,7 @@
       if (extendBtn) {
         ev.preventDefault();
         if (extendBtn.disabled) return;
-        const cardSession = extendBtn.dataset.session || "";
-        const cardSite = extendBtn.dataset.site || "";
-        const dc = (lastRenderedJob?.dcs || []).find(
-          (row) => row.site === cardSite && String(row.sessionId || "") === cardSession
-        );
-        refreshExtendUntilPreview(lastRenderedJob, [{ site: cardSite, session_id: cardSession }]);
-        if (!extendByMinutes() && dc?.scheduleStop) {
-          const base = new Date(dc.scheduleStop);
-          if (!Number.isNaN(base.getTime())) {
-            applyDateToControls("extend", roundUp5(new Date(base.getTime() + 24 * 60 * 60 * 1000)));
-          }
-        }
-        extendSessions([{
-          site: cardSite,
-          session_id: cardSession,
-        }])
+        extendCardSession(extendBtn)
           .catch((err) => showError(err.message))
           .finally(() => closeVmMenuFrom(extendBtn));
         return;
