@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.18.5** | Top chrome buttons (What’s new, Check for updates, Settings, Sign in, Collapse/Expand/Reset) are smaller |
 | **1.18.4** | Content Automation Hub saved-content rows stay unchecked after a refresh instead of ticking every box again |
 | **1.18.3** | Refresh follows a stopping card if that session starts again, instead of leaving it stuck on tearing down |
 | **1.18.2** | Live-session share search uses DSX first (same as dCloud), so partner emails are found |

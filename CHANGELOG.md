@@ -1,3 +1,7 @@
+## 1.18.5 — 2026-09-21
+
+- **The top chrome buttons are smaller.** What’s new, Check for updates, Settings, Sign in, and Collapse/Expand/Reset section order no longer use the same padding as the primary action buttons further down the page
+
 ## 1.18.4 — 2026-09-21
 
 - **Content Automation Hub rows stay unchecked after a refresh.** The Saved content IDs table used to tick every row on first paint, so clearing the boxes and refreshing put them all back. Use the header checkbox when you want them all selected

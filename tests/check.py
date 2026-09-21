@@ -2311,6 +2311,14 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and 'const isChecked = checked.has(key) ? " checked" : "";' in page,
     )
     check(
+        "top chrome buttons are smaller than primary actions",
+        ".header-actions button {" in page
+        and "min-width: 10rem;" in page
+        and "min-width: 12.5rem;" not in page
+        and ".layout-toolbar button {" in page
+        and "padding: 0.28rem 0.65rem;" in page,
+    )
+    check(
         "list columns can be dragged wider and remember it",
         "function makeColumnsResizable(containerId)" in page
         and "function startColumnResize(ev, containerId, table, index)" in page
