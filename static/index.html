@@ -2203,20 +2203,21 @@
         <button type="button" class="banner-dismiss" id="auth-pause-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
       </div>
       <div id="job-card-view-actions" class="list-toolbar hidden" style="margin-top:0.75rem">
+        <button type="button" class="secondary" id="btn-card-check-all" data-tip="Select every visible job workspace card.">Check all</button>
+        <button type="button" class="secondary" id="btn-card-uncheck-all" data-tip="Clear card selection.">Uncheck all</button>
+        <button type="button" class="secondary" id="btn-expand-job-dcs">Expand all DCs</button>
+        <button type="button" class="secondary" id="btn-collapse-job-dcs">Collapse all DCs</button>
         <button type="button" class="secondary" id="btn-expand-job-cards">Expand all cards</button>
         <button type="button" class="secondary" id="btn-collapse-job-cards">Collapse all cards</button>
       </div>
+      <p id="job-cards-label" class="monitor-section-label hidden">Job workspace cards</p>
       <p id="cards-note" class="hint hidden" style="margin:0.75rem 0 0"></p>
-      <div id="cards" class="cards" style="margin-top:0.75rem"></div>
+      <div id="cards" class="cards" style="margin-top:0.35rem"></div>
       <div id="cards-actions" class="hidden" style="margin-top:0.85rem">
         <p class="hint" style="margin:0 0 0.6rem">
           Job workspace only — monitoring cards are separate and never included in bulk actions.
           Check cards to limit bulk extend/end/shutdown. End/shutdown use checked cards when any are selected; otherwise remaining ready job workspace cards. Already-saved sessions are skipped.
         </p>
-        <div class="actions" style="margin-bottom:0.65rem">
-          <button type="button" class="secondary" id="btn-card-check-all" data-tip="Select every visible session card.">Check all</button>
-          <button type="button" class="secondary" id="btn-card-uncheck-all" data-tip="Clear card selection.">Uncheck all</button>
-        </div>
         <div class="row" style="margin-bottom:0.75rem">
           <div>
             <label for="extend-days">Extend by</label>
@@ -2296,6 +2297,8 @@
       <div class="actions">
         <button type="button" class="secondary" id="btn-find-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them for monitoring.">Find my sessions</button>
         <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Polls dCloud for every monitoring card below.">Refresh monitoring cards</button>
+        <button type="button" class="secondary hidden" id="btn-expand-monitor-dcs">Expand all DCs</button>
+        <button type="button" class="secondary hidden" id="btn-collapse-monitor-dcs">Collapse all DCs</button>
         <button type="button" class="secondary hidden" id="btn-expand-monitor-cards">Expand all cards</button>
         <button type="button" class="secondary hidden" id="btn-collapse-monitor-cards">Collapse all cards</button>
       </div>
@@ -6023,12 +6026,15 @@
         lastSavedIdsFingerprint = "";
         $("cards").innerHTML = "";
         $("monitor-cards").innerHTML = "";
-        $("monitor-cards-label").classList.add("hidden");
-        $("btn-refresh-monitor").classList.add("hidden");
-        $("btn-expand-monitor-cards").classList.add("hidden");
-        $("btn-collapse-monitor-cards").classList.add("hidden");
-        $("job-card-view-actions").classList.add("hidden");
-        $("cards-actions").classList.add("hidden");
+        $("monitor-cards-label")?.classList.add("hidden");
+        $("btn-refresh-monitor")?.classList.add("hidden");
+        $("btn-expand-monitor-dcs")?.classList.add("hidden");
+        $("btn-collapse-monitor-dcs")?.classList.add("hidden");
+        $("btn-expand-monitor-cards")?.classList.add("hidden");
+        $("btn-collapse-monitor-cards")?.classList.add("hidden");
+        $("job-card-view-actions")?.classList.add("hidden");
+        $("job-cards-label")?.classList.add("hidden");
+        $("cards-actions")?.classList.add("hidden");
       } else {
         const cardsFingerprint = jobCardsFingerprint(job);
         const cardsChanged = forceCards || cardsFingerprint !== lastCardsFingerprint;
@@ -6049,11 +6055,14 @@
             visibleMonitor,
             { monitor: true, openVmMore, checkedCards }
           );
-          $("monitor-cards-label").classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-refresh-monitor").classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-expand-monitor-cards").classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-collapse-monitor-cards").classList.toggle("hidden", visibleMonitor.length === 0);
-          $("job-card-view-actions").classList.toggle("hidden", visibleJob.length === 0);
+          $("monitor-cards-label")?.classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-refresh-monitor")?.classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-expand-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-collapse-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-expand-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-collapse-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
+          $("job-card-view-actions")?.classList.toggle("hidden", visibleJob.length === 0);
+          $("job-cards-label")?.classList.toggle("hidden", visibleJob.length === 0);
           if (!$("sched-extend").value) suggestExtendDate(job);
           saveUiStateFromDom();
         }
@@ -9046,6 +9055,10 @@
       if ($("monitor-cards")) $("monitor-cards").innerHTML = "";
       $("monitor-cards-label")?.classList.add("hidden");
       $("btn-refresh-monitor")?.classList.add("hidden");
+      $("btn-expand-monitor-dcs")?.classList.add("hidden");
+      $("btn-collapse-monitor-dcs")?.classList.add("hidden");
+      $("btn-expand-monitor-cards")?.classList.add("hidden");
+      $("btn-collapse-monitor-cards")?.classList.add("hidden");
       $("found-sessions").innerHTML = "";
       setFoundSessionsPanelVisible(false);
       if ($("monitor-manual-id")) $("monitor-manual-id").value = "";
@@ -12083,14 +12096,27 @@
 
     bindCardGrid("cards");
     bindCardGrid("monitor-cards");
+    function setCardSiteGroupsOpen(rootId, open) {
+      const root = $(rootId);
+      if (!root) return;
+      root.querySelectorAll("details.card-site-group").forEach((group) => { group.open = open; });
+      captureCardLayoutFromDom();
+    }
     function setSessionCardsOpen(rootId, open) {
       const root = $(rootId);
       if (!root) return;
+      if (open) {
+        root.querySelectorAll("details.card-site-group").forEach((group) => { group.open = true; });
+      }
       root.querySelectorAll("details.card").forEach((card) => { card.open = open; });
       captureCardLayoutFromDom();
     }
+    $("btn-expand-job-dcs")?.addEventListener("click", () => setCardSiteGroupsOpen("cards", true));
+    $("btn-collapse-job-dcs")?.addEventListener("click", () => setCardSiteGroupsOpen("cards", false));
     $("btn-expand-job-cards")?.addEventListener("click", () => setSessionCardsOpen("cards", true));
     $("btn-collapse-job-cards")?.addEventListener("click", () => setSessionCardsOpen("cards", false));
+    $("btn-expand-monitor-dcs")?.addEventListener("click", () => setCardSiteGroupsOpen("monitor-cards", true));
+    $("btn-collapse-monitor-dcs")?.addEventListener("click", () => setCardSiteGroupsOpen("monitor-cards", false));
     $("btn-expand-monitor-cards")?.addEventListener("click", () => setSessionCardsOpen("monitor-cards", true));
     $("btn-collapse-monitor-cards")?.addEventListener("click", () => setSessionCardsOpen("monitor-cards", false));
     document.addEventListener("click", (ev) => {

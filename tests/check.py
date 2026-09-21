@@ -2005,6 +2005,15 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         and "function setSessionCardsOpen(" in page,
     )
     check(
+        "job workspace matches monitoring with site expand/collapse and a cards label",
+        'id="job-cards-label"' in page
+        and 'id="btn-expand-job-dcs"' in page
+        and 'id="btn-collapse-job-dcs"' in page
+        and 'id="btn-expand-monitor-dcs"' in page
+        and 'id="btn-card-check-all"' in page[page.index('id="job-card-view-actions"') : page.index('id="cards"')]
+        and "function setCardSiteGroupsOpen(" in page,
+    )
+    check(
         "card drag order persists by workspace or monitoring site",
         'class="card-drag-handle"' in page
         and "CARD_LAYOUT_KEY" in page

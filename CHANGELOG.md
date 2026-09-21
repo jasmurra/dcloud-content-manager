@@ -1,3 +1,7 @@
+## 1.17.1 — 2026-09-21
+
+- **Job workspace now uses the same card toolbar as Session monitoring.** Check all, Expand/Collapse all DCs, and Expand/Collapse all cards sit above the compact per-DC cards instead of buried in the bulk-actions block
+
 ## 1.17.0 — 2026-09-21
 
 - **Job workspace and monitoring cards are compact and grouped by datacenter.** Each site has its own collapsible section, and every session starts as a one-line summary with name, status, session ID, and end time; expand it for all existing VM details and actions
