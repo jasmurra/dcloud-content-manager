@@ -1,3 +1,8 @@
+## 1.17.2 — 2026-09-21
+
+- Compact session rows now keep status and session ID visible when the name is long, and the **Open session** link sits in that row instead of the end timestamp. The end time remains in the expanded card
+- Refresh, rename, and remove sit in a dedicated expanded-card toolbar so the pencil no longer overlaps the close button, and the long title is not repeated under the summary
+
 ## 1.17.1 — 2026-09-21
 
 - **Job workspace now uses the same card toolbar as Session monitoring.** Check all, Expand/Collapse all DCs, and Expand/Collapse all cards sit above the compact per-DC cards instead of buried in the bulk-actions block

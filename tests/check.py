@@ -1994,7 +1994,8 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         "session cards collapse to a compact status row",
         '<details class="card${monitor ? " card-monitor" : ""}' in page
         and 'class="card-summary-name"' in page
-        and 'class="card-summary-end"' in page,
+        and 'class="card-open-session"' in page
+        and 'class="card-summary-end"' not in page,
     )
     check(
         "session cards can be expanded or collapsed together",

@@ -486,13 +486,14 @@
     }
     .card > summary {
       display: grid;
-      grid-template-columns: auto auto minmax(7rem, 1fr) auto auto auto auto;
-      gap: 0.55rem;
+      grid-template-columns: auto auto minmax(0, 1fr) max-content auto;
+      gap: 0.45rem;
       align-items: center;
       min-height: 2.45rem;
       padding: 0.45rem 0.65rem;
       cursor: pointer;
       list-style: none;
+      overflow: hidden;
     }
     .card > summary::-webkit-details-marker { display: none; }
     .card > summary::after {
@@ -510,15 +511,22 @@
       white-space: nowrap;
       font-weight: 600;
     }
+    .card-summary-right {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-shrink: 0;
+      min-width: max-content;
+    }
     .card-summary-meta {
       color: var(--muted);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 0.74rem;
       white-space: nowrap;
     }
-    .card-summary-end {
-      color: var(--muted);
-      font-size: 0.76rem;
+    .card-summary-right .card-open-session {
+      font-size: 0.78rem;
+      font-weight: 600;
       white-space: nowrap;
     }
     .card-drag-handle {
@@ -531,22 +539,24 @@
     .card-drag-handle:active { cursor: grabbing; }
     .card-body {
       border-top: 1px solid var(--border);
-      padding: 0.75rem 1.7rem 0.85rem 0.85rem;
-      position: relative;
+      padding: 0.75rem 0.85rem 0.85rem;
+    }
+    .card-body-head {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      margin-bottom: 0.15rem;
+      min-height: 1.6rem;
     }
     .card.card-dragging { opacity: 0.45; }
     .card.card-drop-before { border-top-color: var(--accent); box-shadow: 0 -2px 0 var(--accent); }
     .card.card-drop-after { border-bottom-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
-    @media (max-width: 760px) {
-      .card > summary {
-        grid-template-columns: auto auto minmax(6rem, 1fr) auto auto auto;
-      }
-      .card-summary-end { display: none; }
+    .cards { container-type: inline-size; }
+    @container (max-width: 640px) {
+      .card-summary-right .card-open-session { display: none; }
     }
     .card-controls {
-      position: absolute;
-      top: 0.25rem;
-      right: 0.25rem;
       display: flex;
       align-items: center;
       gap: 0.05rem;
@@ -596,11 +606,12 @@
       line-height: 1.3;
       overflow-wrap: anywhere;
     }
-    .card-name-row {
+    .card-name-row:not(.editing) { display: none; }
+    .card-name-row.editing {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 0.35rem;
-      margin-top: 0.25rem;
+      margin: 0.35rem 0 0.55rem;
     }
     .card-name-row .card-name,
     .card-name-row .card-name-btn {
@@ -5849,7 +5860,6 @@
       const cardKey = sessionKey(dc.site, dc.sessionId || dc.demoId);
       const vmsHtml = renderVmGroups(dc, cardKey, openVmMore);
       const demoName = String(dc.name || "").trim();
-      const view = dc.viewUrl ? `<div><a href="${dc.viewUrl}" target="_blank" rel="noopener noreferrer">Open session</a></div>` : "";
       const sess = dc.sessionId ? `<div class="mono">session ${escapeHtml(dc.sessionId)}</div>` : "";
       const virtualCenter = String(dc.virtualCenter || "").trim();
       const vcLine = virtualCenter
@@ -5930,31 +5940,38 @@
         : "";
       const canRename = canRenameSession(dc);
       const displayName = demoName || (canRename ? "Untitled session" : "");
-      const nameLine = displayName || canRename
-        ? (canRename
-          ? `<div class="card-name-row">
+      const nameLine = canRename
+        ? `<div class="card-name-row">
               <button type="button" class="card-name-btn" ${cardData} data-tip="Rename this session in dCloud">${escapeHtml(displayName)}</button>
-              <button type="button" class="card-rename-btn" ${cardData} data-tip="Rename session in dCloud" aria-label="Rename session">✎</button>
             </div>`
-          : `<div class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</div>`)
         : "";
       const summaryName = displayName || `Demo ${dc.demoId || "session"}`;
       const summarySession = dc.sessionId ? `#${dc.sessionId}` : `demo ${dc.demoId || "—"}`;
-      const summaryEnd = dc.scheduleStop ? `Ends ${formatSessionWhen(dc.scheduleStop)}` : "";
+      const openSession = dc.viewUrl
+        ? `<a class="card-open-session" href="${escapeHtml(dc.viewUrl)}" target="_blank" rel="noopener noreferrer">Open session</a>`
+        : "";
+      const renameBtn = canRename
+        ? `<button type="button" class="card-rename-btn" ${cardData} data-tip="Rename this session in dCloud" aria-label="Rename session">✎</button>`
+        : "";
       return `
           <details class="card${monitor ? " card-monitor" : ""}" data-card-key="${escapeHtml(cardKey)}" data-site="${escapeHtml(dc.site)}"${cardOpen ? " open" : ""}>
             <summary>
               <span class="card-drag-handle" draggable="true" title="Drag to reorder within ${escapeHtml(dc.site.toUpperCase())}" aria-label="Drag to reorder">⠿</span>
               ${selectWrap}
               <span class="card-summary-name" title="${escapeHtml(summaryName)}">${escapeHtml(summaryName)}</span>
-              <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(cardStatusLabel(dc))}</span>
-              <span class="card-summary-meta">${escapeHtml(summarySession)}</span>
-              <span class="card-summary-end">${escapeHtml(summaryEnd)}</span>
+              <span class="card-summary-right">
+                <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(cardStatusLabel(dc))}</span>
+                <span class="card-summary-meta">${escapeHtml(summarySession)}</span>
+                ${openSession}
+              </span>
             </summary>
             <div class="card-body">
-              <div class="card-controls">
-                <button type="button" class="card-refresh" ${cardData} ${canRefresh ? "" : "disabled"} data-tip="Poll dCloud for this session only (status, VMs, power)." aria-label="Refresh this card" title="Refresh this card from dCloud">↻</button>
-                <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
+              <div class="card-body-head">
+                <div class="card-controls">
+                  <button type="button" class="card-refresh" ${cardData} ${canRefresh ? "" : "disabled"} data-tip="Poll dCloud for this session only (status, VMs, power)." aria-label="Refresh this card" title="Refresh this card from dCloud">↻</button>
+                  ${renameBtn}
+                  <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
+                </div>
               </div>
               ${monitor ? '<span class="badge neutral">monitor</span>' : ""}
               ${nameLine}
@@ -5969,7 +5986,6 @@
               ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
               ${shutdownPrompt ? renderShutdownPrompt(dc, cardData, shutdownPrompt) : ""}
               ${conflictDetails}
-              ${view}
               ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
               ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
               ${vmsHtml}
@@ -11841,7 +11857,7 @@
       const site = trigger.dataset.site || "";
       const sessionId = trigger.dataset.session || "";
       const current = row.querySelector(".card-name-btn")?.textContent?.trim()
-        || row.querySelector(".card-name")?.textContent?.trim()
+        || card.querySelector(".card-summary-name")?.textContent?.trim()
         || "";
       row.classList.add("editing");
       row.replaceChildren();
@@ -11876,6 +11892,9 @@
     }
 
     function handleCardGridClick(ev) {
+      if (ev.target.closest("summary .card-open-session, summary .card-select, summary .card-select-wrap")) {
+        ev.stopPropagation();
+      }
       const renameSave = ev.target.closest(".card-rename-save");
       if (renameSave) {
         ev.preventDefault();
@@ -11907,7 +11926,7 @@
         showSessionInfo({
           site: infoBtn.dataset.site,
           sessionId: infoBtn.dataset.session,
-          label: card?.querySelector(".card-name-btn, .card-name")?.textContent?.trim() || "",
+          label: card?.querySelector(".card-summary-name, .card-name-btn, .card-name")?.textContent?.trim() || "",
         });
         closeVmMenuFrom(infoBtn);
         return;
