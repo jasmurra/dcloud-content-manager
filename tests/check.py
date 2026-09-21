@@ -1659,6 +1659,93 @@ for (const [delay, copies, expected] of cases) {
     run_node(hint_src, "delay/copies hint matches the schedule math")
 
 
+def test_event_management_section() -> None:
+    import dcloud_client
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check(
+        "Events is a separate top-level section with site and event ID inputs",
+        'id="panel-events"' in INDEX
+        and 'id="event-site"' in INDEX
+        and 'id="event-id"' in INDEX
+        and 'id="btn-event-add"' in INDEX,
+    )
+    check(
+        "multiple events persist and render inside site and event groups",
+        "dcloud-content-manager-events-v1" in INDEX
+        and 'class="dc-group event-site-group"' in INDEX
+        and 'class="event-group"' in INDEX
+        and "persistEventRefs()" in INDEX,
+    )
+    check(
+        "event sessions support check all, uncheck all, reset, and end",
+        all(
+            marker in INDEX
+            for marker in (
+                "event-check-all",
+                "event-uncheck-all",
+                "event-reset-checked",
+                "event-end-checked",
+                "event-session-reset",
+                "event-session-end",
+            )
+        ),
+    )
+    check(
+        "event endpoints validate lookup and limit bulk changes",
+        '@app.post("/api/events/lookup")' in source
+        and '@app.post("/api/events/session-action")' in source
+        and "len(session_ids) > 250" in source
+        and 'action not in {"end", "reset"}' in source,
+    )
+
+    real_fetch = dcloud_client.fetch_admin_records
+    try:
+        def fake_fetch(token, site, *, resource, refresh=False):
+            if resource == "events":
+                return [{
+                    "uid": 399485,
+                    "name": "Workshop",
+                    "status": "active",
+                    "approval": "direct",
+                    "sessionCount": 1,
+                    "eventStart": "2026-09-19T23:00:00Z",
+                    "eventEnd": "2026-09-24T21:00:00Z",
+                }], None
+            return [{
+                "uid": 491872,
+                "event": {"uid": 399485, "student": "student1"},
+                "name": "Lab session",
+                "owner": "owner1",
+                "parentId": 483939,
+                "virtualCenter": 10,
+                "status": 4,
+                "canReset": True,
+                "start": "2026-09-19T23:00:00Z",
+                "stop": "2026-09-24T21:01:00Z",
+            }, {
+                "uid": 999999,
+                "event": {"uid": 123},
+                "status": 4,
+            }], None
+
+        dcloud_client.fetch_admin_records = fake_fetch
+        event, error = dcloud_client.list_event_sessions("token", "sjc", "399485")
+        check("event lookup filters sessions by event ID", error is None and len(event["sessions"]) == 1)
+        row = event["sessions"][0]
+        check(
+            "event session rows expose action and display fields",
+            row["sessionId"] == "491872"
+            and row["status"] == "Active"
+            and row["canReset"] is True
+            and row["demoId"] == "483939"
+            and row["virtualCenter"] == "10",
+            str(row),
+        )
+    finally:
+        dcloud_client.fetch_admin_records = real_fetch
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

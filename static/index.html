@@ -973,6 +973,19 @@
     }
     details.dc-group > summary::-webkit-details-marker { display: none; }
     .dc-group-title { flex: 1; min-width: 0; }
+    details.event-group {
+      margin: 0.55rem 0 0.15rem;
+      border-top: 1px solid var(--border);
+      padding: 0.5rem 0.15rem 0;
+    }
+    details.event-group > summary {
+      cursor: pointer;
+      font-size: 0.84rem;
+      font-weight: 600;
+      list-style: none;
+    }
+    details.event-group > summary::-webkit-details-marker { display: none; }
+    .event-sessions-table .name-cell { min-width: 15rem; }
     .dc-group-select {
       font-size: 0.75rem;
       font-weight: 500;
@@ -2485,6 +2498,42 @@
       </div>
     </details>
 
+    <details class="panel panel-collapse" id="panel-events">
+      <summary class="panel-collapse-summary">Events</summary>
+      <div class="panel-collapse-body">
+        <p class="hint">
+          Add an event by datacenter and event ID. Each site and event stays in its own
+          collapsible section. Check sessions to reset or end them together.
+        </p>
+        <div class="row">
+          <div>
+            <label for="event-site">Datacenter</label>
+            <select id="event-site" data-dc-order autocomplete="off">
+              <option value="sjc">SJC</option>
+              <option value="rtp">RTP</option>
+              <option value="lon">LON</option>
+              <option value="sng">SNG</option>
+              <option value="syd">SYD</option>
+            </select>
+          </div>
+          <div>
+            <label for="event-id">Event ID</label>
+            <input id="event-id" inputmode="numeric" autocomplete="off" placeholder="399485" />
+          </div>
+          <div style="align-self:flex-end">
+            <button type="button" id="btn-event-add">Add event</button>
+          </div>
+        </div>
+        <div class="list-toolbar" style="margin-top:0.65rem">
+          <button type="button" class="secondary" id="btn-events-refresh">Refresh all</button>
+          <button type="button" class="secondary" id="btn-events-expand">Expand all</button>
+          <button type="button" class="secondary" id="btn-events-collapse">Collapse all</button>
+        </div>
+        <p id="events-status" class="hint"></p>
+        <div id="events-results"></div>
+      </div>
+    </details>
+
     <details class="panel panel-collapse" id="panel-unified-search">
       <summary class="panel-collapse-summary">Search dCloud</summary>
       <div class="panel-collapse-body">
@@ -3266,6 +3315,234 @@
         dcloud_token: $("dtoken").value.trim() || null,
         dcloud_token_source: $("token-source").value,
       };
+    }
+
+    const EVENTS_STORE = "dcloud-content-manager-events-v1";
+    const eventEntries = new Map();
+
+    function eventKey(site, eventId) {
+      return `${String(site || "").toLowerCase()}:${String(eventId || "").trim()}`;
+    }
+
+    function savedEventRefs() {
+      try {
+        const rows = JSON.parse(localStorage.getItem(EVENTS_STORE) || "[]");
+        return Array.isArray(rows)
+          ? rows.filter((row) => SITE_ORDER.includes(row.site) && /^\d+$/.test(String(row.eventId || "")))
+          : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function persistEventRefs() {
+      const rows = [...eventEntries.values()].map(({ site, eventId }) => ({ site, eventId }));
+      try { localStorage.setItem(EVENTS_STORE, JSON.stringify(rows)); } catch {}
+    }
+
+    function eventSessionIsFinished(row) {
+      return ["cancelled", "canceled", "deleted", "ended", "stopped"].includes(
+        String(row.status || "").toLowerCase()
+      );
+    }
+
+    function eventSessionsTable(entry) {
+      const rows = entry.data?.sessions || [];
+      if (!rows.length) return `<p class="hint">No sessions were returned for this event.</p>`;
+      return `
+        <div class="list-toolbar">
+          <button type="button" class="secondary event-check-all">Check all</button>
+          <button type="button" class="secondary event-uncheck-all">Uncheck all</button>
+          <button type="button" class="secondary event-reset-checked" disabled>Reset checked</button>
+          <button type="button" class="danger event-end-checked" disabled>End checked</button>
+        </div>
+        <table class="dc-list event-sessions-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="event-head-check" title="Check or uncheck every session in this event" /></th>
+              <th>ID</th>
+              <th>User ID</th>
+              <th>Session name</th>
+              <th>Demo ID</th>
+              <th>VC</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${rows.map((row) => {
+            const finished = eventSessionIsFinished(row);
+            const rowData = `data-site="${escapeHtml(entry.site)}" data-event-id="${escapeHtml(entry.eventId)}" data-session-id="${escapeHtml(row.sessionId)}"`;
+            return `
+              <tr>
+                <td><input type="checkbox" class="event-session-check" ${rowData} ${finished ? "disabled" : ""} /></td>
+                <td class="mono">${escapeHtml(row.sessionId)}</td>
+                <td>${escapeHtml(row.owner || row.student || "")}</td>
+                <td class="name-cell" title="${escapeHtml(row.name || "")}">${escapeHtml(row.name || "")}</td>
+                <td class="mono">${escapeHtml(row.demoId || "")}</td>
+                <td>${escapeHtml(row.virtualCenter || "")}</td>
+                <td>${escapeHtml(formatSessionWhen(row.start) || row.start || "—")}</td>
+                <td>${escapeHtml(formatSessionWhen(row.stop) || row.stop || "—")}</td>
+                <td>${escapeHtml(row.status || "")}</td>
+                <td>
+                  <details class="vm-menu search-actions-menu event-session-actions" ${rowData}>
+                    <summary data-tip="Actions for this event session.">Actions</summary>
+                    <div class="vm-menu-list">
+                      ${row.canReset && !finished ? `<button type="button" class="event-session-reset" ${rowData}>Reset</button>` : ""}
+                      ${!finished ? `<button type="button" class="danger event-session-end" ${rowData}>End session</button>` : ""}
+                      ${row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
+                      ${row.demoId ? `<a href="https://dcloud2-${escapeHtml(entry.site)}.cisco.com/demo/${encodeURIComponent(row.demoId)}" target="_blank" rel="noopener noreferrer">Go to demo</a>` : ""}
+                    </div>
+                  </details>
+                </td>
+              </tr>`;
+          }).join("")}</tbody>
+        </table>`;
+    }
+
+    function renderEvents() {
+      const root = $("events-results");
+      if (!root) return;
+      const openSites = new Set(
+        [...root.querySelectorAll("details.event-site-group[open]")].map((el) => el.dataset.site)
+      );
+      const openEvents = new Set(
+        [...root.querySelectorAll("details.event-group[open]")].map((el) => eventKey(el.dataset.site, el.dataset.eventId))
+      );
+      const grouped = new Map();
+      for (const entry of eventEntries.values()) {
+        if (!grouped.has(entry.site)) grouped.set(entry.site, []);
+        grouped.get(entry.site).push(entry);
+      }
+      const sites = SITE_ORDER.filter((site) => grouped.has(site));
+      root.innerHTML = sites.length ? sites.map((site) => {
+        const entries = grouped.get(site).sort((a, b) => Number(a.eventId) - Number(b.eventId));
+        return `
+          <details class="dc-group event-site-group" data-site="${escapeHtml(site)}" ${openSites.has(site) || entries.some((entry) => entry.loading) ? "open" : ""}>
+            <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${entries.length} event${entries.length === 1 ? "" : "s"})</span></summary>
+            ${entries.map((entry) => {
+              const data = entry.data || {};
+              const label = data.name ? `${entry.eventId} — ${data.name}` : `Event ${entry.eventId}`;
+              const count = data.sessions?.length;
+              return `
+                <details class="event-group" data-site="${escapeHtml(site)}" data-event-id="${escapeHtml(entry.eventId)}" ${openEvents.has(eventKey(site, entry.eventId)) || entry.loading ? "open" : ""}>
+                  <summary><span class="dc-group-title">${escapeHtml(label)}${Number.isFinite(count) ? ` (${count})` : ""}</span></summary>
+                  <div class="list-toolbar">
+                    <button type="button" class="secondary event-refresh">Refresh event</button>
+                    <button type="button" class="secondary event-remove">Remove event</button>
+                  </div>
+                  ${entry.loading ? `<p class="hint">Loading event ${escapeHtml(entry.eventId)}…</p>` : ""}
+                  ${entry.error ? `<p class="error">${escapeHtml(entry.error)}</p>` : ""}
+                  ${entry.data ? `
+                    <p class="hint">
+                      ${escapeHtml(data.status || "")}${data.approval ? ` · ${escapeHtml(data.approval)}` : ""}
+                      ${data.eventStart ? ` · ${escapeHtml(formatSessionWhen(data.eventStart))}` : ""}
+                      ${data.eventEnd ? ` to ${escapeHtml(formatSessionWhen(data.eventEnd))}` : ""}
+                    </p>
+                    ${eventSessionsTable(entry)}
+                  ` : ""}
+                </details>`;
+            }).join("")}
+          </details>`;
+      }).join("") : `<p class="hint">No events added yet.</p>`;
+      syncAllEventSelections();
+    }
+
+    async function loadEvent(site, eventId, refresh = false) {
+      const key = eventKey(site, eventId);
+      const entry = eventEntries.get(key) || { site, eventId };
+      entry.loading = true;
+      entry.error = "";
+      eventEntries.set(key, entry);
+      persistEventRefs();
+      renderEvents();
+      try {
+        const response = await api("/api/events/lookup", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), site, event_id: eventId, refresh }),
+          quiet: true,
+        });
+        entry.data = response.event;
+        $("events-status").textContent = `Loaded event ${eventId} from ${site.toUpperCase()}.`;
+      } catch (err) {
+        entry.error = err.message;
+        $("events-status").textContent = err.message;
+      } finally {
+        entry.loading = false;
+        renderEvents();
+      }
+    }
+
+    async function addEvent() {
+      if (!ensureTokenReady("adding an event")) return;
+      const site = $("event-site").value;
+      const eventId = $("event-id").value.trim();
+      if (!/^\d+$/.test(eventId)) {
+        showActionAlert("Enter a numeric event ID.", { title: "Add event" });
+        return;
+      }
+      $("event-id").value = "";
+      await loadEvent(site, eventId, true);
+    }
+
+    async function refreshAllEvents() {
+      // One forced refresh per site updates the shared Events and Sessions cache;
+      // the remaining event IDs in that site can reuse those same downloaded lists.
+      for (const site of SITE_ORDER) {
+        const entries = [...eventEntries.values()].filter((entry) => entry.site === site);
+        for (let index = 0; index < entries.length; index += 1) {
+          await loadEvent(site, entries[index].eventId, index === 0);
+        }
+      }
+    }
+
+    function checkedEventSessionIds(group) {
+      return [...group.querySelectorAll(".event-session-check:checked")].map((box) => box.dataset.sessionId);
+    }
+
+    function syncEventSelection(group) {
+      const enabled = [...group.querySelectorAll(".event-session-check:not(:disabled)")];
+      const checked = enabled.filter((box) => box.checked);
+      const head = group.querySelector(".event-head-check");
+      if (head) {
+        head.checked = enabled.length > 0 && checked.length === enabled.length;
+        head.indeterminate = checked.length > 0 && checked.length < enabled.length;
+      }
+      group.querySelectorAll(".event-reset-checked, .event-end-checked").forEach((button) => {
+        button.disabled = checked.length === 0;
+      });
+    }
+
+    function syncAllEventSelections() {
+      $("events-results")?.querySelectorAll("details.event-group").forEach(syncEventSelection);
+    }
+
+    async function runEventSessionAction(site, eventId, sessionIds, action) {
+      if (!sessionIds.length) return;
+      const verb = action === "reset" ? "Reset" : "End";
+      const detail = action === "reset"
+        ? "Each selected session will be torn down and rebuilt with the same session ID."
+        : "This ends the selected sessions without saving them and cannot be undone.";
+      const ok = await confirmAction(
+        `${verb} ${sessionIds.length} event session${sessionIds.length === 1 ? "" : "s"}?\n\n${sessionIds.join(", ")}\n\n${detail}`,
+        { title: `${verb} event sessions`, okLabel: verb }
+      );
+      if (!ok) return;
+      $("events-status").textContent = `${verb} requested for ${sessionIds.length} session(s)…`;
+      const result = await api("/api/events/session-action", {
+        method: "POST",
+        body: JSON.stringify({
+          ...tokenPayload(),
+          site,
+          session_ids: sessionIds,
+          action,
+        }),
+      });
+      const summary = `${result.succeeded} succeeded${result.failed ? ` · ${result.failed} failed` : ""}.`;
+      $("events-status").textContent = `${verb}: ${summary}`;
+      noteLog(`${site.toUpperCase()} event ${eventId}: ${verb.toLowerCase()} ${summary}`);
+      await loadEvent(site, eventId, true);
     }
 
     function selectedUnifiedSearchDcs() {
@@ -9326,6 +9603,7 @@
       "panel-job-cards",
       "panel-monitoring",
       "saved-ids-panel",
+      "panel-events",
       "panel-unified-search",
       "panel-log",
     ];
@@ -11995,6 +12273,80 @@
         Math.max(1, Number.parseInt($("camgr-burn-in-days").value || "1", 10) || 1),
       );
     });
+    $("btn-event-add")?.addEventListener("click", () => addEvent().catch((err) => showError(err.message)));
+    $("event-id")?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        addEvent().catch((err) => showError(err.message));
+      }
+    });
+    $("btn-events-refresh")?.addEventListener("click", () => {
+      refreshAllEvents().catch((err) => showError(err.message));
+    });
+    $("btn-events-expand")?.addEventListener("click", () => {
+      $("events-results")?.querySelectorAll("details.event-site-group, details.event-group")
+        .forEach((group) => { group.open = true; });
+    });
+    $("btn-events-collapse")?.addEventListener("click", () => {
+      $("events-results")?.querySelectorAll("details.event-site-group, details.event-group")
+        .forEach((group) => { group.open = false; });
+    });
+    $("events-results")?.addEventListener("change", (ev) => {
+      const group = ev.target.closest("details.event-group");
+      if (!group) return;
+      if (ev.target.classList.contains("event-head-check")) {
+        group.querySelectorAll(".event-session-check:not(:disabled)").forEach((box) => {
+          box.checked = ev.target.checked;
+        });
+      }
+      if (
+        ev.target.classList.contains("event-head-check")
+        || ev.target.classList.contains("event-session-check")
+      ) syncEventSelection(group);
+    });
+    $("events-results")?.addEventListener("click", (ev) => {
+      const group = ev.target.closest("details.event-group");
+      if (!group) return;
+      const site = group.dataset.site;
+      const eventId = group.dataset.eventId;
+      if (ev.target.closest(".event-check-all")) {
+        group.querySelectorAll(".event-session-check:not(:disabled)").forEach((box) => { box.checked = true; });
+        syncEventSelection(group);
+        return;
+      }
+      if (ev.target.closest(".event-uncheck-all")) {
+        group.querySelectorAll(".event-session-check").forEach((box) => { box.checked = false; });
+        syncEventSelection(group);
+        return;
+      }
+      if (ev.target.closest(".event-refresh")) {
+        loadEvent(site, eventId, true).catch((err) => showError(err.message));
+        return;
+      }
+      if (ev.target.closest(".event-remove")) {
+        eventEntries.delete(eventKey(site, eventId));
+        persistEventRefs();
+        renderEvents();
+        return;
+      }
+      const resetOne = ev.target.closest(".event-session-reset");
+      const endOne = ev.target.closest(".event-session-end");
+      if (resetOne || endOne) {
+        const button = resetOne || endOne;
+        runEventSessionAction(
+          site,
+          eventId,
+          [button.dataset.sessionId],
+          resetOne ? "reset" : "end",
+        ).catch((err) => showError(err.message));
+        return;
+      }
+      if (ev.target.closest(".event-reset-checked") || ev.target.closest(".event-end-checked")) {
+        const action = ev.target.closest(".event-reset-checked") ? "reset" : "end";
+        runEventSessionAction(site, eventId, checkedEventSessionIds(group), action)
+          .catch((err) => showError(err.message));
+      }
+    });
     restoreUnifiedSearchSettings();
     unifiedSavedDataReady = restoreUnifiedSavedData();
     window.setInterval(updateUnifiedCacheStatus, 60 * 1000);
@@ -12451,7 +12803,19 @@
     initUiStatePersistence();
     initHubHelpToggle();
     clearRestoredIdFields();
-    bootstrapPage().catch(() => {});
+    for (const ref of savedEventRefs()) {
+      eventEntries.set(eventKey(ref.site, ref.eventId), {
+        site: ref.site,
+        eventId: String(ref.eventId),
+      });
+    }
+    renderEvents();
+    bootstrapPage().then(() => {
+      if (!eventEntries.size) return;
+      Promise.all(
+        [...eventEntries.values()].map((entry) => loadEvent(entry.site, entry.eventId))
+      ).catch(() => {});
+    }).catch(() => {});
     fillTimeOptions();
     // Chrome restores number inputs across a refresh, so a long duration from the
     // last schedule would silently come back. Every refresh starts at 1 day.

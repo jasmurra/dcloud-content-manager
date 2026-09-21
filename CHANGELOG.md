@@ -1,3 +1,12 @@
+## 1.14.0 — 2026-09-21
+
+- Added an **Events** section that finds an event by datacenter and numeric event ID, then lists every session attached to it
+- Multiple event IDs can be kept at once. Results are grouped into collapsible datacenter sections with a collapsible section for each event, and the selected site/event IDs survive a page refresh
+- Each event has **Check all** and **Uncheck all**, plus confirmed **Reset checked** and **End checked** actions. Finished sessions cannot be selected
+- Every individual event session has an **Actions** menu for Reset, End session, View session, and Go to demo when those actions are available
+- Event metadata includes status, approval, start/end, session ID, user ID, session name, demo ID, VC, session start/end, and session status
+- **Refresh all** downloads the large dCloud admin Events/Sessions lists only once per datacenter and reuses them for the other event IDs in that site
+
 ## 1.13.1 — 2026-09-21
 
 - **Saved content is grouped into a collapsible section per datacenter again**, the way Search dCloud lists its results, with **Expand all DCs** and **Collapse all DCs**. Each section remembers whether it was open

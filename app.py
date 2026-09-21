@@ -109,6 +109,7 @@ from dcloud_client import (
     is_saving_in_progress_status,
     is_stopping_status,
     list_dashboard_sessions_all_sites,
+    list_event_sessions,
     resolve_monitor_sessions,
     list_pending_surveys_all_sites,
     list_saved_contents_all_sites,
@@ -1111,6 +1112,18 @@ class SearchItemPayload(TokenPayload):
     description: str = ""
     start_at: str = ""
     stop_at: str = ""
+
+
+class EventLookupPayload(TokenPayload):
+    site: str
+    event_id: str
+    refresh: bool = False
+
+
+class EventSessionActionPayload(TokenPayload):
+    site: str
+    session_ids: list[str] = Field(default_factory=list)
+    action: str
 
 
 class CatalogIdsPayload(TokenPayload):
@@ -7748,6 +7761,69 @@ def api_unified_session_action(body: SearchItemPayload) -> dict[str, Any]:
     if not result.get("ok"):
         raise HTTPException(400, result.get("message") or f"Could not {action} session.")
     return {"ok": True, "action": action, **result}
+
+
+@app.post("/api/events/lookup")
+def api_event_lookup(body: EventLookupPayload) -> dict[str, Any]:
+    site = str(body.site or "").strip().lower()
+    event_id = str(body.event_id or "").strip()
+    if site not in SITES or not event_id.isdigit():
+        raise HTTPException(400, "Choose a datacenter and enter a numeric event ID.")
+    token = _resolve_token(body)
+    event, error = list_event_sessions(
+        token,
+        site,
+        event_id,
+        refresh=body.refresh,
+    )
+    if error:
+        raise HTTPException(400, error)
+    return {"ok": True, "event": event}
+
+
+@app.post("/api/events/session-action")
+def api_event_session_action(body: EventSessionActionPayload) -> dict[str, Any]:
+    site = str(body.site or "").strip().lower()
+    action = str(body.action or "").strip().lower()
+    session_ids = list(dict.fromkeys(
+        str(value or "").strip() for value in body.session_ids
+        if str(value or "").strip()
+    ))
+    if site not in SITES:
+        raise HTTPException(400, "Choose a valid datacenter.")
+    if action not in {"end", "reset"}:
+        raise HTTPException(400, "Event session action must be Reset or End.")
+    if not session_ids:
+        raise HTTPException(400, "Choose at least one event session.")
+    if len(session_ids) > 250:
+        raise HTTPException(400, "No more than 250 sessions can be changed at once.")
+
+    token = _resolve_token(body)
+    operation = reset_session if action == "reset" else end_session
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(len(session_ids), 8)) as pool:
+        futures = {
+            pool.submit(operation, token, site, session_id): session_id
+            for session_id in session_ids
+        }
+        for future in as_completed(futures):
+            session_id = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = {"ok": False, "sessionId": session_id, "message": str(exc)}
+            results.append(result)
+    order = {session_id: index for index, session_id in enumerate(session_ids)}
+    results.sort(key=lambda row: order.get(str(row.get("sessionId") or ""), len(order)))
+    succeeded = sum(1 for result in results if result.get("ok"))
+    return {
+        "ok": succeeded == len(results),
+        "action": action,
+        "requested": len(session_ids),
+        "succeeded": succeeded,
+        "failed": len(results) - succeeded,
+        "results": results,
+    }
 
 
 @app.post("/api/search/session-log")

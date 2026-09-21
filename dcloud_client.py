@@ -1647,8 +1647,8 @@ def fetch_admin_records(
     resource: str,
     refresh: bool = False,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Load one complete DC-local Content or Sessions list, with a short server cache."""
-    if resource not in {"demos", "sessions"}:
+    """Load one complete DC-local admin list, with a short server cache."""
+    if resource not in {"demos", "events", "sessions"}:
         return [], "Unsupported dCloud admin search resource."
     cache_key = (str(site or "").lower(), resource)
     now = time.time()
@@ -1670,13 +1670,105 @@ def fetch_admin_records(
     body = _json_or_text(response)
     if response.status_code >= 400:
         return [], api_message(body) or f"HTTP {response.status_code}"
-    records = body.get("content") if isinstance(body, dict) else []
+    # Events is returned as a bare list; Content and Sessions wrap rows in
+    # {"content": [...]}. Normalize both shapes here.
+    records = body if isinstance(body, list) else body.get("content") if isinstance(body, dict) else []
     if not isinstance(records, list):
         return [], None
     records = [item for item in records if isinstance(item, dict)]
     with _admin_search_cache_lock:
         _admin_search_cache[cache_key] = (now, records)
     return list(records), None
+
+
+def list_event_sessions(
+    token: str,
+    site: str,
+    event_id: str,
+    *,
+    refresh: bool = False,
+) -> tuple[dict[str, Any], str | None]:
+    """Return one admin event and its complete session rows from a datacenter."""
+    site_code = str(site or "").strip().lower()
+    wanted = str(event_id or "").strip()
+    if site_code not in KNOWN_SITES:
+        return {}, "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    if not wanted.isdigit():
+        return {}, "Enter a numeric event ID."
+
+    events, event_error = fetch_admin_records(
+        token, site_code, resource="events", refresh=refresh
+    )
+    if event_error:
+        return {}, event_error
+    event = next(
+        (row for row in events if str(row.get("uid") or "").strip() == wanted),
+        None,
+    )
+    if not event:
+        return {}, f"Event {wanted} was not found in {site_code.upper()}."
+
+    sessions, session_error = fetch_admin_records(
+        token, site_code, resource="sessions", refresh=refresh
+    )
+    if session_error:
+        return {}, session_error
+
+    labels = {
+        "1": "Scheduled",
+        "2": "Starting",
+        "4": "Active",
+        "5": "Stopping",
+        "12": "Saving",
+    }
+    rows: list[dict[str, Any]] = []
+    for session in sessions:
+        linked_event = session.get("event")
+        linked_id = (
+            str(linked_event.get("uid") or "").strip()
+            if isinstance(linked_event, dict)
+            else str(linked_event or "").strip()
+        )
+        if linked_id != wanted:
+            continue
+        sid = str(session.get("uid") or "").strip()
+        if not sid:
+            continue
+        status = session.get("status")
+        status_key = _status_text(status)
+        rows.append(
+            {
+                "sessionId": sid,
+                "eventId": wanted,
+                "name": str(session.get("name") or session.get("parentDemoName") or "").strip(),
+                "owner": str(session.get("owner") or "").strip(),
+                "student": str((linked_event or {}).get("student") or "").strip()
+                if isinstance(linked_event, dict)
+                else "",
+                "demoId": str(session.get("parentId") or "").strip(),
+                "activeId": str(session.get("activeId") or "").strip(),
+                "virtualCenter": str(session.get("virtualCenter") or "").strip(),
+                "start": str(session.get("start") or "").strip(),
+                "stop": str(session.get("stop") or "").strip(),
+                "status": labels.get(status_key, format_status(status)),
+                "rawStatus": status,
+                "active": is_active_status(status),
+                "canReset": session.get("canReset") is True,
+                "viewUrl": session_view_url(site_code, sid, session=session),
+            }
+        )
+    rows.sort(key=lambda row: int(row["sessionId"]) if row["sessionId"].isdigit() else 0)
+    return {
+        "site": site_code,
+        "eventId": wanted,
+        "name": str(event.get("name") or "").strip(),
+        "status": format_status(event.get("status")),
+        "approval": format_status(event.get("approval")),
+        "eventStart": str(event.get("eventStart") or "").strip(),
+        "eventEnd": str(event.get("eventEnd") or "").strip(),
+        "sessionCount": int(event.get("sessionCount") or len(rows)),
+        "sessions": rows,
+    }, None
 
 
 def admin_records_cached_at(site: str, *, resource: str) -> float | None:
