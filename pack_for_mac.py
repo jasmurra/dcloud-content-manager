@@ -14,14 +14,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DESKTOP = Path.home() / "Desktop"
-ZIP_NAME = "dCloud-Content-Manager-Mac.zip"
-ZIP_NAME_WITH_PYTHON = "dCloud-Content-Manager-Mac-with-Python.zip"
+ZIP_NAME_UPDATE = "dCloud-Content-Manager-Mac-update.zip"
+ZIP_NAME_FULL = "dCloud-Content-Manager-Mac-full.zip"
 FOLDER = "dCloud Content Manager"
 VERSION_FILE = ROOT / "VERSION"
 CACHE_DIR = ROOT / ".python-runtime-cache"
 
 # Portable CPython for Apple Silicon and Intel. Downloaded once onto this machine
-# when packing the larger zip — coworkers do not download Python themselves.
+# when packing the -full zip — coworkers do not download Python themselves.
 PBS_TAG = "20260610"
 PBS_PY = "3.12.13"
 STANDALONE = {
@@ -247,7 +247,7 @@ def pack_zip(dest: Path, runtimes: dict[str, Path] | None) -> tuple[int, int]:
 
 def main() -> None:
     bump = "--bump" in sys.argv
-    with_python = "--with-python" in sys.argv
+    with_python = "--full" in sys.argv or "--with-python" in sys.argv
     missing = [name for name in FILES if not (ROOT / name).is_file()]
     if missing:
         raise SystemExit("Missing files: " + ", ".join(missing))
@@ -259,7 +259,7 @@ def main() -> None:
         write_version(version)
 
     DESKTOP.mkdir(parents=True, exist_ok=True)
-    dest = DESKTOP / (ZIP_NAME_WITH_PYTHON if with_python else ZIP_NAME)
+    dest = DESKTOP / (ZIP_NAME_FULL if with_python else ZIP_NAME_UPDATE)
     runtimes = ensure_runtimes() if with_python else None
     try:
         file_count, extra = pack_zip(dest, runtimes)
@@ -270,10 +270,11 @@ def main() -> None:
     print(f"Version {version}")
     print(f"Packed {file_count} files → {dest}")
     if with_python:
-        print("This zip includes Python for Apple Silicon and Intel Macs.")
+        print("This is the -full zip: app files plus Python for Apple Silicon and Intel Macs.")
         print("Your coworker does not install Python. First run still creates .venv in the unzipped folder.")
     else:
-        print(f"App files plus browser_auth ({extra} files). No Python bundled.")
+        print(f"This is the -update zip: app files plus browser_auth ({extra} files). No Python bundled.")
+        print("Overlay it on an existing install, or use it if the Mac already has Python 3.9+.")
     print("Send that zip. Do not zip this project folder yourself — that would include your login files.")
     os.system(f'open -R "{dest}"')
 

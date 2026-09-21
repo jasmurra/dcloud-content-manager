@@ -41,9 +41,9 @@ need_python() {
   PYTHON3="$(find_python)" && return 0
   echo ""
   echo "Python 3.9+ is required to run dCloud Content Manager."
-  echo "You have the smaller zip (no Python bundled)."
+  echo "You have the -update zip (no Python bundled)."
   echo "Either install Python from https://www.python.org/downloads/macos/"
-  echo "or ask for the larger Mac zip that includes Python."
+  echo "or ask for the -full zip, which includes Python for Apple Silicon and Intel."
   echo ""
   read -r -p "Press Enter to close this window..."
   exit 1

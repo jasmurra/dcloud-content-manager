@@ -493,7 +493,7 @@
       padding: 0.45rem 0.65rem;
       cursor: pointer;
       list-style: none;
-      overflow: hidden;
+      overflow: visible;
     }
     .card > summary::-webkit-details-marker { display: none; }
     .card > summary::after {
@@ -528,6 +528,10 @@
       font-size: 0.78rem;
       font-weight: 600;
       white-space: nowrap;
+    }
+    .card-summary-right .card-actions-menu > summary {
+      padding: 0.16rem 0.5rem;
+      font-size: 0.78rem;
     }
     .card-drag-handle {
       color: var(--muted);
@@ -692,7 +696,6 @@
       padding: 0.05rem 0.35rem;
     }
     .vm-menu { position: relative; flex-shrink: 0; }
-    .card-actions-row { margin-top: 0.35rem; }
     .card-actions-menu { display: inline-block; }
     .found-sessions-panel {
       margin-top: 0.85rem;
@@ -6055,6 +6058,20 @@
       const renameBtn = canRename
         ? `<button type="button" class="card-rename-btn" ${cardData} data-tip="Rename this session in dCloud" aria-label="Rename session">✎</button>`
         : "";
+      const actionsMenu = `
+                <details class="vm-menu card-actions-menu">
+                  <summary data-tip="Save, extend, end, or move this card.">Actions</summary>
+                  <div class="vm-menu-list">
+                    ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
+                    ${shareBtn}
+                    <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
+                    ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
+                    ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
+                    <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
+                    <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
+                    <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
+                  </div>
+                </details>`;
       return `
           <details class="card${monitor ? " card-monitor" : ""}" data-card-key="${escapeHtml(cardKey)}" data-site="${escapeHtml(dc.site)}"${cardOpen ? " open" : ""}>
             <summary>
@@ -6065,6 +6082,7 @@
                 <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(cardStatusLabel(dc))}</span>
                 <span class="card-summary-meta">${escapeHtml(summarySession)}</span>
                 ${openSession}
+                ${actionsMenu}
               </span>
             </summary>
             <div class="card-body">
@@ -6091,21 +6109,6 @@
               ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
               ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
               ${vmsHtml}
-              <div class="card-actions-row">
-                <details class="vm-menu card-actions-menu">
-                  <summary data-tip="Save, extend, end, or move this card.">Card actions</summary>
-                  <div class="vm-menu-list">
-                    ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
-                    ${shareBtn}
-                    <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
-                    ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
-                    ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
-                    <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
-                    <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
-                    <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
-                  </div>
-                </details>
-              </div>
             </div>
           </details>
         `;
@@ -12281,7 +12284,7 @@
     }
 
     function handleCardGridClick(ev) {
-      if (ev.target.closest("summary .card-open-session, summary .card-select, summary .card-select-wrap")) {
+      if (ev.target.closest("summary .card-open-session, summary .card-select, summary .card-select-wrap, summary .card-actions-menu")) {
         ev.stopPropagation();
       }
       const renameSave = ev.target.closest(".card-rename-save");
@@ -12461,6 +12464,7 @@
           .forEach((el) => {
             if (el !== menu && !grid.contains(el)) el.open = false;
           });
+        if (menu.classList.contains("card-actions-menu")) positionSearchActionsMenu(menu);
       }, true);
       grid.addEventListener("click", (ev) => {
         if (ev.target.closest(".card-drag-handle")) {

@@ -1,3 +1,8 @@
+## 1.18.1 — 2026-09-21
+
+- **Card Actions sits on the collapsed session row**, next to Open session, so you can save, extend, end, or move a card without expanding it. The same menu is on job workspace and monitoring cards
+- Coworker zips on the Desktop are now **`-full`** (first install: app plus Python for Apple Silicon and Intel) and **`-update`** (smaller overlay onto an existing folder)
+
 ## 1.18.0 — 2026-09-21
 
 - **Every cross-DC list now has the instant filter Search dCloud has.** Type in it to narrow *Your saved content* (both the Manage section and the Content Automation Hub), the job workspace and Session monitoring session pickers, and the Events sessions. Datacenter headers show how many of their rows match, and a group with no matches collapses out of the way

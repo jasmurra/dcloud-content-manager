@@ -240,6 +240,8 @@ def test_zip_contents() -> None:
     check("updater skips this tests folder", "tests" in update_from_github.SKIP_DIR_NAMES)
     check("updater skips GitHub workflows", ".github" in update_from_github.SKIP_DIR_NAMES)
     check("install id stays on the machine", ".dcloud-install.json" in update_from_github.SKIP_FILE_NAMES)
+    check("the -update zip is the overlay without Python", pack_for_mac.ZIP_NAME_UPDATE.endswith("-update.zip"))
+    check("the -full zip is the first-time install with Python", pack_for_mac.ZIP_NAME_FULL.endswith("-full.zip"))
 
 
 def test_anonymous_update_usage() -> None:
@@ -1996,6 +1998,15 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         and 'class="card-summary-name"' in page
         and 'class="card-open-session"' in page
         and 'class="card-summary-end"' not in page,
+    )
+    check(
+        "card Actions is on the collapsed row, not buried in the expanded body",
+        'summary data-tip="Save, extend, end, or move this card.">Actions</summary>' in page
+        and "${openSession}\n                ${actionsMenu}" in page
+        and "card-actions-row" not in page
+        and "Card actions</summary>" not in page
+        and "summary .card-actions-menu" in page
+        and 'if (menu.classList.contains("card-actions-menu")) positionSearchActionsMenu(menu);' in page,
     )
     check(
         "session cards can be expanded or collapsed together",

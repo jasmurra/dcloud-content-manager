@@ -26,9 +26,9 @@ if ! python3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) el
   exit 1
 fi
 
-echo "Building a coworker-safe Mac zip (no .env, no tokens, no venv)..."
-echo "Bumping the version so this drop is newer than the last one you sent..."
-python3 pack_for_mac.py --bump
+echo "Building the -update zip (app files only — overlay onto an existing install)."
+echo "Version is not bumped. Pass --bump only when this drop should be a new VERSION."
+python3 pack_for_mac.py "$@"
 code=$?
 if [ "$code" -ne 0 ]; then
   echo "Pack failed (exit $code)."
@@ -37,8 +37,8 @@ if [ "$code" -ne 0 ]; then
 fi
 
 echo ""
-echo "Done. Finder should be highlighting dCloud-Content-Manager-Mac.zip on your Desktop."
-echo "Send that file. The version is at the top of the tool so your coworker can confirm they have this drop."
+echo "Done. Finder should be highlighting dCloud-Content-Manager-Mac-update.zip on your Desktop."
+echo "Send that file to overlay an existing folder. First-time installs want the -full zip."
 sleep 1
 close_this_window
 exit 0

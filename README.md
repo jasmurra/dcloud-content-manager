@@ -6,7 +6,7 @@ A local Mac app for scheduling dCloud sessions and managing saved content (CAI r
 
 You do not need to clone this repository or log in to GitHub.
 
-1. Unzip the folder you were sent (the larger zip includes Python).
+1. Unzip the folder you were sent. **`-full`** is a first-time install (includes Python for Apple Silicon and Intel). **`-update`** is the smaller overlay for a folder that already exists.
 2. Double-click `start.command`.
 3. Sign in to dCloud in the app.
 
@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.18.1** | Session card Actions is on the collapsed row; coworker zips are named `-full` and `-update` |
 | **1.18.0** | Instant filter on every cross-DC list (saved content, session pickers, Events); drag-to-resize table columns; Check all takes just the filtered rows; Find saved content no longer pre-checks Hub rows |
 | **1.17.3** | *Go to demo* on session and event rows opens the parent content under Search dCloud instead of the v2 `/demo/{id}` page, so TBv3 content reaches TBv3 |
 | **1.17.2** | Compact cards keep status/session ID visible on long names, put Open session on the summary row, and stop the rename pencil overlapping refresh/close |
@@ -79,12 +80,12 @@ These stay in GitHub for the person who builds zips. They are **not** packed int
 | File | What it is for |
 | --- | --- |
 | `pack_for_mac.py` | Builds the Desktop zip files |
-| `share-for-mac.command` | Builds the small zip (no Python) |
-| `share-for-mac-with-python.command` | Builds the large zip (Python included) |
+| `share-for-mac.command` | Builds `dCloud-Content-Manager-Mac-update.zip` (app files only) |
+| `share-for-mac-with-python.command` | Builds `dCloud-Content-Manager-Mac-full.zip` (app plus Python for both Mac chips) |
 | `show_usage.py` | Prints how many distinct installs have checked GitHub for updates (hashed ids only, no names) |
 | `collect_usage.py` | Merges those pings into `usage.json` (also runs on GitHub Actions every few hours) |
 
-To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`. People who already have 1.5+ update from GitHub. Rebuild zips only for a first-time install or a one-time overlay onto an older copy.
+To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`. People who already have 1.5+ update from GitHub. Rebuild zips only for a first-time install (`-full`) or a one-time overlay onto an older copy (`-update`).
 
 ## What is not in GitHub
 

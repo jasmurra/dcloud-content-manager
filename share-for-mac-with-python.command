@@ -26,10 +26,10 @@ if ! python3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) el
   exit 1
 fi
 
-echo "Building the larger Mac zip with Python bundled (Apple Silicon + Intel)."
+echo "Building the -full zip (app files plus Python for Apple Silicon and Intel)."
 echo "First pack downloads Python into a local cache (once). Coworkers do not download it."
-echo "Version is not bumped — run share-for-mac.command first if this is a new drop."
-python3 pack_for_mac.py --with-python
+echo "Version is not bumped — bump VERSION in the repo before packing a new drop."
+python3 pack_for_mac.py --full
 code=$?
 if [ "$code" -ne 0 ]; then
   echo "Pack failed (exit $code)."
@@ -38,8 +38,8 @@ if [ "$code" -ne 0 ]; then
 fi
 
 echo ""
-echo "Done. Finder should be highlighting dCloud-Content-Manager-Mac-with-Python.zip"
-echo "The smaller dCloud-Content-Manager-Mac.zip is unchanged."
+echo "Done. Finder should be highlighting dCloud-Content-Manager-Mac-full.zip"
+echo "The -update zip is separate: run share-for-mac.command for that overlay."
 sleep 1
 close_this_window
 exit 0

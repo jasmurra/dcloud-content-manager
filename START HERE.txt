@@ -8,8 +8,8 @@ You need
 - Google Chrome
 - Cisco VPN or the office network (to reach dCloud)
 - Python 3.9+ only if this folder has no runtime directory
-  (the smaller zip). Install from https://www.python.org/downloads/macos/
-  The larger “with Python” zip already includes it — skip this.
+  (the -update zip). Install from https://www.python.org/downloads/macos/
+  The -full zip already includes Python for Apple Silicon and Intel — skip this.
 
 
 Start
@@ -41,7 +41,7 @@ the page, or just start.command; both install a newer VERSION automatically.
 Already have the tool? (keep jobs)
 Close the Terminal window that is running the tool first.
 
-Unzip the new zip, then copy the files from the new “dCloud Content Manager”
+Unzip the -update zip, then copy the files from the new “dCloud Content Manager”
 folder on top of your existing folder. When macOS asks, replace the files.
 
 That is safe. The zip does not contain your jobs, saved-content list, or
@@ -64,14 +64,12 @@ Then double-click start.command. Confirm Version in the top right.
 
 If something fails
 - “Python 3.9+ is required”
-    You have the smaller zip. Install Python from the link above, then run
-    start.command again — or use the larger zip that already includes Python.
+    You have the -update zip. Install Python from the link above, then run
+    start.command again — or use the -full zip that already includes Python.
 - Login popup blocked
-    Allow popups for this page, or sign in to dCloud in Chrome and click Import from browser.
-- Import from browser cannot read Chrome
-    System Settings → Privacy & Security → Full Disk Access → turn on Terminal (or iTerm).
+    Allow popups for this page, or click Log in to dCloud and finish Cisco SSO in the tool browser.
 - CAI / CAMGR (transfers, integrations, VM replace)
-    Click Open CAI / Open CAMGR, sign in there, then Connect in the tool.
+    Click Connect to CAI / Connect to CAMGR. A tool browser window opens for Cisco SSO if needed.
 
 
 Do not
