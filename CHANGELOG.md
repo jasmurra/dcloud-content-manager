@@ -1,3 +1,7 @@
+## 1.18.4 — 2026-09-21
+
+- **Content Automation Hub rows stay unchecked after a refresh.** The Saved content IDs table used to tick every row on first paint, so clearing the boxes and refreshing put them all back. Use the header checkbox when you want them all selected
+
 ## 1.18.3 — 2026-09-21
 
 - **A card stuck on stopping is refreshed again.** Ending used to skip the dCloud lookup, so a session that started back up under the same ID (or a stale public Stopping next to a signed Starting) kept saying it was being torn down. Refresh and the background watcher now follow it back to starting/active

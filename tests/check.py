@@ -2306,6 +2306,11 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and "function recheckSavedIdsOnFoundContent(" in page,
     )
     check(
+        "Hub saved-content rows are not auto-checked on refresh",
+        "const defaultAll = existingBoxes.length === 0;" not in page
+        and 'const isChecked = checked.has(key) ? " checked" : "";' in page,
+    )
+    check(
         "list columns can be dragged wider and remember it",
         "function makeColumnsResizable(containerId)" in page
         and "function startColumnResize(ev, containerId, table, index)" in page

@@ -7984,7 +7984,6 @@
       document.querySelectorAll(".saved-id-target").forEach((el) => {
         typedTarget[`${el.dataset.site}:${el.dataset.savedId}`] = el.value;
       });
-      const defaultAll = existingBoxes.length === 0;
       body.innerHTML = sortByDatacenter(rows, (row) => row.site).map((row) => {
         const site = String(row.site || "").toLowerCase();
         const savedId = String(row.savedId || "");
@@ -8021,7 +8020,7 @@
         const transfer = String(row.transferStatusLabel || row.transferStatus || "").trim();
         const transferClass = String(row.transferStatus || "").trim();
         const transferHtml = camgrStatusCellHtml(row, transfer, transferClass);
-        const isChecked = defaultAll || checked.has(key) ? " checked" : "";
+        const isChecked = checked.has(key) ? " checked" : "";
         return `<tr>
           <td><input type="checkbox" class="saved-id-select" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-target-id="${escapeHtml(target)}" data-root-id="${escapeHtml(root)}" data-name="${escapeHtml(row.name || "")}" ${isChecked} /></td>
           <td>${escapeHtml(row.site || "")}</td>
