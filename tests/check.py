@@ -2319,6 +2319,14 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and "padding: 0.28rem 0.65rem;" in page,
     )
     check(
+        "Load VMs sits inside Schedule sessions, not as its own section",
+        page.index('id="panel-step3"') < page.index('id="panel-step2"')
+        and page.index('id="panel-step2"') < page.index('id="schedule-dc-fields"')
+        and '"panel-step2",' not in page
+        and "function revealScheduleLoadVms(" in page
+        and 'class="advanced schedule-load-vms"' in page,
+    )
+    check(
         "list columns can be dragged wider and remember it",
         "function makeColumnsResizable(containerId)" in page
         and "function startColumnResize(ev, containerId, table, index)" in page

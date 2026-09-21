@@ -1,3 +1,7 @@
+## 1.18.6 — 2026-09-21
+
+- **Load VMs now lives at the top of Schedule sessions**, as an optional nested block, instead of its own movable section. Skip it for a normal session; open it when you want to pick which VMs power on after an exported session starts
+
 ## 1.18.5 — 2026-09-21
 
 - **The top chrome buttons are smaller.** What’s new, Check for updates, Settings, Sign in, and Collapse/Expand/Reset section order no longer use the same padding as the primary action buttons further down the page

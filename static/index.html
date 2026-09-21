@@ -1064,6 +1064,27 @@
     .demo-id.stale-id { border-color: var(--err, #c0392b); box-shadow: 0 0 0 1px var(--err, #c0392b); }
     .advanced { margin-top: 0.75rem; }
     details.advanced summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+    .schedule-load-vms {
+      margin: 0 0 1rem;
+      padding: 0.55rem 0.75rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(11, 16, 24, 0.35);
+    }
+    details.advanced.schedule-load-vms > summary {
+      cursor: pointer;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 600;
+      list-style: none;
+    }
+    details.advanced.schedule-load-vms > summary::-webkit-details-marker { display: none; }
+    details.advanced.schedule-load-vms > summary::before {
+      content: "▸ ";
+      color: var(--muted);
+      font-weight: 400;
+    }
+    details.advanced.schedule-load-vms[open] > summary::before { content: "▾ "; }
     details.vm-more {
       margin-top: 0.65rem;
       border-top: 1px solid var(--border);
@@ -1906,10 +1927,12 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-step2">
-      <summary class="panel-collapse-summary">Load VMs (for content exports and VM power-ons)</summary>
+    <details class="panel panel-collapse" id="panel-step3">
+      <summary class="panel-collapse-summary">Schedule sessions — demo / content IDs per DC</summary>
       <div class="panel-collapse-body">
-      <p class="hint" id="step2-hint">Load VMs, check the ones you want powered on after scheduling, then open Schedule sessions.</p>
+      <details class="advanced schedule-load-vms" id="panel-step2">
+      <summary>Load VMs (optional — pick which VMs power on)</summary>
+      <p class="hint" id="step2-hint">Optional. Load VMs and check the ones you want powered on after an exported session starts. Skip this for a normal session — those power everything themselves.</p>
       <div class="vm-source-toggle" role="radiogroup" aria-label="VM source">
         <label class="check-line">
           <input type="radio" name="vm-source" id="vm-source-content" value="content" checked />
@@ -1941,7 +1964,7 @@
         <span>I already have the content IDs — don’t look up the other IDs in the global catalog</span>
       </label>
       <div class="actions">
-        <button type="button" id="btn-load-vms" data-tip="Loads the VM list for content exports and for selecting which VMs to power on after scheduling.">Load VMs</button>
+        <button type="button" id="btn-load-vms" data-tip="Loads the VM list for content exports and for selecting which VMs to power on after scheduling. Not required for a normal session.">Load VMs</button>
         <span id="session-meta" class="hint"></span>
       </div>
       <div id="vm-wrap" class="hidden" style="margin-top:1rem">
@@ -1960,16 +1983,10 @@
           <tbody id="vm-body"></tbody>
         </table>
       </div>
-      </div>
-    </details>
-
-    <details class="panel panel-collapse" id="panel-step3">
-      <summary class="panel-collapse-summary">Schedule sessions — demo / content IDs per DC</summary>
-      <div class="panel-collapse-body">
+      </details>
       <p class="hint">
-        Loading VMs fills the source DC from that session’s content ID. Unless you check
-        “I already have the content IDs”, it uses the global catalog to get the IDs for
-        every available DC in one lookup. Leave a DC blank to skip it.
+        Paste demo IDs below, or open Load VMs first to fill every DC from a session or saved content.
+        Leave a DC blank to skip it.
       </p>
       <p id="lookup-status" class="hint"></p>
       <div class="dc-id-toolbar">
@@ -2076,7 +2093,7 @@
         Use <strong>Clear job workspace cards</strong> below if you want a fresh workspace (monitoring cards stay).
       </p>
       <div class="actions">
-        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section, using the VMs checked in Load VMs. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
+        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Exported sessions power on the VMs checked in Load VMs above; a normal session powers everything itself. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
         <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with new token</button>
       </div>
       <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
@@ -3445,7 +3462,7 @@
       if (gotoBtn) {
         const showGoto = Boolean(actionAlertScrollTarget);
         gotoBtn.classList.toggle("hidden", !showGoto);
-        gotoBtn.textContent = actionAlertScrollTarget === ".auth-panel" || actionAlertScrollTarget === "#panel-step2"
+        gotoBtn.textContent = actionAlertScrollTarget === ".auth-panel"
           ? "Go to step"
           : "Go there";
       }
@@ -5112,6 +5129,8 @@
       // show them instead of leaving the result behind a collapsed header.
       const schedulePanel = $("panel-step3");
       if (filled.length && schedulePanel) schedulePanel.open = true;
+      const loadPanel = $("panel-step2");
+      if (filled.length && loadPanel) loadPanel.open = true;
       const status = $("lookup-status");
       if (!status) return;
       if (data.name && notes.length && !skipCatalog) {
@@ -5206,7 +5225,7 @@
       if (mode === "content") {
         label.textContent = "Published/Saved content ID";
         input.placeholder = "123456";
-        hint.textContent = "Load VMs from saved content when you do not have an active session yet.";
+        hint.textContent = "Load VMs from saved content when you do not have an active session yet. Skip this for a normal session.";
       } else {
         label.textContent = "Active session ID";
         input.placeholder = "123456";
@@ -8749,6 +8768,14 @@
       setRunResult(`${headline}${detail}${show}`, { warn });
     }
 
+    function revealScheduleLoadVms() {
+      const schedule = $("panel-step3");
+      const load = $("panel-step2");
+      if (schedule) schedule.open = true;
+      if (load) load.open = true;
+      load?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     async function startJob() {
       if (!ensureTokenReady("scheduling sessions")) return;
       bumpScheduleStartIfPast();
@@ -8765,7 +8792,7 @@
           "No VMs are checked, so nothing will power on. Schedule anyway?",
           { title: "No VMs checked", okLabel: "Schedule anyway", cancelLabel: "Go back" }
         )) {
-          document.querySelector("#panel-step2")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          revealScheduleLoadVms();
           return;
         }
       }
@@ -9261,8 +9288,8 @@
       },
       {
         id: "step2",
-        label: "Load VMs (for content exports and VM power-ons)",
-        hint: "Datacenter, source ID, and the loaded VM list.",
+        label: "Load VMs (optional power-on picks)",
+        hint: "Datacenter, source ID, and the loaded VM list inside Schedule sessions.",
       },
       {
         id: "step3",
@@ -9869,7 +9896,6 @@
     const UI_STATE_KEY = "dcloud-content-manager-ui-v1";
     const LEGACY_UI_STATE_KEY = "dcloud-session-manager-ui-v1";
     const DEFAULT_SECTION_ORDER = [
-      "panel-step2",
       "panel-step3",
       "panel-saved-schedule",
       "panel-cleanup",
@@ -11577,6 +11603,7 @@
           "No VMs are checked in Load VMs, so nothing will power on after these sessions start. Schedule anyway?",
           { title: "No VMs checked", okLabel: "Schedule anyway", cancelLabel: "Go back" }
         )) {
+          revealScheduleLoadVms();
           return;
         }
       }
