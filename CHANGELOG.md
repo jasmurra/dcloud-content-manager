@@ -1,3 +1,20 @@
+## 1.13.0 — 2026-09-21
+
+- **Manage your own saved content across all DCs** replaces the separate schedule and delete lists with one combined table
+- The saved-content table shows **Saved date** and sorts the complete cross-datacenter list by Saved date, Name, Content ID, DC, Owner, or State. Newest saved content appears first
+- Each saved-content row now has an **Actions** menu with Schedule, Edit topology, Share, and Delete. Search dCloud no longer offers Share
+- **Delete checked** permanently deletes selected deletable content across all DCs after a confirmation lists every selected name, content ID, and DC. Each deletable row also has its own confirmed Delete action
+- Promoted Topology Builder v2 content remains in a separate **EOL only** section. It can be scheduled, edited, or shared, but cannot be selected for direct deletion
+- Cleanup now contains session feedback surveys only; saved-content deletion moved into the Manage section
+
+## 1.12.7 — 2026-09-21
+
+- **Refresh no longer retires a session it could not actually read.** When the dCloud token had gone stale the signed lookup failed, and the card was ended from the unauthenticated status endpoint, which answers Deleted for anything it cannot see. A failed read now gets one retry on a fresh token; if it still fails the card stays put, says so, and the next refresh picks the session back up as Active
+- **A finished card is removed from the job workspace and session monitoring instead of being hidden.** An ended card used to stay in the list invisibly, so adding that session again was refused as "already on the session cards" with nothing on screen to remove
+- **A session can always be added back.** An ended card never blocks an add, and a leftover one is replaced by the new card
+- **Every card that ends writes a line in the job log** saying which session it was, what dCloud reported, and which section it left. A card can no longer disappear without explanation
+- **Burn-in sessions join the job already on screen.** Scheduling burn-in used to build a job of its own, which overwrote the saved job and switched the page to it — taking the job workspace and session monitoring cards off the display
+
 ## 1.12.6 — 2026-09-19
 
 - **Extend on a session card now asks how much longer to run.** Enter `5`, `5d`, `6h`, or `5d 6h`; a bare number means days. The card no longer silently uses the one-day default from the bulk controls

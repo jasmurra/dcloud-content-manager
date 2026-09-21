@@ -3097,19 +3097,28 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
     def bump(**fields: Any) -> None:
         _set_dc(job, site, match_session=sid, **fields)
 
+    def retire(status: str, message: str) -> None:
+        """End a card and say so. These cards are swept off the page afterwards, so
+        the log line is the only record of why one stopped being shown."""
+        bump(phase="ended", status=status, vms=[], message=message)
+        _log(job, f"{site.upper()}: session {sid} is finished in dCloud ({status}) — {message}")
+
     # dCloud drops the session and rebuilds it under the same ID, so a gap here is expected.
     resetting = _dc_reset_in_progress(dc)
 
     public, _pub_err = check_public_session_status(site, sid)
     details, err = fetch_session(token, site, sid)
-    if is_auth_error(err):
+    if err:
+        # dCloud answers a stale token with 400 as often as 401, so any failed read
+        # gets one retry on a fresh token before this decides anything from it.
         fresh, _refresh_err = _refresh_job_token(job)
-        if fresh:
+        if fresh and fresh != token:
             token = fresh
             job["token"] = fresh
             details, err = fetch_session(token, site, sid)
     if is_auth_error(err):
         bump(message=err or "dCloud token expired.")
+        _log(job, f"{site.upper()}: refresh could not sign in for session {sid} — card kept.")
         return
     if err and ("not found" in err.lower() or "404" in err):
         if resetting:
@@ -3121,22 +3130,23 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             )
             return
         if dc.get("endedWithoutSave") or dc.get("phase") in {"ended", "ending"}:
-            bump(
-                phase="ended",
-                status="gone",
-                vms=[],
-                message="Session ended (not saved).",
-            )
+            retire("gone", "Session ended (not saved).")
             return
         if _dc_eligible_for_save_recovery(dc) and _recover_saved_from_active_id(
             job, dc, token, details=None, status=public or "gone"
         ):
             return
-        bump(
-            phase="ended",
-            status="gone",
-            vms=[],
-            message=err,
+        retire("gone", err)
+        return
+    if err:
+        # Everything below reads the unauthenticated checkSession endpoint, which
+        # reports Deleted for any session it cannot see. Without a successful signed
+        # read there is nothing to confirm that, so the card stays and keeps polling
+        # rather than retiring a session that is still running.
+        bump(message=f"Could not read this session from dCloud: {err}")
+        _log(
+            job,
+            f"{site.upper()}: refresh kept card {sid} — dCloud lookup failed ({err}).",
         )
         return
     numeric = ""
@@ -3178,23 +3188,13 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             )
             return
         if dc.get("endedWithoutSave") or dc.get("phase") in {"ended", "ending"}:
-            bump(
-                phase="ended",
-                status=status,
-                vms=[],
-                message="Session ended (not saved).",
-            )
+            retire(status, "Session ended (not saved).")
             return
         if _dc_eligible_for_save_recovery(dc) and _recover_saved_from_active_id(
             job, dc, token, details=details, status=status
         ):
             return
-        bump(
-            phase="ended",
-            status=status,
-            vms=[],
-            message=f"dCloud reports {status}.",
-        )
+        retire(status, f"dCloud reports {status}.")
         return
     if is_active_status(public) or is_active_status(numeric):
         if dc.get("_manual_shutdown_waiting") or dc.get("shutdownPrompt"):
@@ -3252,6 +3252,38 @@ def _sync_job_phase(job: dict[str, Any]) -> None:
         return
 
 
+def _retire_ended_cards(job: dict[str, Any]) -> int:
+    """Take finished sessions off the job workspace and session monitoring.
+
+    Saved cards stay — the saved content list is built from them. Ended ones are
+    dropped outright rather than hidden, so the same session can be added again.
+    """
+    removed: list[dict[str, Any]] = []
+    with _jobs_lock:
+        keep: list[dict[str, Any]] = []
+        for dc in job.get("dcs") or []:
+            if str(dc.get("phase") or "") == "ended":
+                removed.append(dc)
+                continue
+            keep.append(dc)
+        if removed:
+            job["dcs"] = keep
+    if not removed:
+        return 0
+    for dc in removed:
+        site = str(dc.get("site") or "").upper()
+        sid = str(dc.get("sessionId") or "").strip()
+        where = "session monitoring" if dc.get("monitorOnly") else "the job workspace"
+        _log(
+            job,
+            f"{site}: removed the finished card for session {sid or '(not scheduled)'} "
+            f"from {where}. Add it again if dCloud still lists it.",
+        )
+    _sync_job_phase(job)
+    _persist_job(job)
+    return len(removed)
+
+
 def _refresh_job_from_dcloud(job: dict[str, Any], token: str) -> None:
     job["token"] = token
     for dc in list(job.get("dcs") or []):
@@ -3266,6 +3298,7 @@ def _watch_job_statuses(job: dict[str, Any]) -> None:
             dc for dc in (job.get("dcs") or []) if dc.get("phase") in _WATCHED_DC_PHASES
         ]
         if not pending:
+            _retire_ended_cards(job)
             _sync_job_phase(job)
             return
         tok = job.get("token") or token
@@ -3274,6 +3307,7 @@ def _watch_job_statuses(job: dict[str, Any]) -> None:
                 if job["stop"].is_set():
                     return
                 _refresh_dc_from_dcloud(job, dc, tok)
+        _retire_ended_cards(job)
         _sync_job_phase(job)
         time.sleep(20)
 
@@ -3426,6 +3460,7 @@ def _load_last_job() -> None:
             )
     if _prune_old_cards(job):
         _persist_job(job)
+    _retire_ended_cards(job)
     with _jobs_lock:
         _jobs.setdefault(job["id"], job)
 
@@ -4549,6 +4584,20 @@ def _new_burn_in_job(token: str) -> dict[str, Any]:
     return job
 
 
+def _burn_in_wants_a_job(item: dict[str, Any]) -> bool:
+    """Whether this row is far enough along that burn-in will need a job to schedule on.
+
+    Mirrors the early exits below, so the job already on screen is only handed to a
+    row that can actually use it.
+    """
+    if not item.get("autoBurnIn"):
+        return False
+    burn_status = str(item.get("burnInStatus") or "pending").strip().lower()
+    if burn_status not in {"", "pending", "waiting_id", "waiting_auth"}:
+        return False
+    return str(item.get("status") or "").strip().lower() == "completed"
+
+
 def _queue_integration_burn_in(
     item: dict[str, Any],
     job: dict[str, Any] | None,
@@ -4758,17 +4807,30 @@ def _refresh_cai_integrate_statuses(job: dict[str, Any] | None) -> dict[str, Any
         _persist_job(job)
 
     burn_jobs: dict[int, dict[str, Any]] = {}
+    burn_scheduled: dict[int, int] = {}
     burn_added = 0
+    # Burn-in joins the job already on screen. Giving it a job of its own overwrote
+    # last-job.json and swapped the page over to it, which took the job workspace
+    # and session monitoring cards off the display.
+    reuse = job if job is not None and not job.get("discarded") else None
     for item in items:
         days = max(1, int(item.get("burnInDays") or 1))
-        burn_job, added = _queue_integration_burn_in(item, burn_jobs.get(days))
+        seed = burn_jobs.get(days)
+        if seed is None and reuse is not None and _burn_in_wants_a_job(item):
+            seed = reuse
+            reuse = None
+        burn_job, added = _queue_integration_burn_in(item, seed)
         if burn_job is not None:
             burn_jobs[days] = burn_job
+        if added:
+            burn_scheduled[days] = burn_scheduled.get(days, 0) + added
         burn_added += added
     if job is not None and burn_added:
         _persist_job(job)
     for days, burn_job in burn_jobs.items():
-        if not burn_job.get("dcs"):
+        # Only run for a job this call actually queued cards on. A reused job is
+        # full of the user's existing cards and must not be re-run for them.
+        if not burn_scheduled.get(days):
             continue
         payload = RunPayload(
             dcloud_token_source="browser",
@@ -4779,7 +4841,10 @@ def _refresh_cai_integrate_statuses(job: dict[str, Any] | None) -> dict[str, Any
             auto_next_available=True,
             skip_power_on=True,
         )
-        threading.Thread(target=_run_job, args=(burn_job, payload), daemon=True).start()
+        # A reused job already has live cards and a phase of its own, so only the
+        # newly queued ones get scheduled and watched.
+        worker = _run_job if burn_job is not job else _schedule_and_watch_new_dcs
+        threading.Thread(target=worker, args=(burn_job, payload), daemon=True).start()
     primary_burn_job = next(reversed(burn_jobs.values()), None)
     return {
         "ok": True,
@@ -5772,7 +5837,12 @@ def _run_job(job: dict[str, Any], payload: RunPayload) -> None:
             return
 
         phases = {dc.get("phase") for dc in job["dcs"]}
-        if phases <= {"error", "ended"}:
+        if not phases:
+            # Every card finished and was swept off the page while this ran. That is
+            # the sessions ending, not the run failing.
+            job["phase"] = "ended"
+            job["error"] = ""
+        elif phases <= {"error", "ended"}:
             if phases == {"ended"}:
                 job["phase"] = "ended"
                 progress("No sessions were scheduled.")
@@ -6582,6 +6652,31 @@ def _enrich_attached_card(job: dict[str, Any], site: str, session_id: str) -> No
     _persist_job(job)
 
 
+def _drop_ended_card(job: dict[str, Any], site: str, session_id: str) -> bool:
+    """Clear a finished card so the same session can be added again."""
+    site_code = (site or "").strip().lower()
+    sid = str(session_id or "").strip()
+    if not sid:
+        return False
+    dropped = 0
+    with _jobs_lock:
+        keep = [
+            dc
+            for dc in (job.get("dcs") or [])
+            if not (
+                dc.get("site") == site_code
+                and str(dc.get("sessionId") or "") == sid
+                and str(dc.get("phase") or "") == "ended"
+            )
+        ]
+        dropped = len(job.get("dcs") or []) - len(keep)
+        if dropped:
+            job["dcs"] = keep
+    if dropped:
+        _log(job, f"{site_code.upper()}: replaced the finished card for session {sid}.")
+    return bool(dropped)
+
+
 def _attach_job(payload: AttachPayload) -> dict[str, Any]:
     targets: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -6638,10 +6733,12 @@ def _attach_job(payload: AttachPayload) -> dict[str, Any]:
             _jobs[job_id] = job
         _log(job, f"Job {job_id}: attaching existing sessions (no new schedule).")
 
+    # An ended card never blocks an add. It is not on screen, so refusing the session
+    # as a duplicate would leave no way to get it back.
     already = {
         (str(dc.get("site") or ""), str(dc.get("sessionId") or ""))
         for dc in (job.get("dcs") or [])
-        if dc.get("sessionId")
+        if dc.get("sessionId") and str(dc.get("phase") or "") != "ended"
     }
     added = 0
     skipped = 0
@@ -6651,6 +6748,7 @@ def _attach_job(payload: AttachPayload) -> dict[str, Any]:
             skipped += 1
             _log(job, f"{site.upper()}: session {session_id} is already on the session cards.")
             continue
+        _drop_ended_card(job, site, session_id)
         card = _attach_card(
             token,
             site,
@@ -7095,6 +7193,7 @@ def api_refresh_job_status(job_id: str, body: RefreshStatusPayload) -> dict[str,
     else:
         _log(job, "Refreshing live session status from dCloud…")
         _refresh_job_from_dcloud(job, token)
+    _retire_ended_cards(job)
     _ensure_status_watch(job)
     return _public_job(job)
 

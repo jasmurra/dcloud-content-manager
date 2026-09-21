@@ -1863,7 +1863,7 @@
         <strong>Number of sessions</strong> repeats the demo IDs, and each copy keeps its place in the same stagger. Copies of one demo stay at least 4 minutes apart even with no delay, because dCloud holds back same-demo sessions that start together.
         When <strong>Use next available slot</strong> is checked, the tool reads dCloud’s calendar per pool and shifts busy DCs to the next open time automatically.
         When unchecked, a conflict prompts you to schedule the next slot or skip that datacenter before anything is sent to dCloud.
-        To start sessions from a saved-content list instead of typing IDs, use <strong>Schedule sessions from your own saved content across all DCs</strong> below.
+        To work with saved content instead of typing IDs, use <strong>Manage your own saved content across all DCs</strong> below.
       </p>
       <div id="dt-popup" class="dt-popup hidden" role="dialog" aria-label="Choose date">
         <div class="dt-header">
@@ -1911,10 +1911,10 @@
     </details>
 
     <details class="panel panel-collapse" id="panel-saved-schedule">
-      <summary class="panel-collapse-summary">Schedule sessions from your own saved content across all DCs</summary>
+      <summary class="panel-collapse-summary">Manage your own saved content across all DCs</summary>
       <div class="panel-collapse-body">
       <p class="hint">
-        Find your saved copies, check the ones to spin up, then schedule.
+        Find, sort, schedule, share, edit, or delete your saved copies from one list.
         Duration, delay, start/stop, and the nearby-slot option stay in sync with the demo-ID scheduler above.
         <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs.
       </p>
@@ -1928,8 +1928,7 @@
             <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check all</button>
             <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck all</button>
             <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
-            <button type="button" class="secondary" id="btn-expand-schedule-saved">Expand all DCs</button>
-            <button type="button" class="secondary" id="btn-collapse-schedule-saved">Collapse all</button>
+            <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete checked</button>
           </div>
           <div id="found-schedule-saved" style="margin-top:0.35rem"></div>
           <p class="step-label" style="margin-top:1rem">Session schedule</p>
@@ -2012,41 +2011,18 @@
     </details>
 
     <details class="panel panel-collapse" id="panel-cleanup">
-      <summary class="panel-collapse-summary">Cleanup — surveys and delete saved content</summary>
+      <summary class="panel-collapse-summary">Session feedback surveys</summary>
       <div class="panel-collapse-body">
       <p class="hint">
         After sessions end, dCloud session feedback surveys can pile up in each DC — decline them here.
-        After a mass save, delete the leftover copies here. Scheduling from a saved list is in
-        <strong>Schedule sessions from your own saved content across all DCs</strong> above.
-        Topology Builder v3 saved/promoted content can be deleted here. Promoted content built in
-        Topology Builder v2 must use EOL in the
-        <a href="https://dcloud-camgr.cisco.com/#/catalogue" target="_blank" rel="noopener noreferrer">Content Catalog</a>.
+        Saved content scheduling, sharing, editing, and deletion are in
+        <strong>Manage your own saved content across all DCs</strong> above.
       </p>
       <p class="step-label">Session feedback surveys</p>
       <p class="hint">“How was your session?” prompts on the dCloud dashboard after sessions end — not saved lab content.</p>
       <div class="actions">
         <button type="button" class="secondary" id="btn-decline-all-surveys" data-tip="Finds and declines every pending session feedback survey in SJC, RTP, LON, SNG, and SYD (same as Decline on the dashboard).">Decline all surveys (all DCs)</button>
       </div>
-      <p class="step-label" style="margin-top:1rem">Delete saved content</p>
-      <div class="actions">
-        <button type="button" class="secondary" id="btn-find-saved" data-tip="Lists saved content in each DC so you can delete finished copies. TBv3 content can be deleted here; promoted TBv2 content uses EOL.">Find saved content</button>
-      </div>
-      <details id="found-saved-panel" class="found-sessions-panel hidden">
-        <summary id="found-saved-summary">Your saved content</summary>
-        <div class="found-sessions-body">
-          <div class="actions">
-            <button type="button" class="danger" id="btn-delete-saved" disabled data-tip="Permanently deletes checked saved content. TBv3 promoted content is supported; promoted TBv2 content uses EOL.">Delete selected saved content</button>
-          </div>
-          <div class="list-toolbar">
-            <button type="button" class="secondary" id="btn-check-all-saved">Check all</button>
-            <button type="button" class="secondary" id="btn-uncheck-all-saved">Uncheck all</button>
-            <button type="button" class="secondary" id="btn-recheck-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save). Use if you unchecked them by mistake.">Recheck saved IDs</button>
-            <button type="button" class="secondary" id="btn-expand-saved">Expand all DCs</button>
-            <button type="button" class="secondary" id="btn-collapse-saved">Collapse all</button>
-          </div>
-          <div id="found-saved" style="margin-top:0.35rem"></div>
-        </div>
-      </details>
       </div>
     </details>
 
@@ -3503,7 +3479,6 @@
             ${attachable ? `<button type="button" class="search-row-action" data-action="session-workspace">Add to job workspace</button>` : ""}
             ${attachable ? `<button type="button" class="search-row-action" data-action="session-monitor">Add to session monitoring</button>` : ""}
             ${scheduled || active ? `<button type="button" class="search-row-action" data-action="session-edit">Edit…</button>` : ""}
-            ${scheduled || active ? `<button type="button" class="search-row-action" data-action="session-share">Share…</button>` : ""}
             ${active ? `<button type="button" class="search-row-action" data-action="session-save">Save</button>` : ""}
             ${active ? `<button type="button" class="search-row-action" data-action="session-reset">Reset</button>` : ""}
             ${active || terminal ? `<button type="button" class="search-row-action" data-action="session-logs">Logs</button>` : ""}
@@ -3697,7 +3672,7 @@
     }
 
     function closeSearchActionsMenus(except = null) {
-      $("unified-search-results")?.querySelectorAll("details.search-actions-menu[open]").forEach((menu) => {
+      document.querySelectorAll("details.search-actions-menu[open]").forEach((menu) => {
         if (menu !== except) menu.open = false;
       });
     }
@@ -8682,13 +8657,6 @@
       }
     }
 
-    function resetCleanupUi() {
-      $("found-saved").innerHTML = "";
-      setFoundSavedPanelVisible(false);
-      lastFoundSavedByMount.cleanup = null;
-      syncDeleteSavedButton();
-    }
-
     function resetSavedScheduleUi() {
       if ($("found-schedule-saved")) $("found-schedule-saved").innerHTML = "";
       setScheduleSavedPanelVisible(false);
@@ -8751,13 +8719,8 @@
       },
       {
         id: "saved-schedule",
-        label: "Schedule sessions from your own saved content",
-        hint: "Saved-content search results used to spin up sessions, and their checked rows.",
-      },
-      {
-        id: "cleanup",
-        label: "Cleanup lists",
-        hint: "Saved content search results in Cleanup used to delete finished copies.",
+        label: "Manage your own saved content",
+        hint: "Saved-content search results and their checked rows.",
       },
       {
         id: "cards",
@@ -8848,7 +8811,6 @@
       if (picked.has("step2")) resetStep2Ui();
       if (picked.has("step3")) resetStep3Ui();
       if (picked.has("saved-schedule")) resetSavedScheduleUi();
-      if (picked.has("cleanup")) resetCleanupUi();
       if (clearWorkspace) resetWorkspaceUi();
       if (clearMonitoring) resetMonitoringUi();
       if (clearWorkspace && clearMonitoring) {
@@ -9370,7 +9332,6 @@
       "details.advanced",
       "details.task-group",
       "details.found-sessions-panel",
-      "details#found-saved-panel",
       "details#found-schedule-saved-panel",
       "details#saved-ids-found-panel",
       "details#saved-promoted-group",
@@ -9379,7 +9340,7 @@
     const TOP_LEVEL_PANEL_SELECTOR = "details.panel-collapse";
     const DEFAULT_PANEL_OPEN = new Map();
     const PERSIST_VM_MORE_SELECTOR = "#cards details.vm-more, #monitor-cards details.vm-more";
-    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #found-saved details.dc-group, #found-schedule-saved details.dc-group, #saved-ids-found details.dc-group";
+    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #saved-ids-found details.dc-group";
 
     function canonicalDatacenter(value) {
       const text = String(value || "").trim().toLowerCase();
@@ -9621,7 +9582,7 @@
         .filter((el) => el.open && el.dataset.key)
         .map((el) => el.dataset.key);
       const dcGroups = {};
-      for (const containerId of ["found-sessions", "found-saved", "found-schedule-saved", "saved-ids-found"]) {
+      for (const containerId of ["found-sessions", "saved-ids-found"]) {
         const root = $(containerId);
         if (!root) continue;
         dcGroups[containerId] = {};
@@ -10046,6 +10007,7 @@
 
     let lastFoundSavedByMount = { cleanup: null, schedule: null, "saved-ids": null };
     let savedIdsFoundSort = { key: "savedAt", dir: "desc" };
+    let managedSavedSort = { key: "savedAt", dir: "desc" };
 
     function captureFoundContentChecks(itemClass) {
       return new Set(
@@ -10062,7 +10024,15 @@
       });
     }
 
-    function renderSavedContentRow(row, { deletable, itemClass = "found-saved-content", showEolBadge = true, showSavedAt = false, showAdd = false }) {
+    function renderSavedContentRow(row, {
+      deletable,
+      itemClass = "found-saved-content",
+      showEolBadge = true,
+      showSavedAt = false,
+      showAdd = false,
+      showSite = false,
+      managedActions = false,
+    }) {
       const idLink = row.contentViewUrl
         ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.contentId)}</a>`
         : escapeHtml(row.contentId);
@@ -10074,18 +10044,32 @@
       const addBtn = showAdd
         ? `<button type="button" class="secondary btn-add-saved-id" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}" data-parent-id="${escapeHtml(row.parentId || "")}" data-tip="Add this saved content to the Saved content IDs list">Add</button>`
         : "";
+      const rowData = `data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}"`;
+      const managedMenu = managedActions
+        ? `<details class="vm-menu search-actions-menu saved-content-actions-menu" ${rowData}>
+            <summary data-tip="Schedule, edit, share, or delete this saved content.">Actions</summary>
+            <div class="vm-menu-list">
+              <button type="button" class="btn-managed-schedule" ${rowData}>Schedule</button>
+              ${row.contentViewUrl ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">Edit topology</a>` : ""}
+              <button type="button" class="btn-saved-share" ${rowData} data-share-kind="content">Share…</button>
+              ${deletable ? `<button type="button" class="danger btn-managed-delete" ${rowData}>Delete…</button>` : ""}
+            </div>
+          </details>`
+        : "";
       const savedCell = showSavedAt
         ? `<td class="mono saved-at-cell" title="${escapeHtml(row.savedAt || "")}">${escapeHtml(formatSavedAt(row.savedAt))}</td>`
         : "";
+      const siteCell = showSite ? `<td class="mono">${escapeHtml(String(row.site || "").toUpperCase())}</td>` : "";
       return `
         <tr class="${deletable ? "" : "saved-row-locked"}">
           <td>${checkCell}</td>
           <td class="mono">${idLink}</td>
           <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
+          ${siteCell}
           <td>${stateCell}</td>
           <td>${escapeHtml(row.owner || "")}</td>
           ${savedCell}
-          <td class="saved-actions">${addBtn} ${shareBtn}</td>
+          <td class="saved-actions">${managedMenu || `${addBtn} ${shareBtn}`}</td>
         </tr>`;
     }
 
@@ -10113,11 +10097,11 @@
     }
 
     function syncDeleteSavedButton() {
-      const btn = $("btn-delete-saved");
-      if (btn) {
-        const checked = [...document.querySelectorAll(".found-saved-content:checked")]
+      const managedBtn = $("btn-delete-schedule-saved");
+      if (managedBtn) {
+        const checked = [...document.querySelectorAll(".schedule-saved-content:checked")]
           .filter((box) => box.dataset.deletable !== "false").length;
-        btn.disabled = checked === 0;
+        managedBtn.disabled = checked === 0;
       }
       syncAddSavedButtons();
     }
@@ -10145,6 +10129,46 @@
             </tr>
           </thead>
           <tbody>${siteRows.map((row) => renderSavedContentRow(row, { deletable, itemClass, showEolBadge, showSavedAt, showAdd })).join("")}</tbody>
+        </table>`;
+    }
+
+    function renderManagedSavedTable(rows, { deletable, sort }) {
+      const sortTh = (key, label) => {
+        const active = String(sort?.key || "") === key;
+        const aria = active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none";
+        const arrow = active ? (sort?.dir === "asc" ? " ▲" : " ▼") : "";
+        return `<th class="saved-sort" data-sort="${escapeHtml(key)}" aria-sort="${aria}" title="Sort all datacenters by ${escapeHtml(label)}">${label}${arrow}</th>`;
+      };
+      return `
+        <table class="dc-list managed-saved-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="schedule-saved-all-head" title="Select all saved content across every datacenter" /></th>
+              ${sortTh("savedAt", "Saved")}
+              ${sortTh("name", "Name")}
+              ${sortTh("contentId", "Content ID")}
+              ${sortTh("site", "DC")}
+              ${sortTh("owner", "Owner")}
+              ${sortTh("state", "State")}
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${sortFoundSavedRows(rows, sort).map((row) => {
+            const rendered = renderSavedContentRow(row, {
+              deletable,
+              itemClass: "schedule-saved-content",
+              showEolBadge: true,
+              showSavedAt: true,
+              showSite: true,
+              managedActions: true,
+            });
+            // The shared row helper keeps legacy column order; reorder these cells
+            // for the management table without duplicating its badges and actions.
+            const cells = rendered.match(/<td[\s\S]*?<\/td>/g) || [];
+            return `<tr class="${deletable ? "" : "saved-row-locked"}">${[
+              cells[0], cells[6], cells[2], cells[1], cells[3], cells[5], cells[4], cells[7],
+            ].filter(Boolean).join("")}</tr>`;
+          }).join("")}</tbody>
         </table>`;
     }
 
@@ -10245,28 +10269,34 @@
         return;
       }
       if (mount === "schedule") {
-        const groups = groupRowsBySite(rows).filter((group) => group.rows.length > 0);
-        const tableOpts = { deletable: true, itemClass, dcHeadClass, showEolBadge: true };
-        const body = groups.length
-          ? groups.map(({ site, rows: siteRows }) => {
-              const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
-              return `
-            <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
-              <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span></summary>
-              ${renderSavedContentTable(site, siteRows, tableOpts)}
-            </details>`;
-            }).join("")
-          : `<p class="hint">No saved custom content found in any DC.</p>`;
+        const deletableRows = rows.filter((row) => row.deletable !== false && !row.eolOnly);
+        const promotedRows = rows.filter((row) => row.eolOnly);
+        const mainTable = deletableRows.length
+          ? renderManagedSavedTable(deletableRows, { deletable: true, sort: managedSavedSort })
+          : `<p class="hint">No directly deletable saved content in any DC.</p>`;
+        const promotedBody = promotedRows.length
+          ? `
+            <details class="saved-promoted-group" id="saved-promoted-group">
+              <summary>Topology Builder v2 promoted — EOL only (${promotedRows.length})</summary>
+              <p class="hint">These items can still be scheduled, edited, or shared, but dCloud does not allow them to be deleted directly. EOL them in the <a href="${DCLOUD_CATALOG_EOL_URL}" target="_blank" rel="noopener noreferrer">dCloud Content Catalog</a>.</p>
+              ${renderManagedSavedTable(promotedRows, { deletable: false, sort: managedSavedSort })}
+            </details>`
+          : "";
+        const body = rows.length ? `${mainTable}${promotedBody}` : `<p class="hint">No saved custom content found in any DC.</p>`;
         if (container) {
           container.innerHTML = `
             ${renderErrorHints(data.errors)}
-            <p class="hint">${rows.length ? `${rows.length} saved content item(s). Check the ones to schedule.` : ""}</p>
+            <p class="hint">${rows.length ? `${rows.length} saved content item(s) across all DCs · ${deletableRows.length} directly deletable${promotedRows.length ? ` · ${promotedRows.length} TBv2 promoted/EOL-only` : ""}. Click a column header to sort the full list.` : ""}</p>
             ${body}
           `;
         }
         setScheduleSavedPanelVisible(rows.length > 0);
+        const promotedEl = $("saved-promoted-group");
+        if (promotedEl) promotedEl.open = persistedPanelOpen("saved-promoted-group", promotedEl.open);
         restoreFoundContentChecks(itemClass, checkedKeys);
         syncScheduleSavedAll();
+        syncDeleteSavedButton();
+        bindSavedContentActionMenus();
         syncMainScheduleToSaved();
         return;
       }
@@ -10340,6 +10370,21 @@
       if (data) renderFoundSaved(data, "saved-ids");
     }
 
+    function setManagedSavedSort(key) {
+      const next = String(key || "").trim();
+      if (!next) return;
+      if (managedSavedSort.key === next) {
+        managedSavedSort = { key: next, dir: managedSavedSort.dir === "desc" ? "asc" : "desc" };
+      } else {
+        managedSavedSort = {
+          key: next,
+          dir: next === "savedAt" || next === "contentId" ? "desc" : "asc",
+        };
+      }
+      const data = lastFoundSavedByMount.schedule;
+      if (data) renderFoundSaved(data, "schedule");
+    }
+
     function setFoundSessionChecks(checked) {
       document.querySelectorAll(".found-session:not(:disabled)").forEach((box) => { box.checked = checked; });
       document.querySelectorAll(".found-session-dc-head").forEach((head) => {
@@ -10357,7 +10402,12 @@
     }
 
     function syncScheduleSavedAll() {
-      syncGroupChecks("", ".schedule-saved-content", "schedule-saved-dc-head");
+      document.querySelectorAll(".schedule-saved-all-head").forEach((head) => {
+        const tableBoxes = [...head.closest("table").querySelectorAll(".schedule-saved-content")];
+        head.checked = tableBoxes.length > 0 && tableBoxes.every((box) => box.checked);
+        head.indeterminate = tableBoxes.some((box) => box.checked) && !head.checked;
+      });
+      syncDeleteSavedButton();
     }
 
     function setFoundSavedChecks(checked) {
@@ -10481,15 +10531,11 @@
       }
     }
 
-    async function findSavedContents(mount = "cleanup") {
+    async function findSavedContents(mount = "schedule") {
       if (!ensureTokenReady("finding saved content")) return;
       showError("");
-      const thisMount = mount === "saved-ids" || mount === "schedule" ? mount : "cleanup";
+      const thisMount = mount === "saved-ids" ? mount : "schedule";
       foundSavedMount = thisMount;
-      if (thisMount === "cleanup") {
-        const cleanup = $("panel-cleanup");
-        if (cleanup) cleanup.open = true;
-      }
       if (thisMount === "schedule") {
         const panel = $("panel-saved-schedule");
         if (panel) panel.open = true;
@@ -10507,13 +10553,13 @@
         if (rows.length) {
           noteLog(
             `Found ${rows.length} saved content item(s)`
-            + (thisMount === "saved-ids"
+            + (thisMount === "saved-ids" || thisMount === "schedule"
               ? ", newest first"
               : "")
             + (promoted
               ? thisMount === "saved-ids"
                 ? ` (${promoted} TBv2 promoted/EOL-only, listed with saved)`
-                : ` (${deletable} deletable, ${promoted} TBv2 promoted/EOL-only)`
+                : ` (${deletable} directly deletable, ${promoted} TBv2 promoted/EOL-only)`
               : "")
             + (marked ? ` — auto-checked ${marked} from Saved content IDs` : "")
             + "."
@@ -10586,17 +10632,11 @@
       await addSavedIdItems(selected);
     }
 
-    async function deleteSelectedSaved() {
+    async function deleteSavedItems(items) {
       if (!ensureTokenReady("deleting saved content")) return;
-      const selected = [...document.querySelectorAll(".found-saved-content:checked")]
-        .filter((box) => box.dataset.deletable !== "false")
-        .map((box) => ({
-        site: box.dataset.site,
-        content_id: box.dataset.contentId,
-        name: box.dataset.name || "",
-      }));
+      const selected = (items || []).filter((row) => row.site && row.content_id);
       if (!selected.length) {
-        showError("Find saved content first, then check deletable items. TBv3 content can be deleted here; promoted TBv2 content uses EOL.");
+        showError("Check at least one directly deletable item. Promoted TBv2 content uses EOL in the Content Catalog.");
         return;
       }
       const preview = selected
@@ -10632,10 +10672,42 @@
         if (data.job) renderJob(data.job, { forceCards: true });
         else if (data.savedIds) applySavedIds(data.savedIds);
         else await loadSavedIds();
-        await findSavedContents("cleanup");
+        await findSavedContents("schedule");
       } catch (err) {
         showError(err.message);
       }
+    }
+
+    async function deleteSelectedSaved() {
+      const selected = [...document.querySelectorAll(".schedule-saved-content:checked")]
+        .filter((box) => box.dataset.deletable !== "false")
+        .map((box) => ({
+          site: box.dataset.site,
+          content_id: box.dataset.contentId,
+          name: box.dataset.name || "",
+        }));
+      await deleteSavedItems(selected);
+    }
+
+    function selectManagedSavedRow(button) {
+      closeSearchActionsMenus();
+      setScheduleSavedChecks(false);
+      const selector = `.schedule-saved-content[data-site="${CSS.escape(button.dataset.site || "")}"][data-content-id="${CSS.escape(button.dataset.contentId || "")}"]`;
+      const box = document.querySelector(selector);
+      if (box) box.checked = true;
+      syncScheduleSavedAll();
+      $("btn-schedule-saved")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      noteLog(`Selected ${(button.dataset.site || "").toUpperCase()} ${button.dataset.contentId || ""} for scheduling.`);
+    }
+
+    function bindSavedContentActionMenus() {
+      $("found-schedule-saved")?.querySelectorAll("details.saved-content-actions-menu").forEach((menu) => {
+        menu.addEventListener("toggle", () => {
+          if (!menu.open) return;
+          closeSearchActionsMenus(menu);
+          positionSearchActionsMenu(menu);
+        });
+      });
     }
 
     async function scheduleSelectedSaved() {
@@ -10646,7 +10718,7 @@
         name: box.dataset.name || "",
       }));
       if (!selected.length) {
-        showError("Find saved content in Schedule sessions from your own saved content, then check the items to schedule.");
+        showError("Find saved content in Manage your own saved content, then check the items to schedule.");
         return;
       }
       const selectedVms = selectedVmsForSchedule();
@@ -11708,6 +11780,27 @@
           setFoundSavedSort(sortTh.dataset.sort);
           return;
         }
+        if (sortTh && containerId === "found-schedule-saved") {
+          ev.preventDefault();
+          setManagedSavedSort(sortTh.dataset.sort);
+          return;
+        }
+        const scheduleBtn = ev.target.closest(".btn-managed-schedule");
+        if (scheduleBtn) {
+          ev.preventDefault();
+          selectManagedSavedRow(scheduleBtn);
+          return;
+        }
+        const deleteBtn = ev.target.closest(".btn-managed-delete");
+        if (deleteBtn) {
+          ev.preventDefault();
+          deleteSavedItems([{
+            site: deleteBtn.dataset.site,
+            content_id: deleteBtn.dataset.contentId,
+            name: deleteBtn.dataset.name || "",
+          }]).catch((err) => showError(err.message));
+          return;
+        }
         const addBtn = ev.target.closest(".btn-add-saved-id");
         if (addBtn) {
           ev.preventDefault();
@@ -11727,6 +11820,13 @@
         }
       });
       root.addEventListener("change", (ev) => {
+        if (ev.target.classList.contains("schedule-saved-all-head")) {
+          ev.target.closest("table").querySelectorAll(".schedule-saved-content").forEach((box) => {
+            box.checked = ev.target.checked;
+          });
+          syncFn();
+          return;
+        }
         if (ev.target.classList.contains(dcHeadClass)) {
           const site = ev.target.dataset.site;
           root.querySelectorAll(`.${itemClass}[data-site="${site}"]`).forEach((box) => {
@@ -11764,22 +11864,14 @@
       syncWorkspaceFoundAll();
     });
     $("btn-decline-all-surveys").addEventListener("click", () => declineAllSurveys().catch((err) => showError(err.message)));
-    $("btn-find-saved").addEventListener("click", () => findSavedContents("cleanup").catch((err) => showError(err.message)));
     $("btn-find-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule").catch((err) => showError(err.message)));
-    $("btn-delete-saved").addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
+    $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
     $("btn-schedule-saved").addEventListener("click", () => scheduleSelectedSaved().catch((err) => showError(err.message)));
     $("saved-schedule-export").addEventListener("change", () => syncScheduleSavedButton());
     $("btn-expand-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", true));
     $("btn-collapse-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", false));
     $("btn-check-all-sessions").addEventListener("click", () => setFoundSessionChecks(true));
     $("btn-uncheck-all-sessions").addEventListener("click", () => setFoundSessionChecks(false));
-    $("btn-expand-saved").addEventListener("click", () => setDcGroupsOpen("found-saved", true));
-    $("btn-collapse-saved").addEventListener("click", () => setDcGroupsOpen("found-saved", false));
-    $("btn-check-all-saved").addEventListener("click", () => setFoundSavedChecks(true));
-    $("btn-uncheck-all-saved").addEventListener("click", () => setFoundSavedChecks(false));
-    $("btn-recheck-saved-ids").addEventListener("click", () => recheckSavedIdsOnFoundContent());
-    $("btn-expand-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", true));
-    $("btn-collapse-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", false));
     $("btn-check-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(true));
     $("btn-uncheck-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(false));
     $("btn-recheck-schedule-saved-ids")?.addEventListener("click", () => recheckSavedIdsOnFoundContent({ forSchedule: true }));
@@ -11807,7 +11899,6 @@
       }
       if (ev.target.classList.contains("found-session")) syncFoundAll();
     });
-    bindFoundSavedListEvents("found-saved", "found-saved-content", "found-saved-dc-head", syncFoundSavedAll);
     bindFoundSavedListEvents("found-schedule-saved", "schedule-saved-content", "schedule-saved-dc-head", syncScheduleSavedAll);
     bindFoundSavedListEvents("saved-ids-found", "saved-ids-found-content", "saved-ids-found-dc-head", syncSavedIdsFoundAll);
     $("btn-saved-ids-find").addEventListener("click", () => findSavedContents("saved-ids").catch((err) => showError(err.message)));
@@ -12031,14 +12122,6 @@
         if (action === "session-logs") {
           if (!ensureTokenReady("loading the session log")) return;
           showSessionLog(row);
-          return;
-        }
-        if (action === "session-share") {
-          actionButton.dataset.site = site;
-          actionButton.dataset.shareKind = "session";
-          actionButton.dataset.session = row.id;
-          actionButton.dataset.name = row.name || "";
-          openShareModal(actionButton);
           return;
         }
         const sessionActions = {

@@ -882,6 +882,105 @@ def test_task_groups_collapse() -> None:
     )
 
 
+def test_ended_card_is_not_a_dead_end() -> None:
+    """1.12.7: a card whose dCloud read failed was retired from the unauthenticated
+    checkSession answer. It left the page but stayed in the list, so adding the same
+    session back was refused as a duplicate and there was no way to recover it.
+    """
+    import app
+
+    real_last_job = app.LAST_JOB_FILE
+    with tempfile.TemporaryDirectory() as tmp:
+        app.LAST_JOB_FILE = Path(tmp) / "last-job.json"
+        try:
+            job = {
+                "id": "j-ended",
+                "phase": "ready_to_patch",
+                "log": [],
+                "error": "",
+                "dcs": [{"site": "sjc", "sessionId": "492702", "phase": "ready", "status": "Active"}],
+            }
+            dc = job["dcs"][0]
+
+            real_fetch = app.fetch_session
+            real_public = app.check_public_session_status
+            real_token = app._refresh_job_token
+            try:
+                # dCloud answers a stale token with 400 as often as 401, and the
+                # unauthenticated endpoint says Deleted for anything it cannot see.
+                app.fetch_session = lambda *a, **k: (None, "HTTP 400 Bad Request")
+                app.check_public_session_status = lambda *a, **k: ("Deleted", None)
+                app._refresh_job_token = lambda *a, **k: ("", "no refresh token")
+                app._refresh_dc_from_dcloud(job, dc, "stale-token")
+            finally:
+                app.fetch_session = real_fetch
+                app.check_public_session_status = real_public
+                app._refresh_job_token = real_token
+
+            check(
+                "a session dCloud could not be asked about keeps its card",
+                dc["phase"] == "ready",
+                dc["phase"],
+            )
+            check(
+                "the failed lookup is logged instead of being silent",
+                any("dCloud lookup failed" in line for line in job["log"]),
+                str(job["log"]),
+            )
+
+            job["log"] = []
+            job["dcs"] = [
+                {"site": "sjc", "sessionId": "492702", "phase": "ended", "status": "Deleted"},
+                {"site": "rtp", "sessionId": "1358557", "phase": "ended", "monitorOnly": True},
+                {"site": "lon", "sessionId": "805992", "phase": "saved", "status": "Saved"},
+            ]
+            removed = app._retire_ended_cards(job)
+            check("ended cards leave the tool entirely", removed == 2, str(removed))
+            check(
+                "a saved card stays for the saved content list",
+                [row["site"] for row in job["dcs"]] == ["lon"],
+                str(job["dcs"]),
+            )
+            check(
+                "monitoring removals are logged too",
+                any("session monitoring" in line for line in job["log"]),
+                str(job["log"]),
+            )
+
+            job["dcs"] = [{"site": "sjc", "sessionId": "492702", "phase": "ended"}]
+            check(
+                "a finished card is cleared so the session can be added back",
+                app._drop_ended_card(job, "sjc", "492702") and job["dcs"] == [],
+                str(job["dcs"]),
+            )
+        finally:
+            app.LAST_JOB_FILE = real_last_job
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    refresh = source[
+        source.index("def _refresh_dc_from_dcloud(") : source.index("def _sync_job_phase(")
+    ]
+    check(
+        "an unreadable session is never retired from the public endpoint",
+        "Could not read this session from dCloud" in refresh,
+    )
+    check("a failed read is retried on a fresh token", refresh.count("_refresh_job_token(") == 1)
+    check("every ended card says why in the log", "def retire(" in refresh)
+
+    attach = source[source.index("def _attach_job(") : source.index("def _remove_card(")]
+    check("an ended card cannot block an add", '!= "ended"' in attach)
+    check("a stale finished card is replaced", "_drop_ended_card(" in attach)
+
+    burn = source[
+        source.index("    burn_jobs: dict[int, dict[str, Any]] = {}") : source.index(
+            "    primary_burn_job ="
+        )
+    ]
+    check("burn-in joins the job already on screen", "reuse = job" in burn)
+    check("a reused job only schedules the new cards", "_schedule_and_watch_new_dcs" in burn)
+    check("a reused job is not re-run for its existing cards", "burn_scheduled.get(days)" in burn)
+
+
 def test_removed_id_can_be_added_back() -> None:
     """Remove from list writes two hide lists. CAI/CAMGR discovery must not
     resurrect the row, but an explicit Add to Hub has to clear both — otherwise
@@ -1200,17 +1299,61 @@ def test_staggered_session_copies_cards() -> None:
     start = INDEX.find('id="sched-start"')
     check("delay and copies sit next to duration", -1 < days < delay < copies < start)
     check(
-        "saved-content scheduling is its own card",
+        "saved-content management is its own card",
         'id="panel-saved-schedule"' in INDEX
-        and "Schedule sessions from your own saved content across all DCs" in INDEX,
+        and "Manage your own saved content across all DCs" in INDEX,
     )
     check(
         "cleanup no longer holds the saved-content scheduler",
         "Start new sessions from saved content" not in INDEX,
     )
     check(
-        "the schedule finder is separate from the delete finder",
-        'id="btn-find-schedule-saved"' in INDEX and 'id="btn-find-saved"' in INDEX,
+        "saved-content find and delete live in the management card",
+        'id="btn-find-schedule-saved"' in INDEX
+        and 'id="btn-delete-schedule-saved"' in INDEX
+        and 'id="btn-find-saved"' not in INDEX,
+    )
+    check(
+        "cleanup is surveys only",
+        "Session feedback surveys" in INDEX
+        and 'id="btn-decline-all-surveys"' in INDEX
+        and 'id="found-saved-panel"' not in INDEX,
+    )
+    check(
+        "the management list is global and sortable",
+        "function renderManagedSavedTable(" in INDEX
+        and all(
+            f'sortTh("{key}"' in INDEX
+            for key in ("savedAt", "name", "contentId", "site", "owner", "state")
+        )
+    )
+    check(
+        "saved-content rows have the requested actions",
+        all(
+            marker in INDEX
+            for marker in (
+                "btn-managed-schedule",
+                "Edit topology",
+                "btn-saved-share",
+                "btn-managed-delete",
+            )
+        ),
+    )
+    check(
+        "bulk delete confirms the exact cross-DC selection",
+        'id="btn-delete-schedule-saved"' in INDEX
+        and "Permanently delete ${selected.length} saved content item(s)?" in INDEX
+        and "${row.site.toUpperCase()} ${row.content_id} — ${row.name}" in INDEX,
+    )
+    check(
+        "TBv2 promoted content stays EOL-only and cannot render Delete",
+        "Topology Builder v2 promoted — EOL only" in INDEX
+        and "renderManagedSavedTable(promotedRows, { deletable: false" in INDEX
+        and 'deletable ? `<button type="button" class="danger btn-managed-delete"' in INDEX,
+    )
+    check(
+        "Search dCloud no longer offers Share",
+        'data-action="session-share"' not in INDEX,
     )
     check(
         "the saved-content scheduler has the nearby-slot checkbox",

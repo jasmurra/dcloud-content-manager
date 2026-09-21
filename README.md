@@ -16,6 +16,8 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.13.0** | Manage saved content across every DC in one sortable list with Saved date, row Actions, confirmed row/bulk delete, and a protected EOL-only section; Cleanup is surveys only |
+| **1.12.7** | Refresh keeps a card it could not read instead of ending it from the public status; finished cards are removed rather than hidden, so a session can be added back; burn-in joins the job on screen instead of replacing it |
 | **1.12.6** | Card Extend asks for days/hours; stale schedule start times move to now before delay; slow-starting sessions keep checking instead of showing “No sessions reached the ready state” |
 | **1.12.5** | Extend by days and hours in one click, and take the farthest available time when resources are booked; delay spaces every session; copies of one demo stay 4 minutes apart; saved-content scheduling is its own card, not under Cleanup |
 | **1.12.4** | After 10 minutes of guest shutdown, choose keep waiting or hard power off remaining VMs; UC guests are not yanked on a timer |
