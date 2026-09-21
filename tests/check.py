@@ -1320,12 +1320,21 @@ def test_staggered_session_copies_cards() -> None:
         and 'id="found-saved-panel"' not in INDEX,
     )
     check(
-        "the management list is global and sortable",
-        "function renderManagedSavedTable(" in INDEX
-        and all(
+        "the management list keeps a collapsible group per DC",
+        "function renderManagedSavedTable(site, rows" in INDEX
+        and 'groupRowsBySite(deletableRows).filter((group) => group.rows.length > 0)' in INDEX
+        and 'id="btn-expand-schedule-saved"' in INDEX
+        and 'id="btn-collapse-schedule-saved"' in INDEX
+        and "#found-schedule-saved details.dc-group" in INDEX,
+    )
+    check(
+        "one column pick sorts every DC table, with Name first and Saved last",
+        all(
             f'sortTh("{key}"' in INDEX
-            for key in ("savedAt", "name", "contentId", "site", "owner", "state")
+            for key in ("savedAt", "name", "contentId", "owner", "state")
         )
+        and INDEX.index('${sortTh("name", "Name")}\n              ${sortTh("contentId"')
+        < INDEX.index('${sortTh("state", "State")}\n              ${sortTh("savedAt", "Saved")}'),
     )
     check(
         "saved-content rows have the requested actions",
@@ -1348,7 +1357,7 @@ def test_staggered_session_copies_cards() -> None:
     check(
         "TBv2 promoted content stays EOL-only and cannot render Delete",
         "Topology Builder v2 promoted — EOL only" in INDEX
-        and "renderManagedSavedTable(promotedRows, { deletable: false" in INDEX
+        and "renderManagedSavedTable(site, siteRows, { deletable: false" in INDEX
         and 'deletable ? `<button type="button" class="danger btn-managed-delete"' in INDEX,
     )
     check(

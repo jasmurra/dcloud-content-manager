@@ -1925,6 +1925,8 @@
         <summary id="found-schedule-saved-summary">Your saved content</summary>
         <div class="found-sessions-body">
           <div class="list-toolbar">
+            <button type="button" class="secondary" id="btn-expand-schedule-saved">Expand all DCs</button>
+            <button type="button" class="secondary" id="btn-collapse-schedule-saved">Collapse all DCs</button>
             <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check all</button>
             <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck all</button>
             <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
@@ -9340,7 +9342,7 @@
     const TOP_LEVEL_PANEL_SELECTOR = "details.panel-collapse";
     const DEFAULT_PANEL_OPEN = new Map();
     const PERSIST_VM_MORE_SELECTOR = "#cards details.vm-more, #monitor-cards details.vm-more";
-    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #saved-ids-found details.dc-group";
+    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #saved-ids-found details.dc-group, #found-schedule-saved details.dc-group";
 
     function canonicalDatacenter(value) {
       const text = String(value || "").trim().toLowerCase();
@@ -9582,7 +9584,7 @@
         .filter((el) => el.open && el.dataset.key)
         .map((el) => el.dataset.key);
       const dcGroups = {};
-      for (const containerId of ["found-sessions", "saved-ids-found"]) {
+      for (const containerId of ["found-sessions", "saved-ids-found", "found-schedule-saved"]) {
         const root = $(containerId);
         if (!root) continue;
         dcGroups[containerId] = {};
@@ -10030,7 +10032,6 @@
       showEolBadge = true,
       showSavedAt = false,
       showAdd = false,
-      showSite = false,
       managedActions = false,
     }) {
       const idLink = row.contentViewUrl
@@ -10059,13 +10060,11 @@
       const savedCell = showSavedAt
         ? `<td class="mono saved-at-cell" title="${escapeHtml(row.savedAt || "")}">${escapeHtml(formatSavedAt(row.savedAt))}</td>`
         : "";
-      const siteCell = showSite ? `<td class="mono">${escapeHtml(String(row.site || "").toUpperCase())}</td>` : "";
       return `
         <tr class="${deletable ? "" : "saved-row-locked"}">
           <td>${checkCell}</td>
           <td class="mono">${idLink}</td>
           <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
-          ${siteCell}
           <td>${stateCell}</td>
           <td>${escapeHtml(row.owner || "")}</td>
           ${savedCell}
@@ -10132,24 +10131,25 @@
         </table>`;
     }
 
-    function renderManagedSavedTable(rows, { deletable, sort }) {
+    function renderManagedSavedTable(site, rows, { deletable, sort }) {
+      // One sort choice drives every datacenter table, the way Search dCloud sorts
+      // each of its DC groups from a single column pick.
       const sortTh = (key, label) => {
         const active = String(sort?.key || "") === key;
         const aria = active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none";
         const arrow = active ? (sort?.dir === "asc" ? " ▲" : " ▼") : "";
-        return `<th class="saved-sort" data-sort="${escapeHtml(key)}" aria-sort="${aria}" title="Sort all datacenters by ${escapeHtml(label)}">${label}${arrow}</th>`;
+        return `<th class="saved-sort" data-sort="${escapeHtml(key)}" aria-sort="${aria}" title="Sort every datacenter by ${escapeHtml(label)}">${label}${arrow}</th>`;
       };
       return `
         <table class="dc-list managed-saved-table">
           <thead>
             <tr>
-              <th><input type="checkbox" class="schedule-saved-all-head" title="Select all saved content across every datacenter" /></th>
-              ${sortTh("savedAt", "Saved")}
+              <th><input type="checkbox" class="schedule-saved-dc-head" data-site="${escapeHtml(site)}" title="Select items in ${escapeHtml(site.toUpperCase())}" /></th>
               ${sortTh("name", "Name")}
               ${sortTh("contentId", "Content ID")}
-              ${sortTh("site", "DC")}
               ${sortTh("owner", "Owner")}
               ${sortTh("state", "State")}
+              ${sortTh("savedAt", "Saved")}
               <th>Actions</th>
             </tr>
           </thead>
@@ -10159,14 +10159,13 @@
               itemClass: "schedule-saved-content",
               showEolBadge: true,
               showSavedAt: true,
-              showSite: true,
               managedActions: true,
             });
             // The shared row helper keeps legacy column order; reorder these cells
             // for the management table without duplicating its badges and actions.
             const cells = rendered.match(/<td[\s\S]*?<\/td>/g) || [];
             return `<tr class="${deletable ? "" : "saved-row-locked"}">${[
-              cells[0], cells[6], cells[2], cells[1], cells[3], cells[5], cells[4], cells[7],
+              cells[0], cells[2], cells[1], cells[4], cells[3], cells[5], cells[6],
             ].filter(Boolean).join("")}</tr>`;
           }).join("")}</tbody>
         </table>`;
@@ -10271,22 +10270,34 @@
       if (mount === "schedule") {
         const deletableRows = rows.filter((row) => row.deletable !== false && !row.eolOnly);
         const promotedRows = rows.filter((row) => row.eolOnly);
-        const mainTable = deletableRows.length
-          ? renderManagedSavedTable(deletableRows, { deletable: true, sort: managedSavedSort })
+        const deletableGroups = groupRowsBySite(deletableRows).filter((group) => group.rows.length > 0);
+        const promotedGroups = groupRowsBySite(promotedRows).filter((group) => group.rows.length > 0);
+        const mainBody = deletableGroups.length
+          ? deletableGroups.map(({ site, rows: siteRows }) => {
+              const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
+              return `
+            <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
+              <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span></summary>
+              ${renderManagedSavedTable(site, siteRows, { deletable: true, sort: managedSavedSort })}
+            </details>`;
+            }).join("")
           : `<p class="hint">No directly deletable saved content in any DC.</p>`;
-        const promotedBody = promotedRows.length
+        const promotedBody = promotedGroups.length
           ? `
             <details class="saved-promoted-group" id="saved-promoted-group">
               <summary>Topology Builder v2 promoted — EOL only (${promotedRows.length})</summary>
               <p class="hint">These items can still be scheduled, edited, or shared, but dCloud does not allow them to be deleted directly. EOL them in the <a href="${DCLOUD_CATALOG_EOL_URL}" target="_blank" rel="noopener noreferrer">dCloud Content Catalog</a>.</p>
-              ${renderManagedSavedTable(promotedRows, { deletable: false, sort: managedSavedSort })}
+              ${promotedGroups.map(({ site, rows: siteRows }) => `
+                <p class="saved-promoted-site">${escapeHtml(site.toUpperCase())} (${siteRows.length})</p>
+                ${renderManagedSavedTable(site, siteRows, { deletable: false, sort: managedSavedSort })}
+              `).join("")}
             </details>`
           : "";
-        const body = rows.length ? `${mainTable}${promotedBody}` : `<p class="hint">No saved custom content found in any DC.</p>`;
+        const body = rows.length ? `${mainBody}${promotedBody}` : `<p class="hint">No saved custom content found in any DC.</p>`;
         if (container) {
           container.innerHTML = `
             ${renderErrorHints(data.errors)}
-            <p class="hint">${rows.length ? `${rows.length} saved content item(s) across all DCs · ${deletableRows.length} directly deletable${promotedRows.length ? ` · ${promotedRows.length} TBv2 promoted/EOL-only` : ""}. Click a column header to sort the full list.` : ""}</p>
+            <p class="hint">${rows.length ? `${rows.length} saved content item(s) across all DCs · ${deletableRows.length} directly deletable${promotedRows.length ? ` · ${promotedRows.length} TBv2 promoted/EOL-only` : ""}. Click a column header to sort every datacenter.` : ""}</p>
             ${body}
           `;
         }
@@ -10402,11 +10413,7 @@
     }
 
     function syncScheduleSavedAll() {
-      document.querySelectorAll(".schedule-saved-all-head").forEach((head) => {
-        const tableBoxes = [...head.closest("table").querySelectorAll(".schedule-saved-content")];
-        head.checked = tableBoxes.length > 0 && tableBoxes.every((box) => box.checked);
-        head.indeterminate = tableBoxes.some((box) => box.checked) && !head.checked;
-      });
+      syncGroupChecks(null, ".schedule-saved-content", "schedule-saved-dc-head");
       syncDeleteSavedButton();
     }
 
@@ -11820,13 +11827,6 @@
         }
       });
       root.addEventListener("change", (ev) => {
-        if (ev.target.classList.contains("schedule-saved-all-head")) {
-          ev.target.closest("table").querySelectorAll(".schedule-saved-content").forEach((box) => {
-            box.checked = ev.target.checked;
-          });
-          syncFn();
-          return;
-        }
         if (ev.target.classList.contains(dcHeadClass)) {
           const site = ev.target.dataset.site;
           root.querySelectorAll(`.${itemClass}[data-site="${site}"]`).forEach((box) => {
@@ -11872,6 +11872,8 @@
     $("btn-collapse-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", false));
     $("btn-check-all-sessions").addEventListener("click", () => setFoundSessionChecks(true));
     $("btn-uncheck-all-sessions").addEventListener("click", () => setFoundSessionChecks(false));
+    $("btn-expand-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", true));
+    $("btn-collapse-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", false));
     $("btn-check-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(true));
     $("btn-uncheck-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(false));
     $("btn-recheck-schedule-saved-ids")?.addEventListener("click", () => recheckSavedIdsOnFoundContent({ forSchedule: true }));

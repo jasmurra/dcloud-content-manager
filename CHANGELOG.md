@@ -1,3 +1,9 @@
+## 1.13.1 — 2026-09-21
+
+- **Saved content is grouped into a collapsible section per datacenter again**, the way Search dCloud lists its results, with **Expand all DCs** and **Collapse all DCs**. Each section remembers whether it was open
+- Clicking a column header still sorts, and now sorts every datacenter's table the same way
+- The saved-content columns are **Name, Content ID, Owner, State, Saved, Actions** — name first and the saved date last. The DC column is gone, since the section header names the datacenter
+
 ## 1.13.0 — 2026-09-21
 
 - **Manage your own saved content across all DCs** replaces the separate schedule and delete lists with one combined table
