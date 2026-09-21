@@ -3545,7 +3545,7 @@
                       ${canEnd ? `<button type="button" class="danger event-session-end" ${rowData}>End session</button>` : ""}
                       <button type="button" class="event-session-logs" ${rowData}>Logs</button>
                       ${row.active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
-                      ${row.demoId ? `<a href="https://dcloud2-${escapeHtml(entry.site)}.cisco.com/demo/${encodeURIComponent(row.demoId)}" target="_blank" rel="noopener noreferrer">Go to demo</a>` : ""}
+                      ${row.demoId ? `<button type="button" class="event-session-content" ${rowData} data-demo-id="${escapeHtml(row.demoId)}">Go to demo</button>` : ""}
                     </div>
                   </details>
                 </td>
@@ -4004,7 +4004,7 @@
             ${active || (error && row.canReset !== false) ? `<button type="button" class="search-row-action" data-action="session-reset">Reset</button>` : ""}
             ${active || terminal || unavailable || error ? `<button type="button" class="search-row-action" data-action="session-logs">Logs</button>` : ""}
             ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
-            ${row.demoId ? `<a href="https://dcloud2-${escapeHtml(site)}.cisco.com/demo/${encodeURIComponent(row.demoId)}" target="_blank" rel="noopener noreferrer">Go to demo</a>` : ""}
+            ${row.demoId ? `<button type="button" class="search-row-action" data-action="session-content" data-tip="Shows the parent content ${escapeHtml(row.demoId)} under Content, the same place dCloud's Go to demo lands.">Go to demo</button>` : ""}
             ${scheduled ? `<button type="button" class="danger search-row-action" data-action="session-cancel">Cancel session</button>` : ""}
             ${active ? `<button type="button" class="danger search-row-action" data-action="session-end">End session</button>` : ""}
           `;
@@ -4569,9 +4569,9 @@
       panel?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    async function loadUnifiedDcData(sources, { refreshData = false } = {}) {
+    async function loadUnifiedDcData(sources, { refreshData = false, sites: only = null } = {}) {
       await unifiedSavedDataReady;
-      const sites = selectedUnifiedSearchDcs();
+      const sites = only && only.length ? only : selectedUnifiedSearchDcs();
       if (!sites.length) {
         $("unified-search-status").textContent = "Select at least one datacenter.";
         return;
@@ -4644,6 +4644,38 @@
       } finally {
         buttons.forEach((button) => { button.disabled = false; });
       }
+    }
+
+    // dCloud's own Go to demo never opens a URL: it switches the admin app over to
+    // Content and searches [id=…]. A /demo/{id} link is the v2 page, which strands
+    // TBv3 content in the old builder, so land on our own Content row instead —
+    // its Edit topology link already points at whichever builder owns the content.
+    async function showContentForDemo(site, demoId) {
+      const dc = String(site || "").trim().toLowerCase();
+      const id = String(demoId || "").trim();
+      if (!dc || !id) return;
+      const panel = $("panel-unified-search");
+      if (panel) panel.open = true;
+      $("unified-search-filter").value = id;
+      const statusFilter = $("unified-search-status-filter");
+      if (statusFilter) statusFilter.value = "";
+      unifiedSectionOpen.set("content", true);
+      unifiedGroupOpen.set(`content:${dc}`, true);
+      if (!(unifiedSearchDcData.sites.content || []).includes(dc)) {
+        const box = document.querySelector(`.unified-search-dc[value="${dc}"]`);
+        if (box) box.checked = true;
+        await loadUnifiedDcData(["content"], { sites: [dc] });
+        $("unified-search-filter").value = id;
+      }
+      renderUnifiedDcData();
+      saveUnifiedSearchSettings();
+      const found = (unifiedSearchDcData.content || []).some(
+        (row) => String(row.site || "").toLowerCase() === dc && String(row.id || "") === id,
+      );
+      $("unified-search-status").textContent = found
+        ? `Showing ${dc.toUpperCase()} content ${id} below. Its Actions menu opens the right topology builder.`
+        : `${dc.toUpperCase()} content ${id} is not in the loaded Content list — it may be deleted or owned by another datacenter.`;
+      panel?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     async function searchAllDcloud() {
@@ -12563,6 +12595,12 @@
         renderEvents();
         return;
       }
+      const contentOne = ev.target.closest(".event-session-content");
+      if (contentOne) {
+        contentOne.closest("details.event-session-actions")?.removeAttribute("open");
+        showContentForDemo(site, contentOne.dataset.demoId).catch((err) => showError(err.message));
+        return;
+      }
       const infoOne = ev.target.closest(".event-session-info");
       const logsOne = ev.target.closest(".event-session-logs");
       if (infoOne || logsOne) {
@@ -12712,6 +12750,10 @@
         }
         if (action === "session-info") {
           showSessionInfo({ site: row.site, sessionId: row.id, label: row.name });
+          return;
+        }
+        if (action === "session-content") {
+          showContentForDemo(site, row.demoId).catch((err) => showError(err.message));
           return;
         }
         if (action === "session-workspace") {

@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.17.3** | *Go to demo* on session and event rows opens the parent content under Search dCloud instead of the v2 `/demo/{id}` page, so TBv3 content reaches TBv3 |
 | **1.17.2** | Compact cards keep status/session ID visible on long names, put Open session on the summary row, and stop the rename pencil overlapping refresh/close |
 | **1.17.1** | Job workspace card toolbar matches Session monitoring: check all, expand/collapse DCs, and expand/collapse cards sit above the compact per-DC list |
 | **1.17.0** | Compact session cards grouped by DC, expandable to full details, drag-reorderable within each site; multiline save description with dCloud’s 255-character limit shown |

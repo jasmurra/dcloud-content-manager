@@ -1,3 +1,7 @@
+## 1.17.3 — 2026-09-21
+
+- **Go to demo no longer strands TBv3 content in the v2 topology builder.** On session and event rows it now opens the parent content under **Search dCloud → Content**, the same place dCloud's own Go to demo lands, loading that datacenter's Content list first if it is not already loaded. That row's **Edit topology** already points at whichever builder owns the content, so v3 content goes to TBv3
+
 ## 1.17.2 — 2026-09-21
 
 - Compact session rows now keep status and session ID visible when the name is long, and the **Open session** link sits in that row instead of the end timestamp. The end time remains in the expanded card

@@ -2024,6 +2024,28 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
     )
 
 
+def test_go_to_demo_lands_on_content_not_the_v2_builder() -> None:
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    check(
+        "no session or event row links to the v2 /demo/{id} page",
+        ".cisco.com/demo/${encodeURIComponent(row.demoId)}" not in page,
+    )
+    check(
+        "Go to demo shows the parent content inside the tool",
+        "async function showContentForDemo(" in page
+        and 'data-action="session-content"' in page
+        and 'class="event-session-content"' in page
+        and 'if (action === "session-content")' in page
+        and 'ev.target.closest(".event-session-content")' in page,
+    )
+    check(
+        "the content jump loads that datacenter's Content list when it is missing",
+        'await loadUnifiedDcData(["content"], { sites: [dc] })' in page
+        and "async function loadUnifiedDcData(sources, { refreshData = false, sites: only = null } = {})" in page
+        and 'unifiedSectionOpen.set("content", true)' in page,
+    )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
