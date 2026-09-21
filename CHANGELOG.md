@@ -1,3 +1,7 @@
+## 1.18.3 — 2026-09-21
+
+- **A card stuck on stopping is refreshed again.** Ending used to skip the dCloud lookup, so a session that started back up under the same ID (or a stale public Stopping next to a signed Starting) kept saying it was being torn down. Refresh and the background watcher now follow it back to starting/active
+
 ## 1.18.2 — 2026-09-21
 
 - **Live-session share search now uses DSX first**, the same query dCloud's share box sends. Partner emails such as `mcupid@vqcomms.com` were missing on SJC/SNG/SYD because the tool searched all cisco.com users instead. If DSX has no match, live sessions still try that broader search; saved content stays on DSX only

@@ -1065,6 +1065,13 @@ def test_ended_card_is_not_a_dead_end() -> None:
     )
     check("a failed read is retried on a fresh token", refresh.count("_refresh_job_token(") == 1)
     check("every ended card says why in the log", "def retire(" in refresh)
+    check(
+        "a stopping card is still refreshed",
+        "_SKIP_REFRESH_DC_PHASES = _TERMINAL_DC_PHASES" in source
+        and '"ending"' in source[
+            source.index("_WATCHED_DC_PHASES") : source.index("RESET_GRACE_SECONDS")
+        ],
+    )
 
     attach = source[source.index("def _attach_job(") : source.index("def _remove_card(")]
     check("an ended card cannot block an add", '!= "ended"' in attach)
@@ -1078,6 +1085,69 @@ def test_ended_card_is_not_a_dead_end() -> None:
     check("burn-in joins the job already on screen", "reuse = job" in burn)
     check("a reused job only schedules the new cards", "_schedule_and_watch_new_dcs" in burn)
     check("a reused job is not re-run for its existing cards", "burn_scheduled.get(days)" in burn)
+
+
+def test_stopping_card_picks_up_a_session_that_started_again() -> None:
+    """Refresh used to skip cards in the ending/stopping phase, so a session that
+    started again under the same ID kept saying dCloud was tearing it down."""
+    import app
+
+    real_last_job = app.LAST_JOB_FILE
+    with tempfile.TemporaryDirectory() as tmp:
+        app.LAST_JOB_FILE = Path(tmp) / "last-job.json"
+        try:
+            job = {
+                "id": "j-stop",
+                "phase": "ending",
+                "log": [],
+                "error": "",
+                "dcs": [{
+                    "site": "rtp",
+                    "sessionId": "1358790",
+                    "phase": "ending",
+                    "status": "Stopping",
+                    "message": "dCloud is tearing this session down — no save.",
+                    "endedWithoutSave": True,
+                }],
+            }
+            dc = job["dcs"][0]
+            real_fetch = app.fetch_session
+            real_public = app.check_public_session_status
+            real_token = app._refresh_job_token
+            real_vms = app._load_dc_vms
+            try:
+                app.check_public_session_status = lambda *a, **k: ("Stopping", None)
+                app.fetch_session = lambda *a, **k: (
+                    {"status": 2, "sessionStatus": 2, "uid": 1358790},
+                    None,
+                )
+                app._refresh_job_token = lambda *a, **k: ("token", None)
+                app._load_dc_vms = lambda *a, **k: None
+                app._refresh_dc_from_dcloud(job, dc, "token")
+            finally:
+                app.fetch_session = real_fetch
+                app.check_public_session_status = real_public
+                app._refresh_job_token = real_token
+                app._load_dc_vms = real_vms
+
+            check("the card leaves the stopping phase", dc["phase"] == "waiting", dc["phase"])
+            check(
+                "the teardown message is replaced",
+                "tearing this session down" not in str(dc.get("message") or ""),
+                str(dc.get("message")),
+            )
+            check(
+                "a stale public Stopping does not win over Starting",
+                "Starting" in str(dc.get("status") or "") or dc["phase"] == "waiting",
+                str(dc.get("status")),
+            )
+            check(
+                "the log says it started again",
+                any("no longer stopping" in line for line in job["log"]),
+                str(job["log"]),
+            )
+        finally:
+            app.LAST_JOB_FILE = real_last_job
 
 
 def test_removed_id_can_be_added_back() -> None:

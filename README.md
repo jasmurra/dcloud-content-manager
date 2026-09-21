@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.18.3** | Refresh follows a stopping card if that session starts again, instead of leaving it stuck on tearing down |
 | **1.18.2** | Live-session share search uses DSX first (same as dCloud), so partner emails are found |
 | **1.18.1** | Session card Actions is on the collapsed row; coworker zips are named `-full` and `-update` |
 | **1.18.0** | Instant filter on every cross-DC list (saved content, session pickers, Events); drag-to-resize table columns; Check all takes just the filtered rows; Find saved content no longer pre-checks Hub rows |

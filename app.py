@@ -231,10 +231,10 @@ _TERMINAL_DC_PHASES = frozenset({"saved", "ended"})
 _BULK_SAVE_MAX_AGE_SECS = max(3600.0, float(os.getenv("DCLOUD_BULK_SAVE_HOURS", "8")) * 3600.0)
 # Finished cards older than this are dropped on startup instead of piling up.
 _FINISHED_CARD_KEEP_SECS = max(3600.0, float(os.getenv("DCLOUD_KEEP_FINISHED_HOURS", "12")) * 3600.0)
-_SKIP_REFRESH_DC_PHASES = _TERMINAL_DC_PHASES | frozenset({"ending", "saving", "shutting_down"})
+_SKIP_REFRESH_DC_PHASES = _TERMINAL_DC_PHASES
 # Phases the background watcher keeps polling until the session settles.
 _WATCHED_DC_PHASES = frozenset(
-    {"waiting", "queued", "scheduling", "resetting", "saving", "shutting_down"}
+    {"waiting", "queued", "scheduling", "resetting", "saving", "shutting_down", "ending"}
 )
 # A reset tears the session down and rebuilds it, so it goes missing for a while.
 RESET_GRACE_SECONDS = 30 * 60
@@ -3103,6 +3103,16 @@ def _dc_reset_in_progress(dc: dict[str, Any]) -> bool:
     return until > time.time()
 
 
+def _preferred_session_status(numeric: Any, public: Any) -> Any:
+    """Prefer the signed session record. Public checkSession can still say Stopping
+    after the same session ID has started again."""
+    if numeric is None:
+        return public
+    if isinstance(numeric, str) and not str(numeric).strip():
+        return public
+    return numeric
+
+
 def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str) -> None:
     site = dc["site"]
     sid = str(dc.get("sessionId") or "").strip()
@@ -3179,8 +3189,10 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             canReset=bool(details.get("canReset")),
             **_dc_ids_from_session(details),
         )
-    status = format_status(numeric, public)
-    if is_stopping_status(public) or is_stopping_status(numeric):
+    reported = _preferred_session_status(numeric, public)
+    status = format_status(reported)
+    was_ending = str(dc.get("phase") or "") == "ending"
+    if is_stopping_status(reported):
         bump(
             phase="ending",
             status=status,
@@ -3188,7 +3200,7 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             message="dCloud is tearing this session down — no save.",
         )
         return
-    if is_saved_status(public) or is_saved_status(numeric):
+    if is_saved_status(reported):
         if not _recover_saved_from_active_id(job, dc, token, details=details, status=status):
             _mark_dc_saved(
                 job,
@@ -3199,7 +3211,7 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
                 session_id=sid,
             )
         return
-    if is_failed_status(public) or is_failed_status(numeric):
+    if is_failed_status(reported):
         if resetting:
             bump(
                 phase="resetting",
@@ -3217,7 +3229,7 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             return
         retire(status, f"dCloud reports {status}.")
         return
-    if is_active_status(public) or is_active_status(numeric):
+    if is_active_status(reported):
         if dc.get("_manual_shutdown_waiting") or dc.get("shutdownPrompt"):
             # The no-save shutdown worker owns the progress message. A normal
             # Active refresh must not blank its list of VMs still shutting down.
@@ -3239,15 +3251,21 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             status="Active",
             message=message,
             resetPendingUntil=0,
+            endedWithoutSave=False,
         )
+        if was_ending:
+            _log(job, f"{site.upper()}: session {sid} is Active again — it is no longer stopping.")
         return
-    # The session is answering again, so a reset we were waiting on has landed.
+    # Starting up (or scheduled) after a stop/reset under the same session ID.
     bump(
         phase="waiting",
         status=status,
         message="Waiting for dCloud to bring this session up.",
         resetPendingUntil=0,
+        endedWithoutSave=False,
     )
+    if was_ending:
+        _log(job, f"{site.upper()}: session {sid} is {status} again — it is no longer stopping.")
 
 
 def _sync_job_phase(job: dict[str, Any]) -> None:
