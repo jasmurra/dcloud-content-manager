@@ -48,7 +48,6 @@ from starlette.concurrency import run_in_threadpool
 from browser_auth.browser_dcloud_auth import (
     clear_login_scan_state,
     mark_login_exchange_started,
-    scan_dcloud_refresh_from_chrome,
     try_import_dcloud_session,
     try_import_dcloud_token,
 )
@@ -157,6 +156,7 @@ from cai_client import (
     cai_replace_vm_chips,
     fetch_demo_page,
     import_cai_cookies_from_chrome,
+    capture_cai_session,
     list_cai_tasks,
     match_integrate_task,
     match_replace_task,
@@ -198,6 +198,7 @@ from camgr_client import (
 from camgr_tab import connect_camgr_via_chrome_tab
 from camgr_browser import capture_camgr_session
 from net_errors import host_resolves, off_network_message
+from tool_browser import capture_dcloud_tokens, profile_exists as tool_browser_profile_exists
 
 load_dotenv()
 
@@ -299,12 +300,24 @@ AUTH_KEEPALIVE_SECONDS = 240
 # Refresh the dCloud access JWT this long before it expires, so a long CAMGR
 # transfer + CAI integrate still has a live token when burn-in schedules.
 DCLOUD_REFRESH_BEFORE_SECONDS = 5 * 60
-# While signed out, look for a fresh Chrome login often so nobody has to click Connect.
+# While signed out, recapture from the tool browser if that profile already exists.
 AUTH_WATCH_SECONDS = 15
-# Reading every Chrome profile is slow, so back off between failed auto-imports.
+# Reading Chrome's cookie DB hits macOS Keychain, so background loops never do it.
 CHROME_IMPORT_MIN_SECONDS = 4
 _chrome_import_lock = threading.Lock()
 _chrome_import_last: dict[str, float] = {"camgr": 0.0, "cai": 0.0}
+PLAYWRIGHT_REFRESH_MIN_SECONDS = 60
+_playwright_refresh_lock = threading.Lock()
+_playwright_refresh_last: dict[str, float] = {"camgr": 0.0, "cai": 0.0, "dcloud": 0.0}
+
+
+def _playwright_refresh_allowed(kind: str) -> bool:
+    now = time.time()
+    with _playwright_refresh_lock:
+        if now - _playwright_refresh_last.get(kind, 0.0) < PLAYWRIGHT_REFRESH_MIN_SECONDS:
+            return False
+        _playwright_refresh_last[kind] = now
+    return True
 
 
 def _chrome_import_allowed(kind: str) -> bool:
@@ -580,23 +593,6 @@ def _persist_user_session() -> None:
         pass
 
 
-def _maybe_backfill_refresh_from_chrome() -> bool:
-    """If access token is saved but refresh is missing, read dc_p_r from Chrome."""
-    with _user_auth_lock:
-        if (_user_auth.get("refresh_token") or "").strip():
-            return False
-        if not (_user_auth.get("access_token") or "").strip():
-            return False
-    refresh = scan_dcloud_refresh_from_chrome()
-    if not refresh:
-        return False
-    with _user_auth_lock:
-        _user_auth["refresh_token"] = refresh
-        _user_auth["has_refresh"] = True
-    _persist_user_session()
-    return True
-
-
 def _load_persisted_session() -> None:
     if not SESSION_FILE.is_file():
         return
@@ -631,7 +627,6 @@ def _load_persisted_session() -> None:
         with _user_auth_lock:
             _user_auth["expires_at"] = stored_exp
         _persist_user_session()
-    _maybe_backfill_refresh_from_chrome()
 
 
 def _read_user_session() -> tuple[str, float, str, str]:
@@ -675,7 +670,18 @@ def _ensure_user_access_token(
                 return token
             if not refresh:
                 return token if _access_token_is_usable(token, expires_at) else ""
-            return _refresh_with_any_site(refresh, site, progress)
+            access = _refresh_with_any_site(refresh, site, progress)
+            if access:
+                return access
+    if tool_browser_profile_exists() and _playwright_refresh_allowed("dcloud"):
+        access, new_refresh, found_site, _message = capture_dcloud_tokens(
+            site or "rtp",
+            headed=False,
+            timeout_s=25,
+        )
+        if access:
+            _apply_user_session(access, new_refresh, found_site or site or "rtp", "browser")
+            return access
     return token if (not force and _access_token_is_usable(token, expires_at)) else ""
 
 
@@ -3620,10 +3626,10 @@ def _camgr_auto_connect() -> dict[str, Any]:
                 "message": probed.get("message") or "CAMGR session is active.",
             }
         )
-    if _chrome_import_allowed("camgr"):
-        imported, _import_message = import_camgr_cookies_from_chrome()
-        if imported and imported != cookie:
-            probed = probe_camgr_login(imported)
+    if tool_browser_profile_exists() and _playwright_refresh_allowed("camgr"):
+        imported, _import_message = capture_camgr_session(headed=False)
+        if imported:
+            probed = probe_camgr_login(imported, allow_tab=False)
             if probed.get("loggedIn"):
                 header = str(probed.get("cookie") or imported or "").strip()
                 _set_camgr_cookie(header, probed.get("message") or "", str(probed.get("user") or ""))
@@ -3635,8 +3641,7 @@ def _camgr_auto_connect() -> dict[str, Any]:
                         "message": probed.get("message") or "CAMGR session is active.",
                     }
                 )
-    # Keep whatever cookie we have. It may start working again, and the watcher
-    # keeps checking Chrome, so signing in there is enough to reconnect.
+    # Keep whatever cookie we have. A Connect click opens the tool browser for SSO.
     _camgr_mark_unverified(CAMGR_LOGIN_HINT)
     return _camgr_public_status({"loggedIn": False})
 
@@ -3653,8 +3658,8 @@ def _cai_auto_connect() -> dict[str, Any]:
         probed = probe_cai_login("")
         if probed.get("loggedIn"):
             cookie = ""
-    if not probed.get("loggedIn") and _chrome_import_allowed("cai"):
-        imported, _message = import_cai_cookies_from_chrome()
+    if not probed.get("loggedIn") and tool_browser_profile_exists() and _playwright_refresh_allowed("cai"):
+        imported, _message = capture_cai_session(headed=False)
         if imported:
             probed = probe_cai_login(imported)
             if probed.get("loggedIn"):
@@ -3667,8 +3672,8 @@ def _cai_auto_connect() -> dict[str, Any]:
 
 
 def _auth_keepalive_loop() -> None:
-    # Signed in, this just keeps the sessions warm. Signed out, it watches Chrome
-    # so finishing Duo in a tab reconnects the tool on its own.
+    # Signed in, this just keeps the sessions warm. Signed out, it reuses the
+    # tool Chromium profile (no Chrome Keychain) if that login already exists.
     checked_at = {"camgr": 0.0, "cai": 0.0, "dcloud": 0.0}
     connected = {"camgr": False, "cai": False, "dcloud": False}
 
@@ -3750,15 +3755,19 @@ def _start_camgr_open() -> dict[str, Any]:
 
 
 def _connect_camgr(cookie: str = "") -> dict[str, Any]:
-    """Use a saved session, then the live CAMGR Chrome tab."""
-    # Off the VPN the Chrome tab fails too, so say that instead of "open CAMGR".
+    """Use a saved session, the tool browser, then a live CAMGR Chrome tab."""
     if not host_resolves(CAMGR_HOST):
         reason = off_network_message("CAMGR")
         _camgr_mark_unverified(reason)
         raise HTTPException(400, reason)
-    _chrome_import_reset("camgr")
     header = (cookie or "").strip()
-    probed = probe_camgr_login(header)
+    probed = probe_camgr_login(header, allow_tab=False)
+    tool_message = ""
+    if not probed.get("loggedIn"):
+        tool_header, tool_message = capture_camgr_session()
+        if tool_header:
+            header = tool_header
+            probed = probe_camgr_login(header, allow_tab=False)
     tab_message = ""
     if not probed.get("loggedIn"):
         tab_header, tab_message = connect_camgr_via_chrome_tab()
@@ -3769,10 +3778,9 @@ def _connect_camgr(cookie: str = "") -> dict[str, Any]:
         imported, _import_message = import_camgr_cookies_from_chrome()
         if imported:
             header = imported
-            probed = probe_camgr_login(header)
+            probed = probe_camgr_login(header, allow_tab=False)
     if not probed.get("loggedIn"):
-        # The Chrome tab is the path that actually works, so its reason wins.
-        reason = tab_message or probed.get("message") or CAMGR_LOGIN_HINT
+        reason = tool_message or tab_message or probed.get("message") or CAMGR_LOGIN_HINT
         _camgr_mark_unverified(reason)
         raise HTTPException(400, reason)
     header = str(probed.get("cookie") or header or "").strip() or header
@@ -4987,7 +4995,6 @@ def api_update_check() -> dict[str, Any]:
 @app.get("/api/auth/status")
 def api_auth_status() -> dict[str, Any]:
     dcloud = dcloud_auth_status(ENV_FILE, ENV_EXAMPLE_FILE)
-    _maybe_backfill_refresh_from_chrome()
     _ensure_user_access_token()
     with _user_auth_lock:
         expires_at = float(_user_auth.get("expires_at") or 0)
@@ -5071,6 +5078,16 @@ async def api_refresh_session() -> dict[str, Any]:
         )
     access, _new_refresh, expires_at, err = _refresh_session_token(refresh, site)
     if err or not access:
+        token = _ensure_user_access_token(force=True)
+        if token:
+            with _user_auth_lock:
+                expires_at = float(_user_auth.get("expires_at") or 0)
+            return {
+                "ok": True,
+                "token": token,
+                "expiresAt": int(expires_at),
+                "message": "Refreshed dCloud access token.",
+            }
         raise HTTPException(400, err or "Could not refresh dCloud token.")
     return {
         "ok": True,
@@ -5080,36 +5097,43 @@ async def api_refresh_session() -> dict[str, Any]:
     }
 
 
-@app.post("/api/dcloud/token/import-from-browser")
-async def api_import_dcloud_token(
-    dry_run: bool = False,
-    full_scan: bool = True,
-    storage_only: bool = False,
+@app.post("/api/auth/dcloud-browser-login")
+async def api_dcloud_browser_login(
+    site: str = "",
+    allow_window: bool = True,
 ) -> dict[str, Any]:
+    """Sign in to dCloud inside the tool-owned Chromium profile.
+
+    One Cisco SSO login in that profile covers dCloud, CAMGR and CAI, so this never
+    reads Chrome's cookie database and never raises a Keychain prompt. Callers that
+    run on their own (page load, keepalive) pass allow_window=0: without it a silent
+    warm-up could throw a sign-in window in front of someone who never asked for one.
+    """
+    site_code = (site or "").strip().lower()
+    if not site_code:
+        with _user_auth_lock:
+            site_code = (_user_auth.get("site") or "rtp").strip().lower() or "rtp"
     try:
-        token, refresh, site, message = await run_in_threadpool(
-            partial(
-                try_import_dcloud_session,
-                full_scan=full_scan,
-                storage_only=storage_only,
-            ),
-        )
-        if token and not dry_run:
-            _apply_user_session(token, refresh, site, "browser")
-            if not refresh:
-                _maybe_backfill_refresh_from_chrome()
+        token, refresh, site_out, message = "", "", site_code, ""
+        if tool_browser_profile_exists():
+            token, refresh, site_out, message = await run_in_threadpool(
+                partial(capture_dcloud_tokens, site_code, headed=False, timeout_s=25),
+            )
+        if not token and allow_window:
+            token, refresh, site_out, message = await run_in_threadpool(
+                partial(capture_dcloud_tokens, site_code, headed=True, timeout_s=300),
+            )
+        if token:
+            _apply_user_session(token, refresh, site_out or site_code, "browser")
         return {
             "ok": bool(token),
             "token": token,
             "message": message,
             "hasRefresh": bool(refresh),
-            "site": site or "",
+            "site": site_out or site_code,
         }
     except Exception as exc:
-        raise HTTPException(
-            400,
-            f"Could not import dCloud token from browser: {exc}",
-        ) from exc
+        raise HTTPException(400, f"Could not sign in to dCloud: {exc}") from exc
 
 
 @app.post("/api/dcloud/token/validate")
@@ -8091,6 +8115,18 @@ def _connect_cai(cookie: str = "") -> dict[str, Any]:
     if not probed.get("loggedIn") and header:
         probed = probe_cai_login("")
         header = ""
+    if not probed.get("loggedIn"):
+        tool_header, tool_message = capture_cai_session()
+        if tool_header:
+            header = tool_header
+            probed = probe_cai_login(header)
+        elif not probed.get("loggedIn"):
+            raise HTTPException(
+                401,
+                tool_message
+                or probed.get("message")
+                or "CAI is not reachable from this machine. Join the Cisco network and click Connect to CAI.",
+            )
     if not probed.get("loggedIn"):
         raise HTTPException(
             401,

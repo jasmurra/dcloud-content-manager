@@ -174,11 +174,20 @@ fi
 
 echo "Checking Python packages..."
 # python -m pip, not .venv/bin/pip, so a stale pip shebang cannot break the run.
-.venv/bin/python -m pip install -q -r requirements.txt || {
+.venv/bin/python -m pip install -q --disable-pip-version-check -r requirements.txt || {
   echo "Package install failed. Check your network and try again."
   read -r -p "Press Enter to close this window..."
   exit 1
 }
+
+# Tool-owned Chromium for Cisco SSO (CAMGR/CAI/dCloud). Lives in this folder so a
+# GitHub update does not require a new zip, and Chrome Keychain is never opened.
+export PLAYWRIGHT_BROWSERS_PATH="$(pwd)/.playwright-browsers"
+if ! .venv/bin/python -c "from playwright.sync_api import sync_playwright as S
+p=S().start(); path=p.chromium.executable_path; p.stop(); raise SystemExit(0 if path else 1)" >/dev/null 2>&1; then
+  echo "Downloading Chromium for sign-in (one time; this is not Google Chrome)..."
+  .venv/bin/python -m playwright install chromium || echo "Chromium download failed — Connect to CAMGR/CAI can still try your Chrome tab."
+fi
 
 if [ ! -f ".env" ]; then
   if [ -f ".env.example" ]; then

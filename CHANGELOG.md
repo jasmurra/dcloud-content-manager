@@ -1,3 +1,26 @@
+## 1.17.0 — 2026-09-21
+
+- **Job workspace and monitoring cards are compact and grouped by datacenter.** Each site has its own collapsible section, and every session starts as a one-line summary with name, status, session ID, and end time; expand it for all existing VM details and actions
+- **Drag session cards to reorder them within a datacenter.** Workspace and monitoring order are saved separately in the browser and survive status refreshes and page reloads
+- Added **Expand all cards** and **Collapse all cards** controls to both the job workspace and Session monitoring
+- The save-description field is now a multiline editor with a live character counter. dCloud TBv3 enforces a 255-character description limit, so the UI now states that limit instead of looking like an arbitrarily short one-line tool field
+
+## 1.16.0 — 2026-09-21
+
+- **One button signs you in to dCloud.** *Log in to dCloud* now uses the tool-owned Chromium window, the same profile CAMGR and CAI use. **Import dCloud token from browser** is gone, along with the popup that had to be watched and the Chrome Local Storage scan behind it
+- **Nothing reads Chrome cookies for a dCloud token any more.** The helper that decrypted Chrome Safe Storage to recover a refresh token has been removed, so no code path can raise a Keychain prompt
+- Sign-in starts at the Cisco SSO authorize URL instead of the dCloud home page. An anonymous visit to `dcloud2-<site>.cisco.com` only redirects to the public marketing site, which never sets a token, so the silent path could never succeed
+- **A silent renewal gives up in about 6 seconds** once it lands on a Cisco/Duo login page, rather than waiting out the full timeout. Page load no longer starts a browser at all — it shows the saved session and lets the server renew on demand
+- Fixed a bug where clicking *Log in to dCloud* could open an unexpected Chromium window and stall for up to three minutes, because the silent token snapshot behind that click was allowed to escalate to a visible sign-in
+
+## 1.15.0 — 2026-09-21
+
+- **Sign-in no longer reads Chrome Keychain in the background.** Status polling and CAMGR/CAI keep-alive used to decrypt Chrome cookies every few seconds, which is what produced the repeating “security wants to use Chrome Safe Storage” prompts
+- **Connect to CAMGR and Connect to CAI open a tool-owned Chromium window** for Cisco SSO/Duo. That profile is stored in this install (`.dcloud-tool-chrome`) and is reused to refresh later without importing from Chrome
+- Existing installs pick this up from GitHub: `start.command` installs Playwright and downloads Chromium once into `.playwright-browsers`. No new zip is required
+- dCloud **Log in** still uses Cisco SSO. If the access token expires, refresh uses the saved refresh token first, then the tool browser profile if that token is gone. **Import** tries the tool browser before the Chrome cookie database
+- Chrome tab / Keychain import remains a last-resort fallback if Chromium cannot finish SSO
+
 ## 1.14.3 — 2026-09-21
 
 - dCloud admin session status **95** now displays as **VC Unavailable** instead of `95`. These broken sessions are read-only: only Info, Logs, and Go to demo are offered; they cannot be selected for bulk Reset or End

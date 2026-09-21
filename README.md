@@ -16,6 +16,9 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.17.0** | Compact session cards grouped by DC, expandable to full details, drag-reorderable within each site; multiline save description with dCloud’s 255-character limit shown |
+| **1.16.0** | One *Log in to dCloud* button through the tool browser; Import removed, no Chrome cookie reads remain, and a silent renewal gives up fast instead of stalling |
+| **1.15.0** | Tool-owned Chromium for CAMGR/CAI/dCloud refresh — GitHub update installs it; no Chrome Keychain prompts in the background |
 | **1.14.3** | Session status 95 is labeled VC Unavailable and limited to Info/Logs/Go to demo; status 99 is labeled Error and offers Info/Reset/Logs/Go to demo |
 | **1.14.2** | Reset and End work on sessions you don't own: both retry on the dCloud admin route after a permission error, so an admin can act on another user's event sessions |
 | **1.14.1** | Bulk Reset/End in Events are paced one session at a time (1s apart by default, adjustable), and a failed batch now reports dCloud's reason per session instead of only a count |

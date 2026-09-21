@@ -10,6 +10,8 @@ last-job.json
 .dcloud-cai-session.json
 .dcloud-camgr-session.json
 .dcloud-camgr-chrome/
+.dcloud-tool-chrome/
+.playwright-browsers/
 managed-saved-ids.json
 .python-runtime-cache/
 .github-update-cache/

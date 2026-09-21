@@ -1867,6 +1867,153 @@ def test_event_management_section() -> None:
         dcloud_client.fetch_admin_records = real_fetch
 
 
+def test_tool_owned_browser_avoids_keychain() -> None:
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = (ROOT / "start.command").read_text(encoding="utf-8")
+    reqs = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    check("Playwright is a runtime dependency", "playwright>=" in reqs)
+    check(
+        "start.command downloads Chromium once into this install",
+        "playwright install chromium" in start
+        and "PLAYWRIGHT_BROWSERS_PATH" in start,
+    )
+    check(
+        "the tool browser module is packaged",
+        (ROOT / "tool_browser.py").is_file()
+        and "tool_browser.py" in (ROOT / "pack_for_mac.py").read_text(encoding="utf-8"),
+    )
+    camgr_auto = source[source.index("def _camgr_auto_connect(") : source.index("def _cai_auto_connect(")]
+    cai_auto = source[source.index("def _cai_auto_connect(") : source.index("def _auth_keepalive_loop(")]
+    check(
+        "background CAMGR refresh does not decrypt Chrome cookies",
+        "import_camgr_cookies_from_chrome" not in camgr_auto
+        and "capture_camgr_session(headed=False)" in camgr_auto,
+    )
+    check(
+        "background CAI refresh does not decrypt Chrome cookies",
+        "import_cai_cookies_from_chrome" not in cai_auto
+        and "capture_cai_session(headed=False)" in cai_auto,
+    )
+    check(
+        "status polling does not scan Chrome for a refresh token",
+        "_maybe_backfill_refresh_from_chrome()" not in source[source.index("def api_auth_status(") : source.index("def api_login_url(")],
+    )
+    login = source[
+        source.index("async def api_dcloud_browser_login(") : source.index(
+            '@app.post("/api/dcloud/token/validate")'
+        )
+    ]
+    check(
+        "dCloud sign-in goes through the tool browser, not Chrome",
+        "capture_dcloud_tokens" in login
+        and "try_import_dcloud_session" not in login,
+    )
+    check(
+        "a silent warm-up can never open a sign-in window",
+        "allow_window" in login
+        and login.index("allow_window") < login.index("headed=True"),
+    )
+    check(
+        "nothing decrypts Chrome cookies for a refresh token any more",
+        "_maybe_backfill_refresh_from_chrome" not in source
+        and "scan_dcloud_refresh_from_chrome" not in source,
+    )
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    check(
+        "the Import from browser buttons are gone",
+        'id="btn-import"' not in page and 'id="token-alert-import"' not in page,
+    )
+    check(
+        "one Log in button drives dCloud sign-in through the tool browser",
+        'id="btn-login"' in page
+        and "/api/auth/dcloud-browser-login" in page
+        and "import-from-browser" not in page,
+    )
+    check(
+        "page load shows the saved session without starting a browser",
+        "warmAuthFromToolBrowser" in page
+        and "loginToDcloud" not in page[page.index("async function warmAuthFromToolBrowser") : page.index("async function refreshAuth")],
+    )
+    browser = (ROOT / "tool_browser.py").read_text(encoding="utf-8")
+    check(
+        "dCloud sign-in starts at the SSO authorize URL, not the marketing home",
+        "build_dcloud_login_url" in browser
+        and 'f"https://dcloud2-{site_code}.cisco.com/"' not in browser,
+    )
+    check(
+        "a silent capture gives up once it lands on a login page",
+        "_is_idp_page" in browser
+        and "IDP_SETTLE_SECONDS" in browser
+        and browser.count("not headed\n") >= 2,
+    )
+    check(
+        "the auth code is caught on navigation, not only by sampling the URL",
+        "framenavigated" in browser and "_code_from_url" in browser,
+    )
+    check(
+        "the old popup polling loop is gone",
+        not any(
+            name in page
+            for name in ("pollLoginStorage", "pollLoginImport", "snapshotChromeToken", "loginPopup")
+        ),
+    )
+    check(
+        "Connect to CAMGR prefers the tool browser",
+        "capture_camgr_session()" in source[source.index("def _connect_camgr(") : source.index("def _auth_camgr_needed(")],
+    )
+
+
+def test_compact_reorderable_session_cards_and_save_description() -> None:
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    client = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    check(
+        "save description is multiline and states dCloud's 255-character limit",
+        '<textarea id="prompt-alert-description" maxlength="255"' in page
+        and 'id="prompt-alert-description-count"' in page
+        and "dCloud saved-content descriptions are limited to 255 characters" in page,
+    )
+    check(
+        "save description character count updates while typing",
+        "function updateSaveDescriptionCount()" in page
+        and '"prompt-alert-description")?.addEventListener("input", updateSaveDescriptionCount)' in page,
+    )
+    check(
+        "the dCloud save payload enforces the same 255-character limit",
+        '"description": desc[:255]' in client
+        and "tbv3 requires description length 1–255" in client,
+    )
+    check(
+        "workspace and monitoring cards are grouped into collapsible site sections",
+        "function renderCardGroups(" in page
+        and 'class="card-site-group"' in page
+        and 'class="card-site-count"' in page
+        and "renderCardGroups(\n            visibleJob" in page
+        and "renderCardGroups(\n            visibleMonitor" in page,
+    )
+    check(
+        "session cards collapse to a compact status row",
+        '<details class="card${monitor ? " card-monitor" : ""}' in page
+        and 'class="card-summary-name"' in page
+        and 'class="card-summary-end"' in page,
+    )
+    check(
+        "session cards can be expanded or collapsed together",
+        'id="btn-expand-job-cards"' in page
+        and 'id="btn-collapse-job-cards"' in page
+        and 'id="btn-expand-monitor-cards"' in page
+        and 'id="btn-collapse-monitor-cards"' in page
+        and "function setSessionCardsOpen(" in page,
+    )
+    check(
+        "card drag order persists by workspace or monitoring site",
+        'class="card-drag-handle"' in page
+        and "CARD_LAYOUT_KEY" in page
+        and "captureCardLayoutFromDom" in page
+        and 'grid.addEventListener("dragstart"' in page
+        and 'grid.addEventListener("drop"' in page,
+    )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

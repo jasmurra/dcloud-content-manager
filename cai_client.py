@@ -227,8 +227,8 @@ def probe_cai_login(cookie_header: str) -> dict[str, Any]:
         "ok": False,
         "loggedIn": False,
         "message": (
-            "Not signed in to Content Automation Hub. Open CAI in Chrome on the Cisco network, "
-            "finish Cisco/Duo login, then Import CAI session from Chrome."
+            "Not signed in to Content Automation Hub. Click Connect to CAI — a tool browser "
+            "window opens for Cisco SSO/Duo. After that the tool refreshes CAI itself."
         ),
     }
 
@@ -326,6 +326,37 @@ def import_cai_cookies_from_chrome() -> tuple[str | None, str]:
         "On the CAI tab: DevTools → Network → click https://dcloud-cai.cisco.com/ → "
         "Request Headers → Cookie → copy the whole value → paste it below. "
         "The Application tab .cisco.com cookies are not the CAI login.",
+    )
+
+
+def capture_cai_session(*, headed: bool | None = None, timeout_s: float = 180) -> tuple[str | None, str]:
+    """Sign in to CAI in the tool Chromium profile and return a Cookie header."""
+    from tool_browser import capture_site_cookies, profile_exists
+
+    hosts = ("dcloud-cai.cisco.com",)
+
+    def logged_in(cookie: str) -> bool:
+        return bool(probe_cai_login(cookie).get("loggedIn"))
+
+    silent = headed is False or (headed is None and profile_exists())
+    if silent:
+        header, message = capture_site_cookies(
+            CAI_HOME,
+            hosts,
+            logged_in,
+            headed=False,
+            timeout_s=min(25.0, timeout_s),
+        )
+        if header:
+            return header, message
+        if headed is False:
+            return None, message
+    return capture_site_cookies(
+        CAI_HOME,
+        hosts,
+        logged_in,
+        headed=True,
+        timeout_s=timeout_s,
     )
 
 

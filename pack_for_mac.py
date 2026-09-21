@@ -50,6 +50,7 @@ FILES = (
     "camgr_client.py",
     "camgr_tab.py",
     "camgr_browser.py",
+    "tool_browser.py",
     "net_errors.py",
     "static/index.html",
 )

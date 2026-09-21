@@ -37,6 +37,8 @@ SKIP_DIR_NAMES = {
     ".github-update-cache",
     ".python-runtime-cache",
     ".dcloud-camgr-chrome",
+    ".dcloud-tool-chrome",
+    ".playwright-browsers",
     ".cursor",
     ".github",
     "__pycache__",

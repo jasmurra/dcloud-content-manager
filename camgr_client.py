@@ -47,7 +47,10 @@ TERMINAL_STATUSES = frozenset({"COMPLETE", "ERROR"})
 _SESSION_COOKIE_HINTS = ("mod_auth_openidc", "openidc", "session")
 # One per login attempt; leftovers from extra tabs, useless for staying signed in.
 _STATE_COOKIE_PREFIX = "mod_auth_openidc_state"
-CAMGR_LOGIN_HINT = "Click Connect to CAMGR while Content Transfer is open in Chrome."
+CAMGR_LOGIN_HINT = (
+    "Click Connect to CAMGR. A tool-owned Chromium window opens for Cisco SSO/Duo; "
+    "after that the tool refreshes the session itself without reading Chrome Keychain."
+)
 _cookie_sink: Any = None
 
 
@@ -196,10 +199,10 @@ def _auth_error(message: str) -> dict[str, Any]:
     }
 
 
-def probe_camgr_login(cookie_header: str) -> dict[str, Any]:
+def probe_camgr_login(cookie_header: str, *, allow_tab: bool = True) -> dict[str, Any]:
     header = (cookie_header or "").strip()
     if using_chrome_tab(header):
-        return probe_camgr_via_chrome_tab()
+        return probe_camgr_via_chrome_tab() if allow_tab else _auth_error(CAMGR_LOGIN_HINT)
     if header:
         sess = _session(header)
         try:
@@ -223,10 +226,12 @@ def probe_camgr_login(cookie_header: str) -> dict[str, Any]:
                     "jobs": body.get("jobs") if isinstance(body, dict) else None,
                     "message": f"CAMGR session is active ({user}).",
                 }
-    tab = probe_camgr_via_chrome_tab()
-    if tab.get("loggedIn"):
-        return tab
-    return _auth_error(tab.get("message") or CAMGR_LOGIN_HINT)
+    if allow_tab:
+        tab = probe_camgr_via_chrome_tab()
+        if tab.get("loggedIn"):
+            return tab
+        return _auth_error(tab.get("message") or CAMGR_LOGIN_HINT)
+    return _auth_error(CAMGR_LOGIN_HINT)
 
 
 def _camgr_cookies_from_jar(jar) -> dict[str, str]:

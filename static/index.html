@@ -49,9 +49,12 @@
       white-space: nowrap;
     }
     .dcloud-auth-button {
-      min-width: 9.5rem;
-      padding: 0.45rem 0.75rem;
-      font-size: 0.8rem;
+      /* Same padding and font as the other header buttons. The min-width holds the
+         row steady when the label swaps to the longer "Signed in" state. */
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 12.5rem;
     }
     .dcloud-auth-button.authorized {
       background: var(--ok);
@@ -449,15 +452,96 @@
     }
     .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 0.75rem;
+    }
+    .card-site-group {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(11, 16, 24, 0.42);
+      overflow: visible;
+    }
+    .card-site-group > summary {
+      padding: 0.55rem 0.75rem;
+      font-weight: 650;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .card-site-count {
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.78rem;
+      margin-left: 0.35rem;
+    }
+    .card-site-cards {
+      display: grid;
+      gap: 0.45rem;
+      padding: 0 0.55rem 0.55rem;
     }
     .card {
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 0.85rem 1.7rem 0.85rem 2rem;
       background: #121a26;
       position: relative;
+      overflow: visible;
+    }
+    .card > summary {
+      display: grid;
+      grid-template-columns: auto auto minmax(7rem, 1fr) auto auto auto auto;
+      gap: 0.55rem;
+      align-items: center;
+      min-height: 2.45rem;
+      padding: 0.45rem 0.65rem;
+      cursor: pointer;
+      list-style: none;
+    }
+    .card > summary::-webkit-details-marker { display: none; }
+    .card > summary::after {
+      content: "›";
+      color: var(--muted);
+      font-size: 1.1rem;
+      transform: rotate(0deg);
+      transition: transform 0.1s ease;
+    }
+    .card[open] > summary::after { transform: rotate(90deg); }
+    .card-summary-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+    .card-summary-meta {
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.74rem;
+      white-space: nowrap;
+    }
+    .card-summary-end {
+      color: var(--muted);
+      font-size: 0.76rem;
+      white-space: nowrap;
+    }
+    .card-drag-handle {
+      color: var(--muted);
+      cursor: grab;
+      user-select: none;
+      letter-spacing: -0.12rem;
+      padding-right: 0.1rem;
+    }
+    .card-drag-handle:active { cursor: grabbing; }
+    .card-body {
+      border-top: 1px solid var(--border);
+      padding: 0.75rem 1.7rem 0.85rem 0.85rem;
+      position: relative;
+    }
+    .card.card-dragging { opacity: 0.45; }
+    .card.card-drop-before { border-top-color: var(--accent); box-shadow: 0 -2px 0 var(--accent); }
+    .card.card-drop-after { border-bottom-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+    @media (max-width: 760px) {
+      .card > summary {
+        grid-template-columns: auto auto minmax(6rem, 1fr) auto auto auto;
+      }
+      .card-summary-end { display: none; }
     }
     .card-controls {
       position: absolute;
@@ -468,9 +552,6 @@
       gap: 0.05rem;
     }
     .card-select-wrap {
-      position: absolute;
-      top: 0.35rem;
-      left: 0.45rem;
       display: flex;
       align-items: center;
       gap: 0.3rem;
@@ -478,6 +559,7 @@
       color: var(--muted);
     }
     .card-select-wrap input { width: auto; margin: 0; }
+    .card-select-spacer { width: 0.85rem; }
     .card-refresh,
     .card-x {
       background: transparent;
@@ -783,8 +865,26 @@
       color: var(--muted);
       margin-bottom: 0.25rem;
     }
-    .prompt-field input {
+    .prompt-field input,
+    .prompt-field textarea {
       width: 100%;
+    }
+    .prompt-field textarea {
+      min-height: 7.5rem;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: 1.4;
+    }
+    .prompt-label-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: baseline;
+    }
+    .character-count {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
     }
     .action-modal-card h2 {
       color: var(--warn);
@@ -1527,7 +1627,6 @@
         <div class="actions">
           <button type="button" id="token-alert-login">Log in to dCloud</button>
           <button type="button" class="secondary" id="token-alert-goto">Open dCloud sign-in</button>
-          <button type="button" class="secondary" id="token-alert-import">Import from browser</button>
           <button type="button" class="secondary" id="token-alert-dismiss">Dismiss</button>
         </div>
       </div>
@@ -1634,8 +1733,12 @@
           <input id="prompt-alert-input" type="text" maxlength="255" autocomplete="off" />
         </div>
         <div class="prompt-field">
-          <label for="prompt-alert-description">Description</label>
-          <input id="prompt-alert-description" type="text" maxlength="255" autocomplete="off" />
+          <div class="prompt-label-row">
+            <label for="prompt-alert-description">Description</label>
+            <span id="prompt-alert-description-count" class="character-count">0 / 255</span>
+          </div>
+          <textarea id="prompt-alert-description" maxlength="255" rows="5" autocomplete="off" aria-describedby="prompt-alert-description-limit"></textarea>
+          <p id="prompt-alert-description-limit" class="hint" style="margin:0.3rem 0 0">dCloud saved-content descriptions are limited to 255 characters.</p>
         </div>
         <div class="actions">
           <button type="button" id="prompt-alert-ok">Save</button>
@@ -1704,13 +1807,13 @@
       <div class="panel-collapse-body">
       <p class="hint">
         Sessions run under <strong>your</strong> dCloud login.
-        <strong>Log in</strong> goes straight to the Cisco SSO popup — if Chrome is already signed into dCloud
-        it finishes on its own in a second or two. <strong>Import</strong> reads the login Chrome already has,
-        without a popup. If a popup sits on “Logging you in…”, close it and the tool finishes the login.
+        <strong>Log in</strong> uses a tool-owned Chromium window for Cisco SSO (Duo included) —
+        the same window CAMGR and CAI use, so one sign-in covers all three and renewals
+        happen there instead of through Chrome Keychain prompts. If that profile is already
+        signed in, this finishes silently.
       </p>
       <div class="actions" style="margin-top:0.4rem">
-        <button type="button" id="btn-login" data-tip="Opens Cisco SSO in a popup. After sign-in, tokens are captured from the SSO exchange (refresh token saved for auto-renew).">Log in to dCloud</button>
-        <button type="button" id="btn-import" data-tip="Use when you are already signed into dCloud in Chrome (reads your saved login).">Import dCloud token from browser</button>
+        <button type="button" id="btn-login" data-tip="Signs in through the tool's own Chromium window (Cisco SSO/Duo). Silent if CAMGR or CAI already signed in there.">Log in to dCloud</button>
         <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate token</button>
         <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear login session</button>
       </div>
@@ -1725,7 +1828,7 @@
         </div>
         <div>
           <label for="dtoken">dCloud API token</label>
-          <input id="dtoken" type="text" placeholder="Log in or import — token appears here for copy/paste" autocomplete="off" spellcheck="false" />
+          <input id="dtoken" type="text" placeholder="Log in — token appears here for copy/paste" autocomplete="off" spellcheck="false" />
         </div>
       </div>
       </div>
@@ -1905,7 +2008,7 @@
       </p>
       <div class="actions">
         <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section, using the VMs checked in Load VMs. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
-        <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you import a new token from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with new token</button>
+        <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with new token</button>
       </div>
       <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
       <details class="advanced" id="panel-recovery">
@@ -2095,9 +2198,13 @@
       </details>
       <div id="auth-pause-banner" class="banner-dismissible warn-box hidden">
         <span id="auth-pause-banner-text" class="banner-text">
-          Token expired. Click Sign in to dCloud, log in or import from browser, then Continue with new token.
+          Token expired. Click Sign in to dCloud, log in, then Continue with new token.
         </span>
         <button type="button" class="banner-dismiss" id="auth-pause-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
+      </div>
+      <div id="job-card-view-actions" class="list-toolbar hidden" style="margin-top:0.75rem">
+        <button type="button" class="secondary" id="btn-expand-job-cards">Expand all cards</button>
+        <button type="button" class="secondary" id="btn-collapse-job-cards">Collapse all cards</button>
       </div>
       <p id="cards-note" class="hint hidden" style="margin:0.75rem 0 0"></p>
       <div id="cards" class="cards" style="margin-top:0.75rem"></div>
@@ -2189,6 +2296,8 @@
       <div class="actions">
         <button type="button" class="secondary" id="btn-find-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them for monitoring.">Find my sessions</button>
         <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Polls dCloud for every monitoring card below.">Refresh monitoring cards</button>
+        <button type="button" class="secondary hidden" id="btn-expand-monitor-cards">Expand all cards</button>
+        <button type="button" class="secondary hidden" id="btn-collapse-monitor-cards">Collapse all cards</button>
       </div>
       <details id="found-sessions-panel" class="found-sessions-panel hidden">
         <summary id="found-sessions-summary">Your active dCloud sessions</summary>
@@ -2309,7 +2418,7 @@
       </summary>
       <div class="task-group-body">
       <div class="actions" style="margin-top:0">
-        <button type="button" id="btn-cai-connect" data-tip="Checks that this machine can reach Content Automation Hub on the Cisco network.">Connect to CAI</button>
+        <button type="button" id="btn-cai-connect" data-tip="Opens CAI in the tool browser for Cisco SSO/Duo if needed. Later refreshes reuse that login — no Chrome Keychain.">Connect to CAI</button>
         <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
         <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
         <p class="hint load-target" id="cai-load-target"></p>
@@ -2429,12 +2538,12 @@
       </summary>
       <div class="task-group-body">
       <div class="actions" style="margin-top:0">
-        <button type="button" id="btn-camgr-connect" data-tip="Uses your open CAMGR tab in Chrome. Keep Content Transfer open, then click Connect.">Connect to CAMGR</button>
+        <button type="button" id="btn-camgr-connect" data-tip="Opens CAMGR in a tool-owned Chromium window. Sign in with Cisco SSO/Duo once; later Connect/refresh reuse that profile instead of Chrome Keychain.">Connect to CAMGR</button>
         <a class="secondary" id="btn-camgr-open" href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Transfer in a new tab if you want to look at CAMGR. Not required for Connect.">Open CAMGR</a>
         <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load transfer VMs</button>
         <p class="hint load-target" id="camgr-load-target"></p>
       </div>
-      <p id="camgr-status" class="hint" style="margin-top:0.35rem">Keep Content Transfer open in Chrome, then Connect. This tool uses that tab.</p>
+      <p id="camgr-status" class="hint" style="margin-top:0.35rem">Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.</p>
       <p class="hint">
         Check a box in the saved content list above for what you want to transfer, then click
         <strong>Load transfer VMs</strong> and pick the destination DCs. Several rows of the same demo can be
@@ -2710,7 +2819,7 @@
     let lastLoggedErrorText = "";
     let dismissedAuthMessage = "";
     const DEFAULT_AUTH_PAUSE_MESSAGE =
-      "Token expired. Click Sign in to dCloud, log in or import from browser, then Continue with new token.";
+      "Token expired. Click Sign in to dCloud, log in, then Continue with new token.";
 
     function setJobId(id) {
       jobId = id || null;
@@ -2854,15 +2963,15 @@
       const apiPath = String(path || "");
       if (res.status === 401 || res.status === 403) {
         if (apiPath.startsWith("/api/camgr")) {
-          return "Keep Content Transfer open in Chrome, then click Connect to CAMGR.";
+          return "Click Connect to CAMGR and finish Cisco SSO in the tool browser if a window opens.";
         }
         if (apiPath.startsWith("/api/cai")) {
           return "CAI is not reachable from this machine. Join the Cisco network and click Connect to CAI.";
         }
-        return "Your dCloud sign-in is missing or expired. Click Sign in to dCloud to log in, import, or paste a fresh token.";
+        return "Your dCloud sign-in is missing or expired. Click Sign in to dCloud to log in or paste a fresh token.";
       }
       if (res.status >= 500) {
-        return "Server error — usually a missing or expired dCloud sign-in. Click Sign in to dCloud and import or paste a fresh token. If it persists, restart the app (stop start.command and run it again).";
+        return "Server error — usually a missing or expired dCloud sign-in. Click Sign in to dCloud and log in or paste a fresh token. If it persists, restart the app (stop start.command and run it again).";
       }
       return res.statusText || "Request failed.";
     }
@@ -2922,6 +3031,12 @@
       };
     }
 
+    function updateSaveDescriptionCount() {
+      const field = $("prompt-alert-description");
+      const count = $("prompt-alert-description-count");
+      if (field && count) count.textContent = `${field.value.length} / 255`;
+    }
+
     function promptSaveDetails(
       message,
       {
@@ -2950,6 +3065,7 @@
         body.textContent = String(message || "");
         input.value = name || "";
         if (desc) desc.value = description || DEFAULT_SAVE_DESCRIPTION;
+        updateSaveDescriptionCount();
         if ($("prompt-alert-input-label")) $("prompt-alert-input-label").textContent = inputLabel;
         desc?.closest(".prompt-field")?.classList.toggle("hidden", !showDescription);
         const okBtn = $("prompt-alert-ok");
@@ -3246,7 +3362,7 @@
     }
 
     function showTokenAlert(msg, { updateBanner = true } = {}) {
-      const text = String(msg || "Click Sign in to dCloud to log in, import, or paste your dCloud token.").trim();
+      const text = String(msg || "Click Sign in to dCloud to log in or paste your dCloud token.").trim();
       const key = text.slice(0, 240);
       const modal = $("token-alert");
       const body = $("token-alert-body");
@@ -3306,7 +3422,7 @@
       if (source === "paste" && !$("dtoken").value.trim()) {
         const label = context ? ` before ${context}` : "";
         showTokenAlert(
-          `Click Sign in to dCloud, paste your token, or click Import from browser${label}.`
+          `Click Sign in to dCloud, then Log in to dCloud or paste your token${label}.`
         );
         scrollToAuthPanel();
         return false;
@@ -5647,7 +5763,86 @@
       </div>`;
     }
 
-    function renderSessionCard(dc, { monitor = false, openVmMore = new Set(), checkedCards = new Set() } = {}) {
+    const CARD_LAYOUT_KEY = "dcloud-session-card-layout-v1";
+
+    function readCardLayout() {
+      try {
+        const value = JSON.parse(localStorage.getItem(CARD_LAYOUT_KEY) || "{}");
+        return value && typeof value === "object" ? value : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function writeCardLayout(layout) {
+      try { localStorage.setItem(CARD_LAYOUT_KEY, JSON.stringify(layout || {})); } catch {}
+    }
+
+    function cardOrderKey(dc) {
+      return sessionKey(dc.site, dc.sessionId || dc.demoId);
+    }
+
+    function orderedSessionCards(rows, scope, site) {
+      const saved = readCardLayout().order?.[`${scope}:${site}`] || [];
+      const ranks = new Map(saved.map((key, index) => [key, index]));
+      return [...rows].sort((left, right) => {
+        const leftRank = ranks.has(cardOrderKey(left)) ? ranks.get(cardOrderKey(left)) : Number.MAX_SAFE_INTEGER;
+        const rightRank = ranks.has(cardOrderKey(right)) ? ranks.get(cardOrderKey(right)) : Number.MAX_SAFE_INTEGER;
+        return leftRank - rightRank;
+      });
+    }
+
+    function captureCardLayoutFromDom() {
+      const layout = readCardLayout();
+      layout.order = layout.order || {};
+      layout.openCards = {};
+      layout.openGroups = {};
+      for (const rootId of ["cards", "monitor-cards"]) {
+        const root = $(rootId);
+        if (!root) continue;
+        const scope = rootId === "cards" ? "workspace" : "monitor";
+        root.querySelectorAll("details.card-site-group").forEach((group) => {
+          const site = group.dataset.site || "";
+          layout.openGroups[`${scope}:${site}`] = group.open;
+          layout.order[`${scope}:${site}`] = [...group.querySelectorAll(":scope > .card-site-cards > details.card")]
+            .map((card) => card.dataset.cardKey)
+            .filter(Boolean);
+        });
+        root.querySelectorAll("details.card[open]").forEach((card) => {
+          if (card.dataset.cardKey) layout.openCards[`${scope}:${card.dataset.cardKey}`] = true;
+        });
+      }
+      writeCardLayout(layout);
+    }
+
+    function renderCardGroups(rows, { monitor = false, openVmMore = new Set(), checkedCards = new Set() } = {}) {
+      const scope = monitor ? "monitor" : "workspace";
+      const layout = readCardLayout();
+      const groups = groupRowsBySite(rows);
+      return groups
+        .map(({ site, rows: siteRows }) => {
+          const open = layout.openGroups?.[`${scope}:${site}`] !== false ? " open" : "";
+          const ordered = orderedSessionCards(siteRows, scope, site);
+          return `<details class="card-site-group" data-site="${escapeHtml(site)}"${open}>
+            <summary>${escapeHtml(site.toUpperCase())}<span class="card-site-count">${ordered.length} session${ordered.length === 1 ? "" : "s"}</span></summary>
+            <div class="card-site-cards">
+              ${ordered.map((dc) => renderSessionCard(dc, {
+                monitor,
+                openVmMore,
+                checkedCards,
+                cardOpen: Boolean(layout.openCards?.[`${scope}:${cardOrderKey(dc)}`]),
+              })).join("")}
+            </div>
+          </details>`;
+        }).join("");
+    }
+
+    function renderSessionCard(dc, {
+      monitor = false,
+      openVmMore = new Set(),
+      checkedCards = new Set(),
+      cardOpen = false,
+    } = {}) {
       const cardKey = sessionKey(dc.site, dc.sessionId || dc.demoId);
       const vmsHtml = renderVmGroups(dc, cardKey, openVmMore);
       const demoName = String(dc.name || "").trim();
@@ -5711,7 +5906,7 @@
       const cardData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-demo-id="${escapeHtml(dc.demoId || "")}"`;
       const checked = checkedCards.has(sessionKey(dc.site, dc.sessionId)) ? " checked" : "";
       const selectWrap = monitor
-        ? ""
+        ? '<span class="card-select-spacer" aria-hidden="true"></span>'
         : `<label class="card-select-wrap" title="Include in bulk extend / end / shutdown">
               <input type="checkbox" class="card-select" ${cardData}${checked} aria-label="Select ${dc.site.toUpperCase()} session" />
             </label>`;
@@ -5740,46 +5935,58 @@
             </div>`
           : `<div class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</div>`)
         : "";
+      const summaryName = displayName || `Demo ${dc.demoId || "session"}`;
+      const summarySession = dc.sessionId ? `#${dc.sessionId}` : `demo ${dc.demoId || "—"}`;
+      const summaryEnd = dc.scheduleStop ? `Ends ${formatSessionWhen(dc.scheduleStop)}` : "";
       return `
-          <div class="card${monitor ? " card-monitor" : ""}">
-            ${selectWrap}
-            <div class="card-controls">
-              <button type="button" class="card-refresh" ${cardData} ${canRefresh ? "" : "disabled"} data-tip="Poll dCloud for this session only (status, VMs, power)." aria-label="Refresh this card" title="Refresh this card from dCloud">↻</button>
-              <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
+          <details class="card${monitor ? " card-monitor" : ""}" data-card-key="${escapeHtml(cardKey)}" data-site="${escapeHtml(dc.site)}"${cardOpen ? " open" : ""}>
+            <summary>
+              <span class="card-drag-handle" draggable="true" title="Drag to reorder within ${escapeHtml(dc.site.toUpperCase())}" aria-label="Drag to reorder">⠿</span>
+              ${selectWrap}
+              <span class="card-summary-name" title="${escapeHtml(summaryName)}">${escapeHtml(summaryName)}</span>
+              <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(cardStatusLabel(dc))}</span>
+              <span class="card-summary-meta">${escapeHtml(summarySession)}</span>
+              <span class="card-summary-end">${escapeHtml(summaryEnd)}</span>
+            </summary>
+            <div class="card-body">
+              <div class="card-controls">
+                <button type="button" class="card-refresh" ${cardData} ${canRefresh ? "" : "disabled"} data-tip="Poll dCloud for this session only (status, VMs, power)." aria-label="Refresh this card" title="Refresh this card from dCloud">↻</button>
+                <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
+              </div>
+              ${monitor ? '<span class="badge neutral">monitor</span>' : ""}
+              ${nameLine}
+              <div class="hint">demo ${escapeHtml(dc.demoId || "")}${dc.pool ? " · " + escapeHtml(dc.pool) : ""} · ${dc.contentExport === false ? "regular" : "export"}</div>
+              ${sess}
+              ${vcLine}
+              ${ownerLine}
+              ${startLine}
+              ${endLine}
+              ${saved}
+              ${sharedLine}
+              ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
+              ${shutdownPrompt ? renderShutdownPrompt(dc, cardData, shutdownPrompt) : ""}
+              ${conflictDetails}
+              ${view}
+              ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
+              ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
+              ${vmsHtml}
+              <div class="card-actions-row">
+                <details class="vm-menu card-actions-menu">
+                  <summary data-tip="Save, extend, end, or move this card.">Card actions</summary>
+                  <div class="vm-menu-list">
+                    ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
+                    ${shareBtn}
+                    <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
+                    ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
+                    ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
+                    <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
+                    <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
+                    <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
+                  </div>
+                </details>
+              </div>
             </div>
-            <div><strong>${dc.site.toUpperCase()}</strong> <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(cardStatusLabel(dc))}</span>${monitor ? ' <span class="badge neutral">monitor</span>' : ""}</div>
-            ${nameLine}
-            <div class="hint">demo ${escapeHtml(dc.demoId || "")}${dc.pool ? " · " + escapeHtml(dc.pool) : ""} · ${dc.contentExport === false ? "regular" : "export"}</div>
-            ${sess}
-            ${vcLine}
-            ${ownerLine}
-            ${startLine}
-            ${endLine}
-            ${saved}
-            ${sharedLine}
-            ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
-            ${shutdownPrompt ? renderShutdownPrompt(dc, cardData, shutdownPrompt) : ""}
-            ${conflictDetails}
-            ${view}
-            ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
-            ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
-            ${vmsHtml}
-            <div class="card-actions-row">
-              <details class="vm-menu card-actions-menu">
-                <summary data-tip="Save, extend, end, or move this card.">Card actions</summary>
-                <div class="vm-menu-list">
-                  ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
-                  ${shareBtn}
-                  <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
-                  ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
-                  ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
-                  <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
-                  <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
-                  <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
-                </div>
-              </details>
-            </div>
-          </div>
+          </details>
         `;
     }
 
@@ -5804,7 +6011,7 @@
           authPauseAlertShown = true;
           showTokenAlert(
             job.authMessage
-              || "Your dCloud token expired. Click Sign in to dCloud, log in or import, then Continue with new token."
+              || "Your dCloud token expired. Click Sign in to dCloud, log in, then Continue with new token."
           );
         }
       } else {
@@ -5818,24 +6025,35 @@
         $("monitor-cards").innerHTML = "";
         $("monitor-cards-label").classList.add("hidden");
         $("btn-refresh-monitor").classList.add("hidden");
+        $("btn-expand-monitor-cards").classList.add("hidden");
+        $("btn-collapse-monitor-cards").classList.add("hidden");
+        $("job-card-view-actions").classList.add("hidden");
         $("cards-actions").classList.add("hidden");
       } else {
         const cardsFingerprint = jobCardsFingerprint(job);
         const cardsChanged = forceCards || cardsFingerprint !== lastCardsFingerprint;
         if (cardsChanged) {
+          if (document.querySelector("#cards details.card, #monitor-cards details.card")) {
+            captureCardLayoutFromDom();
+          }
           const { checkedCards } = captureCardsUiState();
           const openVmMore = openVmMoreForRender();
           lastCardsFingerprint = cardsFingerprint;
           const visibleJob = visibleWorkspaceDcs(job);
           const visibleMonitor = visibleMonitorDcs(job);
-          $("cards").innerHTML = visibleJob.map(
-            (dc) => renderSessionCard(dc, { monitor: false, openVmMore, checkedCards })
-          ).join("");
-          $("monitor-cards").innerHTML = visibleMonitor.map(
-            (dc) => renderSessionCard(dc, { monitor: true, openVmMore, checkedCards })
-          ).join("");
+          $("cards").innerHTML = renderCardGroups(
+            visibleJob,
+            { monitor: false, openVmMore, checkedCards }
+          );
+          $("monitor-cards").innerHTML = renderCardGroups(
+            visibleMonitor,
+            { monitor: true, openVmMore, checkedCards }
+          );
           $("monitor-cards-label").classList.toggle("hidden", visibleMonitor.length === 0);
           $("btn-refresh-monitor").classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-expand-monitor-cards").classList.toggle("hidden", visibleMonitor.length === 0);
+          $("btn-collapse-monitor-cards").classList.toggle("hidden", visibleMonitor.length === 0);
+          $("job-card-view-actions").classList.toggle("hidden", visibleJob.length === 0);
           if (!$("sched-extend").value) suggestExtendDate(job);
           saveUiStateFromDom();
         }
@@ -5987,7 +6205,7 @@
         refreshRootIds().catch(() => {});
       }
       if (!info) {
-        setConnectStatus(el, "Keep Content Transfer open in Chrome, then Connect.");
+        setConnectStatus(el, "Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.");
         return;
       }
       if (info.loggedIn) {
@@ -5999,7 +6217,7 @@
         setConnectStatus(el, info.message || "CAMGR: session saved locally — Connect to confirm.");
         return;
       }
-      setConnectStatus(el, info.message || "Keep Content Transfer open in Chrome, then Connect.");
+      setConnectStatus(el, info.message || "Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.");
     }
 
     function updateCaiStatus(info) {
@@ -7713,12 +7931,6 @@
         .replace(/"/g, "&quot;");
     }
 
-    let loginPollTimer = null;
-    let loginPopup = null;
-    // A slow poll tick can land after login already succeeded; these keep it
-    // from putting "waiting for the popup" back over "Logged in".
-    let loginSettled = false;
-    let loginPollBusy = false;
     let manualDcloudTokenValidated = false;
     let attachSessionsBusy = false;
     const ATTACH_SESSIONS_LABEL = "Add to monitoring";
@@ -7828,22 +8040,16 @@
       });
     }
 
-    async function warmAuthFromChrome() {
+    // Page load only shows what the saved session already holds. It deliberately does
+    // not launch the tool browser: the server renews on demand when a call needs a
+    // token, so probing here would just add a browser start to every page load.
+    async function warmAuthFromToolBrowser() {
       if ($("token-source").value === "paste") return;
       try {
         const status = await api("/api/auth/status", { quiet: true });
-        if (status.sessionLoggedIn) {
-          showTokenInField(status.accessToken);
-          return;
-        }
-        const res = await fetch("/api/dcloud/token/import-from-browser", { method: "POST", body: "{}" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (applyImportedToken(data)) {
-          await refreshAuth();
-        }
+        if (status.sessionLoggedIn) showTokenInField(status.accessToken);
       } catch {
-        // Import will run on the next API call if Chrome still has a session.
+        // Not signed in yet — the Log in button opens the window when they ask.
       }
     }
 
@@ -7863,7 +8069,7 @@
       } else if (data.sessionHasRefresh) {
         status = "Session expired — click Log in to dCloud to renew";
       } else {
-        status = "Not logged in — use Log in to dCloud, Import, or paste a token below";
+        status = "Not logged in — use Log in to dCloud, or paste a token below";
       }
 
       if (data.accessToken) {
@@ -7885,125 +8091,6 @@
       if (data.camgr?.loggedIn && !camgrDevServers.length) loadCamgrDevSources();
     }
 
-    function stopLoginPoll() {
-      if (loginPollTimer) {
-        clearInterval(loginPollTimer);
-        loginPollTimer = null;
-      }
-    }
-
-    function setLoginStatus(text) {
-      if (loginSettled) return;
-      $("auth-status").textContent = text;
-    }
-
-    function settleLogin() {
-      loginSettled = true;
-      stopLoginPoll();
-      if (loginPopup && !loginPopup.closed) loginPopup.close();
-      loginPopup = null;
-    }
-
-    async function pollLoginStorage(site, { requireNew = false, baselineToken = "" } = {}) {
-      try {
-        const res = await fetch(
-          `/api/dcloud/token/import-from-browser?full_scan=0&storage_only=1`,
-          { method: "POST", body: "{}" },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (data.ok && data.token) {
-          if (requireNew && baselineToken && data.token === baselineToken) {
-            return false;
-          }
-          if (applyImportedToken(data)) {
-            settleLogin();
-            $("auth-status").textContent = data.message || "Logged in.";
-            await refreshAuth();
-            return true;
-          }
-        }
-      } catch {
-        // Popup still finishing SSO in dCloud.
-      }
-      return false;
-    }
-
-    async function pollLoginExchange(site) {
-      try {
-        const res = await fetch(
-          `/api/auth/login/exchange?site=${encodeURIComponent(site || "rtp")}`,
-          { method: "POST", body: "{}" },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (data.ok && data.token) {
-          if (applyImportedToken(data)) {
-            settleLogin();
-            $("auth-status").textContent = data.message || "Logged in via SSO.";
-            await refreshAuth();
-            return true;
-          }
-        }
-        if (data.message) {
-          setLoginStatus(data.message);
-        }
-      } catch {
-        // Still waiting for SSO redirect in Chrome history.
-      }
-      return false;
-    }
-
-    async function pollLoginImport({ requireNew = false, baselineToken = "", fullScan = false } = {}) {
-      try {
-        const q = fullScan ? "?full_scan=1" : "?full_scan=0";
-        const data = await api(`/api/dcloud/token/import-from-browser${q}`, { method: "POST", body: "{}" });
-        if (data.ok && data.token) {
-          if (requireNew && baselineToken && data.token === baselineToken) {
-            setLoginStatus("Complete sign-in in the popup — waiting for a new token in Chrome…");
-            return false;
-          }
-          if (applyImportedToken(data)) {
-            settleLogin();
-            $("auth-status").textContent = data.message || "Logged in.";
-            await refreshAuth();
-            return true;
-          }
-        }
-        if (data.message) setLoginStatus(data.message);
-      } catch (err) {
-        setLoginStatus(err.message || "Waiting for login…");
-      }
-      return false;
-    }
-
-    async function snapshotChromeToken() {
-      try {
-        // Local Storage only: a full Chrome scan here would stall the click.
-        const data = await api(
-          "/api/dcloud/token/import-from-browser?dry_run=1&full_scan=0&storage_only=1",
-          { method: "POST", body: "{}" },
-        );
-        return (data.ok && data.token) ? data.token : "";
-      } catch {
-        return "";
-      }
-    }
-
-    // The tool is logged in the moment any path (storage import, SSO exchange, or
-    // a background import) stores a session, so ask the server instead of
-    // waiting for one specific poll to report success.
-    async function finishLoginIfSessionReady(sessionBaseline = "") {
-      try {
-        const status = await api("/api/auth/status", { quiet: true });
-        if (!status.sessionLoggedIn || !status.accessToken) return false;
-        if (sessionBaseline && status.accessToken === sessionBaseline) return false;
-      } catch {
-        return false;
-      }
-      settleLogin();
-      await refreshAuth();
-      return true;
-    }
-
     async function clearLoginSession() {
       await api("/api/auth/session/clear", { method: "POST", body: "{}" });
       manualDcloudTokenValidated = false;
@@ -8017,104 +8104,37 @@
         "Login session cleared in this tool.";
     }
 
-    async function loginToDcloud() {
+    // Sign-in happens in the tool's own Chromium, the same profile CAMGR and CAI
+    // use, so one Cisco SSO login covers all three and there is no popup to babysit
+    // and no Chrome Local Storage to scan.
+    async function loginToDcloud({ allowWindow = true } = {}) {
       const btn = $("btn-login");
-      btn.disabled = true;
+      if (btn) btn.disabled = true;
       showError("");
-      stopLoginPoll();
-      loginSettled = false;
-      loginPollBusy = false;
       try {
-        // Straight to SSO. Scanning Chrome first took seconds and the popup
-        // finishes on its own when Chrome already has a dCloud login.
-        $("auth-status").textContent = "Opening dCloud sign-in…";
         const site = ($("src-site") && $("src-site").value) || "rtp";
-        // Token this tool holds right now, so an older session is not mistaken
-        // for the login being started here.
-        const sessionBaseline = ($("dtoken").value || "").trim();
-        const baselineToken = await snapshotChromeToken();
-        const { url } = await api(`/api/auth/login/url?site=${encodeURIComponent(site)}`);
-        loginPopup = window.open(
-          url,
-          "dcloud_login",
-          "width=520,height=720,menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes"
+        if (allowWindow) {
+          $("auth-status").textContent =
+            "Signing in to dCloud in the tool browser — finish Cisco SSO/Duo if a window opens…";
+        }
+        const data = await api(
+          `/api/auth/dcloud-browser-login?site=${encodeURIComponent(site)}`
+            + `&allow_window=${allowWindow ? 1 : 0}`,
+          { method: "POST", body: "{}" },
         );
-        if (!loginPopup) {
-          showError("Popup blocked — allow popups for this page, or log in to dCloud in Chrome and click Import.");
-          return;
-        }
-        const pollOpts = { requireNew: true, baselineToken, site };
-        $("auth-status").textContent =
-          "Sign in via the popup — waiting for dCloud to finish (do not close yet)…";
-        let attempts = 0;
-        loginPollTimer = setInterval(async () => {
-          if (loginPollBusy || loginSettled) return;
-          loginPollBusy = true;
-          try {
-            attempts += 1;
-            const popupOpen = loginPopup && !loginPopup.closed;
-
-            // Any path may have stored the session already — ask the server
-            // instead of waiting on one specific poll to report success.
-            if (await finishLoginIfSessionReady(sessionBaseline)) return;
-
-            if (popupOpen) {
-              const stored = await pollLoginStorage(site, pollOpts);
-              if (stored) return;
-              // dCloud often sits on “Logging you in…” after SSO. Grab the code from
-              // Chrome history and finish the exchange without waiting for that page.
-              if (attempts >= 3 && await pollLoginExchange(site)) return;
-              if (attempts === 20) {
-                setLoginStatus(
-                  "Still waiting on dCloud popup… If it stays on “Logging you in”, close the popup — the tool will finish login.",
-                );
-              }
-              if (attempts > 120) {
-                stopLoginPoll();
-                setLoginStatus("Login timed out — close the popup if open, then click Import or try again.");
-              }
-              return;
-            }
-
-            // Popup closed — OAuth exchange first (refresh token), then Chrome
-            // fallback. Any usable token counts now, even if Chrome still holds
-            // the one from before this login.
-            if (await pollLoginExchange(site)) return;
-            const ok = await pollLoginImport({ ...pollOpts, requireNew: false, fullScan: true });
-            stopLoginPoll();
-            if (!ok) {
-              setLoginStatus("Could not finish login — click Import from browser or try Log in again.");
-            }
-          } finally {
-            loginPollBusy = false;
-          }
-        }, 1000);
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    async function importToken() {
-      const btn = $("btn-import");
-      btn.disabled = true;
-      showError("");
-      $("auth-status").textContent = "Importing from Chrome Local Storage — this is not scanning your tabs…";
-      try {
-        const data = await api("/api/dcloud/token/import-from-browser", { method: "POST", body: "{}" });
         if (applyImportedToken(data)) {
-          $("auth-status").textContent = data.message || "Imported.";
-        } else {
-          $("auth-status").textContent = data.message || "Import failed.";
-          if (!data.ok) {
-            const status = await fetch("/api/auth/status").then((r) => r.json()).catch(() => ({}));
-            if (!status.sessionLoggedIn) {
-              showError(data.message || "Could not import dCloud token from Chrome.");
-            }
-          }
+          $("auth-status").textContent = data.message || "Logged in.";
+          await refreshAuth();
+          return true;
         }
-        await refreshAuth();
+        if (allowWindow) {
+          const message = data.message || "Could not finish dCloud sign-in.";
+          $("auth-status").textContent = message;
+          showError(message);
+        }
+        return false;
       } finally {
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
       }
     }
 
@@ -8791,7 +8811,7 @@
             const refreshed = await api("/api/auth/refresh", { method: "POST", body: "{}" });
             applyImportedToken(refreshed);
           } catch {
-            await importToken();
+            await loginToDcloud();
           }
         }
         const job = await api(`/api/jobs/${jobId}/resume-auth`, {
@@ -9082,6 +9102,7 @@
       try { localStorage.removeItem(UI_STATE_KEY); } catch {}
       try { localStorage.removeItem(LEGACY_UI_STATE_KEY); } catch {}
       try { localStorage.removeItem(HUB_HELP_KEY); } catch {}
+      try { localStorage.removeItem(CARD_LAYOUT_KEY); } catch {}
       applySectionOrder(DEFAULT_SECTION_ORDER);
       document.querySelectorAll(PERSIST_PANEL_SELECTOR).forEach((el) => {
         if (el.id && DEFAULT_PANEL_OPEN.has(el.id)) el.open = DEFAULT_PANEL_OPEN.get(el.id);
@@ -9675,7 +9696,7 @@
     async function bootstrapPage() {
       await refreshAuth().catch((err) => showError(err.message));
       await Promise.all([
-        warmAuthFromChrome().catch(() => {}),
+        warmAuthFromToolBrowser().catch(() => {}),
         maybeAutoRestoreJob().catch(() => {}),
         refreshCaiStatus().catch(() => {}),
         refreshCamgrStatus().catch(() => {}),
@@ -11994,12 +12015,23 @@
       }
     }
 
+    let draggedSessionCard = null;
+
+    function clearCardDragState() {
+      document.querySelectorAll(".card-dragging, .card-drop-before, .card-drop-after")
+        .forEach((el) => el.classList.remove("card-dragging", "card-drop-before", "card-drop-after"));
+      draggedSessionCard = null;
+    }
+
     function bindCardGrid(gridId) {
       const grid = $(gridId);
       if (!grid) return;
       grid.addEventListener("click", handleCardGridClick);
       grid.addEventListener("toggle", (ev) => {
         const menu = ev.target;
+        if (menu?.matches?.("details.card, details.card-site-group")) {
+          captureCardLayoutFromDom();
+        }
         if (!menu || menu.tagName !== "DETAILS" || !menu.classList.contains("vm-menu") || !menu.open) return;
         grid.querySelectorAll("details.vm-menu[open]").forEach((el) => {
           if (el !== menu) el.open = false;
@@ -12010,13 +12042,57 @@
           });
       }, true);
       grid.addEventListener("click", (ev) => {
+        if (ev.target.closest(".card-drag-handle")) {
+          ev.preventDefault();
+          return;
+        }
         if (ev.target.closest(".vm-menu")) return;
         closeAllVmMenus();
       });
+      grid.addEventListener("dragstart", (ev) => {
+        const handle = ev.target.closest(".card-drag-handle");
+        const card = handle?.closest("details.card");
+        if (!card) return;
+        draggedSessionCard = card;
+        card.classList.add("card-dragging");
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", card.dataset.cardKey || "");
+      });
+      grid.addEventListener("dragover", (ev) => {
+        const target = ev.target.closest("details.card");
+        if (!draggedSessionCard || !target || target === draggedSessionCard) return;
+        if (target.parentElement !== draggedSessionCard.parentElement) return;
+        ev.preventDefault();
+        grid.querySelectorAll(".card-drop-before, .card-drop-after")
+          .forEach((el) => el.classList.remove("card-drop-before", "card-drop-after"));
+        const after = ev.clientY > target.getBoundingClientRect().top + target.offsetHeight / 2;
+        target.classList.add(after ? "card-drop-after" : "card-drop-before");
+      });
+      grid.addEventListener("drop", (ev) => {
+        const target = ev.target.closest("details.card");
+        if (!draggedSessionCard || !target || target === draggedSessionCard) return;
+        if (target.parentElement !== draggedSessionCard.parentElement) return;
+        ev.preventDefault();
+        const after = target.classList.contains("card-drop-after");
+        target.parentElement.insertBefore(draggedSessionCard, after ? target.nextSibling : target);
+        captureCardLayoutFromDom();
+        clearCardDragState();
+      });
+      grid.addEventListener("dragend", clearCardDragState);
     }
 
     bindCardGrid("cards");
     bindCardGrid("monitor-cards");
+    function setSessionCardsOpen(rootId, open) {
+      const root = $(rootId);
+      if (!root) return;
+      root.querySelectorAll("details.card").forEach((card) => { card.open = open; });
+      captureCardLayoutFromDom();
+    }
+    $("btn-expand-job-cards")?.addEventListener("click", () => setSessionCardsOpen("cards", true));
+    $("btn-collapse-job-cards")?.addEventListener("click", () => setSessionCardsOpen("cards", false));
+    $("btn-expand-monitor-cards")?.addEventListener("click", () => setSessionCardsOpen("monitor-cards", true));
+    $("btn-collapse-monitor-cards")?.addEventListener("click", () => setSessionCardsOpen("monitor-cards", false));
     document.addEventListener("click", (ev) => {
       if (ev.target.closest("details.vm-menu")) return;
       closeAllVmMenus();
@@ -12028,7 +12104,6 @@
     });
     document.addEventListener("scroll", () => closeSearchActionsMenus(), true);
     window.addEventListener("resize", () => closeSearchActionsMenus());
-    $("btn-import").addEventListener("click", () => importToken().catch((err) => showError(err.message)));
     $("btn-login").addEventListener("click", () => loginToDcloud().catch((err) => showError(err.message)));
     $("btn-clear-session").addEventListener("click", () => clearLoginSession().catch((err) => showError(err.message)));
     $("btn-validate").addEventListener("click", () => validateToken().catch((err) => showError(err.message)));
@@ -12725,12 +12800,7 @@
         hidePromptAlert(promptSaveValues());
       }
     });
-    $("prompt-alert-description")?.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") {
-        ev.preventDefault();
-        hidePromptAlert(promptSaveValues());
-      }
-    });
+    $("prompt-alert-description")?.addEventListener("input", updateSaveDescriptionCount);
 
     function isHubScrollTarget(target) {
       return [
@@ -12809,11 +12879,6 @@
       hideTokenAlert();
       scrollToAuthPanel();
       loginToDcloud().catch((err) => showError(err.message));
-    });
-    $("token-alert-import").addEventListener("click", () => {
-      hideTokenAlert();
-      scrollToAuthPanel();
-      importToken().catch((err) => showError(err.message));
     });
     $("token-alert-dismiss").addEventListener("click", () => hideTokenAlert());
     $("token-alert-backdrop").addEventListener("click", () => hideTokenAlert());
