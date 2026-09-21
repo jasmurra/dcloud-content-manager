@@ -135,6 +135,7 @@ from dcloud_client import (
     site_base,
     tbv3_edit_url,
     TBV3_UI,
+    unique_states,
     update_content_share,
     update_session_name,
     update_session_share,
@@ -7676,7 +7677,12 @@ def api_probe_extend(job_id: str, body: ExtendPayload) -> dict[str, Any]:
 def _unified_content_result(site: str, item: dict[str, Any]) -> dict[str, Any]:
     content_id = str(item.get("demoId") or item.get("uid") or "").strip()
     state = item.get("state") or []
-    state_text = " / ".join(str(part) for part in state) if isinstance(state, list) else str(state)
+    # dCloud repeats a state on some records, so "promoted / shared / promoted".
+    state_text = (
+        " / ".join(unique_states([str(part) for part in state]))
+        if isinstance(state, list)
+        else str(state)
+    )
     return {
         "source": "content",
         "site": site.upper(),

@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.18.0** | Instant filter on every cross-DC list (saved content, session pickers, Events); drag-to-resize table columns; Check all takes just the filtered rows; Find saved content no longer pre-checks Hub rows |
 | **1.17.3** | *Go to demo* on session and event rows opens the parent content under Search dCloud instead of the v2 `/demo/{id}` page, so TBv3 content reaches TBv3 |
 | **1.17.2** | Compact cards keep status/session ID visible on long names, put Open session on the summary row, and stop the rename pencil overlapping refresh/close |
 | **1.17.1** | Job workspace card toolbar matches Session monitoring: check all, expand/collapse DCs, and expand/collapse cards sit above the compact per-DC list |

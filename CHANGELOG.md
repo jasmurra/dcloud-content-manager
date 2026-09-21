@@ -1,3 +1,14 @@
+## 1.18.0 — 2026-09-21
+
+- **Every cross-DC list now has the instant filter Search dCloud has.** Type in it to narrow *Your saved content* (both the Manage section and the Content Automation Hub), the job workspace and Session monitoring session pickers, and the Events sessions. Datacenter headers show how many of their rows match, and a group with no matches collapses out of the way
+- **Check all takes only the rows the filter is showing**, so you can filter to one lab, check everything, and schedule, attach, delete, reset, or end that set as a batch
+- Checked rows survive a filter change instead of being cleared, and the line under the filter box says how many checked rows are currently hidden
+- **Table columns can be dragged wider.** Every list column has a divider in its header — drag it if you want a wider name, double-click any divider to go back to the automatic widths. Long names wrap in the space the panel already has instead of being cut off, so you do not have to drag the table off the page to copy a title. The Actions button stays whole (no leftover ".."), every column keeps the width you gave it, and a table dragged wider than its panel still scrolls sideways inside it rather than spilling past the edge. Each list remembers its own widths in the browser, and every datacenter table in that list stays lined up
+- A state dCloud repeats on some shared content is now listed once. `saved, promoted, shared, promoted` reads `saved, promoted, shared` in both the saved-content lists and Search dCloud. `edited` and `published` are dCloud states too and still show
+- Dropped the **TBv3** badge from the State column — almost all saved content is v3, and the v2 items already have their own EOL-only section — which gives the state text and the columns beside it more room
+- **Find saved content no longer arrives with rows already checked.** It used to tick every row that also appears in the Content Automation Hub list, which left a scattered selection sitting under the bulk buttons. **Recheck saved IDs** still does it when you ask for it
+- The schedule start/stop hint is a few short sentences instead of a paragraph covering every edge case
+
 ## 1.17.3 — 2026-09-21
 
 - **Go to demo no longer strands TBv3 content in the v2 topology builder.** On session and event rows it now opens the parent content under **Search dCloud → Content**, the same place dCloud's own Go to demo lands, loading that datacenter's Content list first if it is not already loaded. That row's **Edit topology** already points at whichever builder owns the content, so v3 content goes to TBv3

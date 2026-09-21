@@ -171,7 +171,7 @@
     .saved-id-parent-empty {
       color: var(--muted);
     }
-    .saved-actions { white-space: nowrap; width: 1%; }
+    .saved-actions { white-space: nowrap; width: 1%; min-width: 6.5rem; }
     .saved-actions button {
       padding: 0.22rem 0.5rem;
       font-size: 0.75rem;
@@ -1112,6 +1112,16 @@
       margin: 0.65rem 0 0.35rem;
     }
     .list-toolbar.hidden { display: none; }
+    .list-filter {
+      flex: 1;
+      min-width: 14rem;
+      max-width: 26rem;
+      margin: 0;
+    }
+    .list-filter-status { margin: 0.1rem 0 0; }
+    .list-filter-status:empty { display: none; }
+    /* Rows and datacenter groups the filter box is hiding. */
+    .filtered-out { display: none !important; }
     .chip-toolbar {
       margin: 0.5rem 0 0.2rem;
       align-items: center;
@@ -1148,11 +1158,52 @@
       margin-top: 0.45rem;
     }
     table.dc-list td.name-cell {
-      max-width: 18rem;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+    /* A dragged column sets its own width; names wrap to that instead of a hard cap. */
+    table.cols-resized td.name-cell { max-width: none; }
+    th { position: relative; }
+    .col-resizer {
+      position: absolute;
+      top: 0;
+      /* Inside the cell, so the grip on the last column stays on the table. */
+      right: 0;
+      width: 7px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      z-index: 2;
+    }
+    .col-resizer::after {
+      content: "";
+      position: absolute;
+      top: 15%;
+      bottom: 15%;
+      left: 3px;
+      width: 1px;
+      background: var(--border);
+    }
+    .col-resizer:hover::after { background: var(--accent); width: 2px; }
+    /* A column narrowed past its content clips instead of printing over its neighbour.
+       Names keep wrapping, and the Actions cell is left alone so the button is not
+       followed by the cell's own ".." ellipsis. */
+    table.cols-resized td:not(.name-cell):not(.saved-actions):not(:has(.search-actions-menu)) {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    table.dc-list td.saved-actions,
+    table.dc-list td:has(.search-actions-menu) {
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
+    }
+    /* Widened columns scroll inside the panel instead of spilling out of it. */
+    .table-scroll { overflow-x: auto; max-width: 100%; }
+    .table-scroll > table { margin-bottom: 0; }
+    body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none !important; }
     table.dc-list th.saved-sort {
       cursor: pointer;
       user-select: none;
@@ -1983,14 +2034,11 @@
         </div>
       </div>
       <p class="hint">
-        Start/stop fill from now for the duration above (1 day = now until this time tomorrow).
-        Click a date if you need a later window.
-        If that start has already passed when you click Schedule, it is moved to now first, then the delay is added — so 5 minutes delay is five minutes from now, not from a stale clock.
-        <strong>Delay</strong> is the gap between sessions: with three demo IDs and delay 15, the first starts now, the next 15 minutes later, then 15 after that. One session on its own just starts that much later (60 = Now plus an hour).
-        <strong>Number of sessions</strong> repeats the demo IDs, and each copy keeps its place in the same stagger. Copies of one demo stay at least 4 minutes apart even with no delay, because dCloud holds back same-demo sessions that start together.
-        When <strong>Use next available slot</strong> is checked, the tool reads dCloud’s calendar per pool and shifts busy DCs to the next open time automatically.
-        When unchecked, a conflict prompts you to schedule the next slot or skip that datacenter before anything is sent to dCloud.
-        To work with saved content instead of typing IDs, use <strong>Manage your own saved content across all DCs</strong> below.
+        Start and stop fill from now for the duration above — pick a date for a later window.
+        <strong>Delay</strong> staggers each session from now (not a stale start).
+        <strong>Number of sessions</strong> repeats those IDs on the same stagger; same-demo copies stay at least 4 minutes apart.
+        <strong>Use next available slot</strong> moves a busy DC automatically, otherwise you get a conflict prompt.
+        To schedule saved content instead of typing IDs, use <strong>Manage your own saved content</strong> below.
       </p>
       <div id="dt-popup" class="dt-popup hidden" role="dialog" aria-label="Choose date">
         <div class="dt-header">
@@ -2059,6 +2107,10 @@
             <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
             <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete checked</button>
           </div>
+          <div class="list-toolbar">
+            <input type="search" class="list-filter" id="filter-schedule-saved" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
+          </div>
+          <p class="hint list-filter-status" id="filter-schedule-saved-status" aria-live="polite"></p>
           <div id="found-schedule-saved" style="margin-top:0.35rem"></div>
           <p class="step-label" style="margin-top:1rem">Session schedule</p>
           <div class="row">
@@ -2198,6 +2250,10 @@
                 <button type="button" class="secondary" id="btn-workspace-expand-sessions">Expand all DCs</button>
                 <button type="button" class="secondary" id="btn-workspace-collapse-sessions">Collapse all DCs</button>
               </div>
+              <div class="list-toolbar">
+                <input type="search" class="list-filter" id="filter-workspace-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
+              </div>
+              <p class="hint list-filter-status" id="filter-workspace-sessions-status" aria-live="polite"></p>
               <div id="found-workspace-sessions" style="margin-top:0.35rem"></div>
               <div class="actions" style="margin-top:0.65rem">
                 <button type="button" class="secondary" id="btn-attach-workspace-sessions" disabled>Add checked to job workspace</button>
@@ -2322,6 +2378,10 @@
             <button type="button" class="secondary" id="btn-expand-sessions">Expand all DCs</button>
             <button type="button" class="secondary" id="btn-collapse-sessions">Collapse all</button>
           </div>
+          <div class="list-toolbar">
+            <input type="search" class="list-filter" id="filter-found-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
+          </div>
+          <p class="hint list-filter-status" id="filter-found-sessions-status" aria-live="polite"></p>
           <div id="found-sessions" style="margin-top:0.35rem"></div>
           <div class="actions" style="margin-top:0.65rem">
             <button type="button" class="secondary" id="btn-attach-sessions" disabled data-tip="Adds checked sessions as monitoring cards (no bulk end/save). Move to job workspace later if needed.">Add to monitoring</button>
@@ -2391,6 +2451,10 @@
           <button type="button" class="secondary" id="btn-saved-ids-found-expand">Expand all DCs</button>
           <button type="button" class="secondary" id="btn-saved-ids-found-collapse">Collapse all</button>
         </div>
+        <div class="list-toolbar">
+          <input type="search" class="list-filter" id="filter-saved-ids-found" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
+        </div>
+        <p class="hint list-filter-status" id="filter-saved-ids-found-status" aria-live="polite"></p>
         <div id="saved-ids-found" style="margin-top:0.35rem"></div>
         </div>
       </details>
@@ -2656,6 +2720,10 @@
             <input id="event-action-delay" type="number" min="0" max="30" step="1" value="1" style="width:4.5rem" />
           </label>
         </div>
+        <div class="list-toolbar">
+          <input type="search" class="list-filter" id="filter-events" autocomplete="off" placeholder="Filter by session ID, user, name, demo ID, or status" aria-label="Filter event sessions" data-tip="Narrows every event below as you type. Check all then takes just the rows still showing, so a filtered set can be reset or ended together." />
+        </div>
+        <p class="hint list-filter-status" id="filter-events-status" aria-live="polite"></p>
         <p id="events-status" class="hint"></p>
         <div id="events-results"></div>
       </div>
@@ -3600,6 +3668,7 @@
           </details>`;
       }).join("") : `<p class="hint">No events added yet.</p>`;
       syncAllEventSelections();
+      applyListFilter(listFilterConfig("filter-events"));
     }
 
     async function loadEvent(site, eventId, refresh = false, { quietStatus = false } = {}) {
@@ -3702,7 +3771,7 @@
     }
 
     function syncEventSelection(group) {
-      const enabled = [...group.querySelectorAll(".event-session-check:not(:disabled)")];
+      const enabled = visibleBoxes(".event-session-check:not(:disabled)", group);
       const checked = enabled.filter((box) => box.checked);
       const head = group.querySelector(".event-head-check");
       if (head) {
@@ -4167,6 +4236,7 @@
           positionSearchActionsMenu(menu);
         });
       });
+      makeColumnsResizable("unified-search-results");
     }
 
     function renderUnifiedCatalog(data) {
@@ -10333,7 +10403,7 @@
     }
 
     function syncGroupChecks(allHeadId, itemSelector, dcHeadClass) {
-      const boxes = [...document.querySelectorAll(itemSelector)];
+      const boxes = visibleBoxes(itemSelector);
       const checked = boxes.filter((box) => box.checked).length;
       const head = $(allHeadId);
       if (head) {
@@ -10351,11 +10421,291 @@
     }
 
     function setGroupChecks(checked, itemSelector, dcHeadClass) {
-      document.querySelectorAll(itemSelector).forEach((box) => { box.checked = checked; });
+      setBoxesChecked(document.querySelectorAll(itemSelector), checked);
       document.querySelectorAll(`.${dcHeadClass}`).forEach((box) => {
         box.checked = checked;
         box.indeterminate = false;
       });
+    }
+
+    // Every cross-DC list gets the same instant filter as Search dCloud. Check all
+    // takes only what the filter is showing, so several searches can be checked in
+    // turn and scheduled together; anything checked but hidden is called out in the
+    // status line rather than silently dropped.
+    const LIST_FILTERS = [
+      {
+        input: "filter-schedule-saved",
+        container: "found-schedule-saved",
+        noun: "saved content item",
+        sync: () => syncScheduleSavedAll(),
+      },
+      {
+        input: "filter-saved-ids-found",
+        container: "saved-ids-found",
+        noun: "saved content item",
+        sync: () => syncSavedIdsFoundAll(),
+      },
+      {
+        input: "filter-workspace-sessions",
+        container: "found-workspace-sessions",
+        noun: "session",
+        sync: () => syncWorkspaceFoundAll(),
+      },
+      {
+        input: "filter-found-sessions",
+        container: "found-sessions",
+        noun: "session",
+        sync: () => syncFoundAll(),
+      },
+      {
+        input: "filter-events",
+        container: "events-results",
+        noun: "event session",
+        retitleGroups: false,
+        sync: () => syncAllEventSelections(),
+      },
+    ];
+
+    function rowIsFilteredOut(el) {
+      return !!el?.closest?.("tr.filtered-out");
+    }
+
+    // Check all means "check everything the filter is showing", so a narrowed list
+    // can be scheduled, attached, or deleted as a batch.
+    function setBoxesChecked(boxes, checked) {
+      [...boxes].forEach((box) => {
+        if (checked && rowIsFilteredOut(box)) return;
+        box.checked = checked;
+      });
+    }
+
+    function visibleBoxes(selector, root = document) {
+      return [...root.querySelectorAll(selector)].filter((box) => !rowIsFilteredOut(box));
+    }
+
+    function applyListFilter(config) {
+      const container = $(config.container);
+      const input = $(config.input);
+      if (!container || !input) return;
+      const needle = input.value.trim().toLowerCase();
+      let total = 0;
+      let shown = 0;
+      let hiddenChecked = 0;
+      container.querySelectorAll("table tbody tr").forEach((row) => {
+        total += 1;
+        const match = !needle || row.textContent.toLowerCase().includes(needle);
+        row.classList.toggle("filtered-out", !match);
+        if (match) {
+          shown += 1;
+          return;
+        }
+        if (row.querySelector('input[type="checkbox"]:checked')) hiddenChecked += 1;
+      });
+      // Inner groups first, so a site group sees its own hidden children.
+      const groupSelectors = ["details.event-group", "details.saved-promoted-group", "details.dc-group"];
+      for (const selector of groupSelectors) {
+        container.querySelectorAll(selector).forEach((group) => {
+          const rows = [...group.querySelectorAll("table tbody tr")];
+          const visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
+          group.classList.toggle("filtered-out", Boolean(needle) && rows.length > 0 && visible === 0);
+          if (needle && visible) group.open = true;
+          // Event site groups count events, not rows, so leave their titles alone.
+          if (config.retitleGroups === false || !group.matches("details.dc-group")) return;
+          const title = group.querySelector(".dc-group-title");
+          if (!title) return;
+          const site = String(group.dataset.site || "").toUpperCase();
+          title.textContent = needle
+            ? `${site} (${visible} of ${rows.length})`
+            : `${site} (${rows.length})`;
+        });
+      }
+      const status = $(`${config.input}-status`);
+      if (status) {
+        const noun = `${config.noun}${shown === 1 ? "" : "s"}`;
+        const hidden = hiddenChecked
+          ? (hiddenChecked === 1
+            ? " 1 checked row is hidden by this filter and still counts toward the buttons above."
+            : ` ${hiddenChecked} checked rows are hidden by this filter and still count toward the buttons above.`)
+          : "";
+        status.textContent = needle
+          ? `Showing ${shown} of ${total} ${noun} matching “${input.value.trim()}”.${hidden}`
+          : "";
+      }
+      config.sync?.();
+      makeColumnsResizable(config.container);
+    }
+
+    function refreshListFilters() {
+      LIST_FILTERS.forEach(applyListFilter);
+    }
+
+    // Drag the divider in a header cell to widen a column — long saved-content and
+    // session names are clipped at a fixed width otherwise, which makes them
+    // awkward to read or select. Widths are per list and remembered in the browser;
+    // double-click a divider to hand the column back to the automatic layout.
+    // v3: widths are now saved as a full set per list, not one column at a time.
+    const COLUMN_WIDTH_KEY = "dcloud-tool-column-widths-v3";
+    const MIN_COLUMN_WIDTH = 56;
+
+    function readColumnWidths() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(COLUMN_WIDTH_KEY) || "{}");
+        return saved && typeof saved === "object" ? saved : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function writeColumnWidths(widths) {
+      try {
+        localStorage.setItem(COLUMN_WIDTH_KEY, JSON.stringify(widths));
+      } catch {
+        // Column widths are a convenience; private browsing can refuse storage.
+      }
+    }
+
+    function headerCells(table) {
+      return [...(table.tHead?.rows?.[0]?.cells || [])];
+    }
+
+    function applyColumnWidths(containerId) {
+      const container = $(containerId);
+      if (!container) return;
+      const widths = readColumnWidths()[containerId] || {};
+      container.querySelectorAll("table").forEach((table) => {
+        headerCells(table).forEach((th, index) => {
+          const width = Number(widths[index]);
+          if (!Number.isFinite(width) || width <= 0) return;
+          th.style.width = `${width}px`;
+        });
+        syncPinnedLayout(table);
+      });
+    }
+
+    function syncPinnedLayout(table) {
+      const widths = headerCells(table).map((cell) => parseFloat(cell.style.width) || 0);
+      // An explicit width only holds under a fixed layout.
+      const pinned = widths.some((width) => width > 0);
+      table.style.tableLayout = pinned ? "fixed" : "";
+      table.classList.toggle("cols-resized", pinned);
+      // And a fixed layout only honours the widths if the table is as wide as they add
+      // up to. Left at 100% the browser rescales them and squeezes the last column down
+      // to its content, which is what flattened the Actions buttons.
+      const total = widths.reduce((sum, width) => sum + width, 0);
+      table.style.width = widths.every((width) => width > 0) ? `${Math.round(total)}px` : "";
+    }
+
+    function setColumnWidth(containerId, index, width) {
+      const container = $(containerId);
+      if (!container) return;
+      // Every datacenter table in a list shares one set of columns, so they all move
+      // together and stay lined up.
+      container.querySelectorAll("table").forEach((table) => {
+        const th = headerCells(table)[index];
+        if (!th) return;
+        th.style.width = width === null ? "" : `${width}px`;
+        syncPinnedLayout(table);
+      });
+    }
+
+    function resetColumnWidths(containerId) {
+      const container = $(containerId);
+      if (!container) return;
+      container.querySelectorAll("table").forEach((table) => {
+        headerCells(table).forEach((cell) => { cell.style.width = ""; });
+        syncPinnedLayout(table);
+      });
+      const widths = readColumnWidths();
+      delete widths[containerId];
+      writeColumnWidths(widths);
+    }
+
+    function storeColumnWidth(containerId, index, width) {
+      const widths = readColumnWidths();
+      const forList = { ...(widths[containerId] || {}) };
+      if (width === null) delete forList[index];
+      else forList[index] = width;
+      if (Object.keys(forList).length) widths[containerId] = forList;
+      else delete widths[containerId];
+      writeColumnWidths(widths);
+    }
+
+    function startColumnResize(ev, containerId, table, index) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const container = $(containerId);
+      const start = ev.clientX;
+      const startWidth = headerCells(table)[index]?.getBoundingClientRect().width || 0;
+      // Freeze the columns at their current sizes first, or switching to a fixed
+      // layout makes the untouched ones jump.
+      container?.querySelectorAll("table").forEach((other) => {
+        headerCells(other).forEach((cell) => {
+          if (cell.style.width) return;
+          const width = cell.getBoundingClientRect().width;
+          if (width > 0) cell.style.width = `${Math.round(width)}px`;
+        });
+        syncPinnedLayout(other);
+      });
+      let latest = Math.round(startWidth);
+      const onMove = (move) => {
+        latest = Math.max(MIN_COLUMN_WIDTH, Math.round(startWidth + (move.clientX - start)));
+        setColumnWidth(containerId, index, latest);
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.classList.remove("col-resizing");
+        setColumnWidth(containerId, index, latest);
+        // Every column was frozen to start the drag, so they all have to be saved or
+        // a reload would leave the untouched ones fighting over the leftover space.
+        headerCells(table).forEach((cell, cellIndex) => {
+          const width = Math.round(parseFloat(cell.style.width) || 0);
+          if (width > 0) storeColumnWidth(containerId, cellIndex, width);
+        });
+      };
+      document.body.classList.add("col-resizing");
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    }
+
+    function makeColumnsResizable(containerId) {
+      const container = $(containerId);
+      if (!container) return;
+      container.querySelectorAll("table").forEach((table) => {
+        // A dragged-out table has to scroll inside its panel, not push past it.
+        if (!table.parentElement?.classList.contains("table-scroll")) {
+          const scroller = document.createElement("div");
+          scroller.className = "table-scroll";
+          table.parentNode?.insertBefore(scroller, table);
+          scroller.appendChild(table);
+        }
+        const heads = headerCells(table);
+        heads.forEach((th, index) => {
+          if (th.querySelector(".col-resizer")) return;
+          const grip = document.createElement("span");
+          grip.className = "col-resizer";
+          grip.title = "Drag to resize this column · double-click to reset the widths";
+          // Header cells sort on click in several of these tables.
+          grip.addEventListener("click", (click) => {
+            click.preventDefault();
+            click.stopPropagation();
+          });
+          grip.addEventListener("mousedown", (down) => startColumnResize(down, containerId, table, index));
+          grip.addEventListener("dblclick", (dbl) => {
+            dbl.preventDefault();
+            dbl.stopPropagation();
+            // The columns are pinned as a set, so one of them going back to automatic
+            // would just take the leftover space. Reset the whole list instead.
+            resetColumnWidths(containerId);
+          });
+          th.appendChild(grip);
+        });
+      });
+      applyColumnWidths(containerId);
+    }
+
+    function listFilterConfig(inputId) {
+      return LIST_FILTERS.find((config) => config.input === inputId) || { input: inputId };
     }
 
     function setFoundSessionsPanelVisible(visible, { open = true, sessionCount = null } = {}) {
@@ -10437,6 +10787,7 @@
       const attachable = rows.filter((row) => row.sessionId).length;
       setFoundSessionsPanelVisible(rows.length > 0, { open: true, sessionCount: attachable });
       markFoundSessionsOnCards(lastRenderedJob);
+      applyListFilter(listFilterConfig("filter-found-sessions"));
     }
 
     function formatSavedAt(iso) {
@@ -10511,7 +10862,9 @@
         : escapeHtml(row.contentId);
       const stateCell = row.eolOnly && showEolBadge
         ? `<span class="badge eol">EOL only</span> <span class="hint">${escapeHtml(row.state || "")}</span>`
-        : `${row.isTbv3 ? `<span class="badge">TBv3</span> ` : ""}${escapeHtml(row.state || "")}`;
+        // No TBv3 badge: nearly everything is v3 now, and the v2 items already sit
+        // under their own "Topology Builder v2 promoted — EOL only" section.
+        : escapeHtml(row.state || "");
       const checkCell = `<input type="checkbox" class="${itemClass}" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}" data-parent-id="${escapeHtml(row.parentId || "")}" data-deletable="${deletable ? "true" : "false"}" />`;
       const shareBtn = `<button type="button" class="secondary btn-saved-share" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-share-kind="content" data-name="${escapeHtml(row.name)}" data-tip="Share this saved content in dCloud (DSX user search)">Share</button>`;
       const addBtn = showAdd
@@ -10737,6 +11090,7 @@
         syncGroupChecks("", `.${itemClass}`, dcHeadClass);
         syncDeleteSavedButton();
         syncMainScheduleToSaved();
+        refreshListFilters();
         return;
       }
       if (mount === "schedule") {
@@ -10781,6 +11135,7 @@
         syncDeleteSavedButton();
         bindSavedContentActionMenus();
         syncMainScheduleToSaved();
+        refreshListFilters();
         return;
       }
       const deletableRows = rows.filter((row) => row.deletable !== false && !row.eolOnly);
@@ -10836,6 +11191,7 @@
       syncGroupChecks("found-saved-all-head", `.${itemClass}`, dcHeadClass);
       syncDeleteSavedButton();
       syncMainScheduleToSaved();
+      refreshListFilters();
     }
 
     function setFoundSavedSort(key) {
@@ -10869,10 +11225,10 @@
     }
 
     function setFoundSessionChecks(checked) {
-      document.querySelectorAll(".found-session:not(:disabled)").forEach((box) => { box.checked = checked; });
+      setBoxesChecked(document.querySelectorAll(".found-session:not(:disabled)"), checked);
       document.querySelectorAll(".found-session-dc-head").forEach((head) => {
         const site = head.dataset.site;
-        const dcBoxes = [...document.querySelectorAll(`.found-session[data-site="${site}"]:not(:disabled)`)];
+        const dcBoxes = visibleBoxes(`.found-session[data-site="${site}"]:not(:disabled)`);
         head.checked = dcBoxes.length > 0 && dcBoxes.every((box) => box.checked);
         head.indeterminate = dcBoxes.some((box) => box.checked) && !head.checked;
       });
@@ -10900,7 +11256,7 @@
     }
 
     function syncFoundAll() {
-      const boxes = [...document.querySelectorAll(".found-session:not(:disabled)")];
+      const boxes = visibleBoxes(".found-session:not(:disabled)");
       const checked = boxes.filter((box) => box.checked).length;
       const head = $("found-all-head");
       if (head) {
@@ -11028,7 +11384,10 @@
         const rows = data.contents || [];
         const deletable = rows.filter((row) => row.deletable !== false && !row.eolOnly).length;
         const promoted = rows.filter((row) => row.eolOnly).length;
-        const marked = markSavedIdsOnFoundContent();
+        // Rows are no longer pre-checked just for being in the Content Automation
+        // Hub list: with a filter and bulk actions on this list, arriving with a
+        // scattered selection already made is a hazard. Recheck saved IDs still
+        // does it on request.
         if (rows.length) {
           noteLog(
             `Found ${rows.length} saved content item(s)`
@@ -11040,7 +11399,6 @@
                 ? ` (${promoted} TBv2 promoted/EOL-only, listed with saved)`
                 : ` (${deletable} directly deletable, ${promoted} TBv2 promoted/EOL-only)`
               : "")
-            + (marked ? ` — auto-checked ${marked} from Saved content IDs` : "")
             + "."
           );
         } else {
@@ -11294,7 +11652,7 @@
     }
 
     function syncWorkspaceFoundAll() {
-      const boxes = [...document.querySelectorAll(".workspace-found-session:not(:disabled)")];
+      const boxes = visibleBoxes(".workspace-found-session:not(:disabled)");
       const checked = boxes.filter((box) => box.checked).length;
       for (const site of SITE_ORDER) {
         const dcBoxes = boxes.filter((box) => box.dataset.site === site);
@@ -11308,9 +11666,7 @@
     }
 
     function setWorkspaceFoundChecks(checked) {
-      document.querySelectorAll(".workspace-found-session:not(:disabled)").forEach((box) => {
-        box.checked = checked;
-      });
+      setBoxesChecked(document.querySelectorAll(".workspace-found-session:not(:disabled)"), checked);
       syncWorkspaceFoundAll();
     }
 
@@ -11351,6 +11707,7 @@
           `Your active dCloud sessions (${rows.length}) — click to expand or collapse`;
       }
       syncWorkspaceFoundAll();
+      applyListFilter(listFilterConfig("filter-workspace-sessions"));
     }
 
     async function findWorkspaceSessions() {
@@ -12371,9 +12728,10 @@
       root.addEventListener("change", (ev) => {
         if (ev.target.classList.contains(dcHeadClass)) {
           const site = ev.target.dataset.site;
-          root.querySelectorAll(`.${itemClass}[data-site="${site}"]`).forEach((box) => {
-            box.checked = ev.target.checked;
-          });
+          setBoxesChecked(
+            root.querySelectorAll(`.${itemClass}[data-site="${site}"]`),
+            ev.target.checked,
+          );
           syncFn();
           return;
         }
@@ -12399,9 +12757,10 @@
     $("found-workspace-sessions").addEventListener("change", (ev) => {
       if (ev.target.classList.contains("workspace-found-session-dc-head")) {
         const site = ev.target.dataset.site;
-        document.querySelectorAll(`.workspace-found-session[data-site="${site}"]:not(:disabled)`).forEach((box) => {
-          box.checked = ev.target.checked;
-        });
+        setBoxesChecked(
+          document.querySelectorAll(`.workspace-found-session[data-site="${site}"]:not(:disabled)`),
+          ev.target.checked,
+        );
       }
       syncWorkspaceFoundAll();
     });
@@ -12435,13 +12794,17 @@
     $("found-sessions").addEventListener("change", (ev) => {
       if (ev.target.classList.contains("found-session-dc-head")) {
         const site = ev.target.dataset.site;
-        document.querySelectorAll(`.found-session[data-site="${site}"]:not(:disabled)`).forEach((box) => {
-          box.checked = ev.target.checked;
-        });
+        setBoxesChecked(
+          document.querySelectorAll(`.found-session[data-site="${site}"]:not(:disabled)`),
+          ev.target.checked,
+        );
         syncFoundAll();
         return;
       }
       if (ev.target.classList.contains("found-session")) syncFoundAll();
+    });
+    LIST_FILTERS.forEach((config) => {
+      $(config.input)?.addEventListener("input", () => applyListFilter(config));
     });
     bindFoundSavedListEvents("found-schedule-saved", "schedule-saved-content", "schedule-saved-dc-head", syncScheduleSavedAll);
     bindFoundSavedListEvents("saved-ids-found", "saved-ids-found-content", "saved-ids-found-dc-head", syncSavedIdsFoundAll);
@@ -12559,9 +12922,10 @@
       const group = ev.target.closest("details.event-group");
       if (!group) return;
       if (ev.target.classList.contains("event-head-check")) {
-        group.querySelectorAll(".event-session-check:not(:disabled)").forEach((box) => {
-          box.checked = ev.target.checked;
-        });
+        setBoxesChecked(
+          group.querySelectorAll(".event-session-check:not(:disabled)"),
+          ev.target.checked,
+        );
       }
       if (
         ev.target.classList.contains("event-head-check")
@@ -12574,7 +12938,7 @@
       const site = group.dataset.site;
       const eventId = group.dataset.eventId;
       if (ev.target.closest(".event-check-all")) {
-        group.querySelectorAll(".event-session-check:not(:disabled)").forEach((box) => { box.checked = true; });
+        setBoxesChecked(group.querySelectorAll(".event-session-check:not(:disabled)"), true);
         syncEventSelection(group);
         return;
       }

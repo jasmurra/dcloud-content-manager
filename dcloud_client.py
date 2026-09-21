@@ -4210,9 +4210,25 @@ def list_saved_contents(token: str, site: str, *, state: str | None = "saved") -
 def _content_states(item: dict[str, Any]) -> list[str]:
     raw = item.get("state") or item.get("states") or []
     if isinstance(raw, list):
-        return [str(part).strip() for part in raw if str(part).strip()]
-    text = str(raw or "").strip()
-    return [text] if text else []
+        parts = [str(part).strip() for part in raw if str(part).strip()]
+    else:
+        text = str(raw or "").strip()
+        parts = [text] if text else []
+    # dCloud repeats a state on some records ("saved, promoted, shared, promoted").
+    return unique_states(parts)
+
+
+def unique_states(parts: list[str]) -> list[str]:
+    """Drop repeated state words, keeping dCloud's order and spelling."""
+    seen: set[str] = set()
+    unique: list[str] = []
+    for part in parts:
+        key = part.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(part)
+    return unique
 
 
 def _content_is_promoted(item: dict[str, Any] | None) -> bool:

@@ -2046,6 +2046,141 @@ def test_go_to_demo_lands_on_content_not_the_v2_builder() -> None:
     )
 
 
+def test_repeated_content_states_are_shown_once() -> None:
+    import app
+    import dcloud_client
+
+    # dCloud sends "saved, promoted, shared, promoted" on some shared content.
+    repeated = ["saved", "promoted", "shared", "promoted"]
+    check(
+        "a repeated state is dropped, keeping dCloud's order",
+        dcloud_client.unique_states(repeated) == ["saved", "promoted", "shared"],
+    )
+    check(
+        "saved content rows show each state once",
+        dcloud_client.summarize_saved_content(
+            {"state": list(repeated), "name": "x", "uid": 1}, "rtp"
+        )["state"] == "saved, promoted, shared",
+    )
+    check(
+        "Search dCloud content rows show each state once",
+        app._unified_content_result("rtp", {"state": list(repeated), "demoId": "1"})["status"]
+        == "saved / promoted / shared",
+    )
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    check(
+        "the State column no longer carries a TBv3 badge",
+        "TBv3</span>" not in page and "isTbv3" not in page,
+    )
+
+
+def test_cross_dc_lists_have_the_same_instant_filter() -> None:
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    for input_id in (
+        "filter-schedule-saved",
+        "filter-saved-ids-found",
+        "filter-workspace-sessions",
+        "filter-found-sessions",
+        "filter-events",
+    ):
+        check(
+            f"{input_id} filters its cross-DC list and reports what it is showing",
+            f'id="{input_id}"' in page and f'id="{input_id}-status"' in page,
+        )
+    check(
+        "one shared filter drives every list",
+        "const LIST_FILTERS = [" in page
+        and "function applyListFilter(config)" in page
+        and "function refreshListFilters()" in page
+        and '$(config.input)?.addEventListener("input", () => applyListFilter(config))' in page,
+    )
+    check(
+        "rendering a list reapplies the current filter",
+        'applyListFilter(listFilterConfig("filter-found-sessions"))' in page
+        and 'applyListFilter(listFilterConfig("filter-workspace-sessions"))' in page
+        and 'applyListFilter(listFilterConfig("filter-events"))' in page
+        and page.count("refreshListFilters();") >= 3,
+    )
+    check(
+        "Check all takes only the rows the filter is showing",
+        "function setBoxesChecked(boxes, checked)" in page
+        and "if (checked && rowIsFilteredOut(box)) return;" in page
+        and "setBoxesChecked(document.querySelectorAll(itemSelector), checked)" in page
+        and 'setBoxesChecked(document.querySelectorAll(".found-session:not(:disabled)"), checked)' in page
+        and 'setBoxesChecked(document.querySelectorAll(".workspace-found-session:not(:disabled)"), checked)' in page
+        and 'setBoxesChecked(group.querySelectorAll(".event-session-check:not(:disabled)"), true)' in page,
+    )
+    check(
+        "a filter change keeps earlier selections and says how many are hidden",
+        "let hiddenChecked = 0;" in page
+        and "checked rows are hidden by this filter" in page
+        # Hiding a row must never silently clear it.
+        and "box.checked = false;\n        });\n      });" not in page,
+    )
+    check(
+        "finding saved content no longer pre-checks Content Automation Hub rows",
+        # Only the Recheck saved IDs button may still call it.
+        page.count("= markSavedIdsOnFoundContent();") == 1
+        and "auto-checked ${marked} from Saved content IDs" not in page
+        and 'id="btn-recheck-schedule-saved-ids"' in page
+        and "function recheckSavedIdsOnFoundContent(" in page,
+    )
+    check(
+        "list columns can be dragged wider and remember it",
+        "function makeColumnsResizable(containerId)" in page
+        and "function startColumnResize(ev, containerId, table, index)" in page
+        and 'COLUMN_WIDTH_KEY = "dcloud-tool-column-widths-v3"' in page
+        and 'grip.className = "col-resizer"' in page
+        and ".col-resizer {" in page
+        and "makeColumnsResizable(config.container);" in page
+        and 'makeColumnsResizable("unified-search-results");' in page,
+    )
+    check(
+        "a resize drag neither sorts the column nor leaves names capped",
+        'grip.addEventListener("click", (click) => {' in page
+        and "click.stopPropagation();" in page
+        and 'grip.addEventListener("dblclick"' in page
+        and "table.cols-resized td.name-cell { max-width: none; }" in page
+        and "overflow-wrap: anywhere;" in page
+        and "word-break: break-word;" in page,
+    )
+    check(
+        "a widened table scrolls inside its panel instead of overflowing it",
+        '.table-scroll { overflow-x: auto; max-width: 100%; }' in page
+        and 'scroller.className = "table-scroll"' in page
+        and 'table.parentElement?.classList.contains("table-scroll")' in page,
+    )
+    check(
+        "the last column keeps its width instead of being squeezed flat",
+        # Every column is frozen and saved, and the table is exactly as wide as they
+        # add up to, so a fixed layout cannot rescale them.
+        "function syncPinnedLayout(table)" in page
+        and '`${Math.round(total)}px`' in page
+        and "table.cols-resized td:not(.name-cell):not(.saved-actions):not(:has(.search-actions-menu))" in page
+        and "if (th.querySelector(\".col-resizer\")) return;" in page
+        and "storeColumnWidth(containerId, cellIndex, width);" in page
+        and "function resetColumnWidths(containerId)" in page,
+    )
+    check(
+        "long names wrap and the Actions button is not given an ellipsis",
+        "overflow-wrap: anywhere;" in page
+        and "td:has(.search-actions-menu)" in page
+        and 'max-width: 18rem' not in page,
+    )
+    check(
+        "the schedule start/stop hint is short",
+        "Start and stop fill from now" in page
+        and "staggers each session from now" in page
+        and "1 day = now until this time tomorrow" not in page,
+    )
+    check(
+        "site headers and counts follow the filtered rows",
+        "function visibleBoxes(selector, root = document)" in page
+        and "const boxes = visibleBoxes(itemSelector);" in page
+        and '${site} (${visible} of ${rows.length})' in page,
+    )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
