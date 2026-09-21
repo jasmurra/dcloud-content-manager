@@ -4852,9 +4852,25 @@ def search_share_users(
         return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
     if len(name) < 2:
         return [], None
+    # dCloud's share dialog searches DSX by default — including live sessions.
+    # Partner emails (vqcomms.com, etc.) only show up with that scope. Searching
+    # all cisco.com users first is what left SJC/SNG/SYD unable to find them.
+    users, err = _search_share_users(token, site_code, name, scope="dsx")
+    if err or users or content_scope:
+        return users, err
+    return _search_share_users(token, site_code, name, scope=None)
+
+
+def _search_share_users(
+    token: str,
+    site_code: str,
+    name: str,
+    *,
+    scope: str | None,
+) -> tuple[list[dict[str, str]], str | None]:
     params = {"name": name}
-    if content_scope:
-        params["scope"] = "dsx"
+    if scope:
+        params["scope"] = scope
     url = f"{site_base(site_code)}/api/users/search?{urlencode(params)}"
     try:
         response = _request("GET", url, token)
@@ -4863,7 +4879,7 @@ def search_share_users(
     if response.status_code == 401:
         return [], (
             "dCloud token was rejected (401). Use Sign in to dCloud at the top of the page "
-            "to log in or import from browser, then try again."
+            "to log in, then try again."
         )
     if response.status_code >= 400:
         return [], api_message(_json_or_text(response)) or f"HTTP {response.status_code}"

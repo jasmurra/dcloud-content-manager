@@ -336,6 +336,103 @@ def test_shared_with_survives_status_poll() -> None:
     )
 
 
+def test_live_session_share_search_uses_dsx() -> None:
+    """dCloud's live-session share box searches DSX by default. The tool used to
+    search all cisco.com users instead, which missed partner emails on SJC/SNG/SYD."""
+    import dcloud_client
+
+    partner = {
+        "userId": "00uvquferzzlcmsgu5d7",
+        "fullName": "MARK CUPID",
+        "email": "mcupid@vqcomms.com",
+    }
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    real_request = dcloud_client._request
+    try:
+        calls: list[str] = []
+
+        def dsx_hit(method, url, token, **kwargs):
+            calls.append(url)
+            if "scope=dsx" in url:
+                return FakeResponse(200, {"success": True, "users": [partner]})
+            return FakeResponse(200, {"success": True, "users": []})
+
+        dcloud_client._request = dsx_hit
+        users, err = dcloud_client.search_share_users(
+            "token", "sjc", "mcupid@vqcomms.com", content_scope=False
+        )
+        check("live session search does not error", err is None, str(err))
+        check(
+            "live session search asks DSX first",
+            calls == [
+                "https://dcloud2-sjc.cisco.com/api/users/search?name=mcupid%40vqcomms.com&scope=dsx"
+            ],
+            str(calls),
+        )
+        check(
+            "a DSX partner is returned without a cisco.com follow-up",
+            users == [{
+                "userId": partner["userId"],
+                "fullName": partner["fullName"],
+                "email": partner["email"],
+            }],
+            str(users),
+        )
+
+        calls.clear()
+
+        def empty_dsx(method, url, token, **kwargs):
+            calls.append(url)
+            if "scope=dsx" in url:
+                return FakeResponse(200, {"success": True, "users": []})
+            return FakeResponse(200, {"success": True, "users": [{
+                "userId": "cisco-user",
+                "fullName": "Cisco User",
+                "email": "user@cisco.com",
+            }]})
+
+        dcloud_client._request = empty_dsx
+        users, err = dcloud_client.search_share_users(
+            "token", "sjc", "user@cisco.com", content_scope=False
+        )
+        check(
+            "live sessions fall back to all cisco.com users if DSX is empty",
+            err is None
+            and len(users) == 1
+            and users[0]["userId"] == "cisco-user"
+            and len(calls) == 2
+            and "scope=dsx" in calls[0]
+            and "scope=" not in calls[1].split("?")[-1],
+            str(calls),
+        )
+
+        calls.clear()
+        users, err = dcloud_client.search_share_users(
+            "token", "sjc", "nobody@cisco.com", content_scope=True
+        )
+        check(
+            "saved content stays on DSX only",
+            err is None and users == [] and len(calls) == 1 and "scope=dsx" in calls[0],
+            str(calls),
+        )
+    finally:
+        dcloud_client._request = real_request
+
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    check(
+        "the share dialog describes the DSX-first search",
+        "DSX users first" in page and "Live sessions search all users; saved content uses DSX" not in page,
+    )
+
+
 def test_owner_line_survives_a_tokenless_render() -> None:
     """last-job.json holds no token, so a restored job used to answer "I cannot
     tell who owns this" for every card — and persist that blank."""
