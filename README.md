@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.14.2** | Reset and End work on sessions you don't own: both retry on the dCloud admin route after a permission error, so an admin can act on another user's event sessions |
 | **1.14.1** | Bulk Reset/End in Events are paced one session at a time (1s apart by default, adjustable), and a failed batch now reports dCloud's reason per session instead of only a count |
 | **1.14.0** | Added Events: save multiple site/event-ID lookups in nested collapsible sections, list all event sessions, and use confirmed individual or checked Reset/End actions |
 | **1.13.1** | Saved content is back in a collapsible section per DC (like Search dCloud) with Expand/Collapse all; one column click sorts every DC, and columns run Name → Content ID → Owner → State → Saved → Actions |

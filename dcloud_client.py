@@ -3792,24 +3792,69 @@ def update_session_name(
     }
 
 
+def _looks_like_permission_error(status_code: int, message: str) -> bool:
+    """dCloud answers a session you do not own with 403, or a 400 carrying this text."""
+    if status_code in {401, 403}:
+        return True
+    lowered = (message or "").lower()
+    return "permission" in lowered or "has either been removed" in lowered
+
+
+def _session_action(
+    token: str,
+    site: str,
+    session_id: str,
+    action: str,
+    *,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> tuple[bool, Any, int, str, list[str]]:
+    """PUT a session action, falling back to the admin route for someone else's session.
+
+    The plain /api/sessions route only acts on sessions you own — an admin acting on
+    another user's session gets "removed or you do not have the permission" from it,
+    even though the same admin can read that session. Returns the attempted paths so
+    a failure can say which ones were tried.
+    """
+    sid = (session_id or "").strip()
+    paths = [f"/api/sessions/{sid}/{action}", f"/api/admin/sessions/{sid}/{action}"]
+    tried: list[str] = []
+    ok = False
+    body: Any = ""
+    status = 0
+    message = ""
+    for path in paths:
+        tried.append(path)
+        try:
+            response = _request("PUT", f"{site_base(site)}{path}", token, timeout=timeout)
+        except requests.RequestException as exc:
+            ok, body, status, message = False, "", 0, str(exc)
+            continue
+        body = _json_or_text(response)
+        status = response.status_code
+        ok = status < 400
+        if isinstance(body, dict) and "success" in body:
+            ok = body.get("success") is True
+        message = api_message(body)
+        if ok or not _looks_like_permission_error(status, message):
+            break
+    return ok, body, status, message, tried
+
+
 def end_session(token: str, site: str, session_id: str) -> dict[str, Any]:
     """PUT /api/sessions/{id}/end — same as the bot /end command (no save)."""
     sid = (session_id or "").strip()
     if not sid:
         return {"ok": False, "message": "Session ID is required."}
-    url = f"{site_base(site)}/api/sessions/{sid}/end"
-    try:
-        response = _request("PUT", url, token)
-    except requests.RequestException as exc:
-        return {"ok": False, "sessionId": sid, "message": str(exc)}
-    body = _json_or_text(response)
-    if response.status_code == 404:
+    ok, _body, status, detail, tried = _session_action(token, site, sid, "end")
+    if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
-    message = api_message(body) or f"HTTP {response.status_code}"
-    ok = response.status_code < 400
-    if isinstance(body, dict) and "success" in body:
-        ok = body.get("success") is True
-    return {"ok": ok, "sessionId": sid, "message": message if message else ("Session ended." if ok else "End session failed.")}
+    message = detail or f"HTTP {status}"
+    return {
+        "ok": ok,
+        "sessionId": sid,
+        "triedPaths": tried,
+        "message": message if message else ("Session ended." if ok else "End session failed."),
+    }
 
 
 def reset_session(token: str, site: str, session_id: str) -> dict[str, Any]:
@@ -3817,27 +3862,17 @@ def reset_session(token: str, site: str, session_id: str) -> dict[str, Any]:
     sid = (session_id or "").strip()
     if not sid:
         return {"ok": False, "message": "Session ID is required."}
-    url = f"{site_base(site)}/api/sessions/{sid}/reset"
-    try:
-        response = _request("PUT", url, token, timeout=60)
-    except requests.RequestException as exc:
-        return {"ok": False, "sessionId": sid, "message": str(exc)}
-    body = _json_or_text(response)
-    if response.status_code == 404:
+    ok, body, status, detail, tried = _session_action(token, site, sid, "reset", timeout=60)
+    if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
-    ok = response.status_code < 400
-    if isinstance(body, dict) and "success" in body:
-        ok = body.get("success") is True
     # dCloud answers a good reset with `"message": []`, so fall back to our own wording.
-    detail = api_message(body)
-    message = detail or (
-        "Reset requested." if ok else f"Reset failed (HTTP {response.status_code})."
-    )
+    message = detail or ("Reset requested." if ok else f"Reset failed (HTTP {status}).")
     session = body.get("session") if isinstance(body, dict) else None
     return {
         "ok": ok,
         "sessionId": sid,
         "session": session if isinstance(session, dict) else {},
+        "triedPaths": tried,
         "message": message,
     }
 

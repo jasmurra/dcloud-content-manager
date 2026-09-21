@@ -1,3 +1,8 @@
+## 1.14.2 — 2026-09-21
+
+- **Reset and End now work on a session you do not own.** dCloud's `/api/sessions/{id}` route only acts on your own sessions, so an admin acting on someone else's session got "The content you are trying to access has either been removed or you do not have the permission required to view it" — even though the same admin could read that session. Both actions now retry on `/api/admin/sessions/{id}` after a permission error
+- This applies everywhere Reset and End are offered: Events, Search dCloud, and the session cards. A session you own is unaffected and still uses the plain route
+
 ## 1.14.1 — 2026-09-21
 
 - **Bulk Reset and End in Events go out one session at a time**, 1 second apart by default, instead of firing every session at once. The gap is adjustable from 0 to 30 seconds in the Events toolbar

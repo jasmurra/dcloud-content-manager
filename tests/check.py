@@ -1713,6 +1713,72 @@ def test_event_management_section() -> None:
         and 'id="event-action-delay"' in INDEX,
     )
 
+    check(
+        "a session you do not own falls back to the admin route for reset and end",
+        "def _session_action(" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+        and 'f"/api/admin/sessions/{sid}/{action}"' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+        and "_looks_like_permission_error" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
+    )
+
+    client_source = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    real_request = dcloud_client._request
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    try:
+        calls: list[str] = []
+
+        def fake_request(method, url, token, **kwargs):
+            calls.append(url)
+            if "/api/admin/sessions/" in url:
+                return FakeResponse(200, {"success": True, "message": []})
+            return FakeResponse(400, {
+                "message": "The content you are trying to access has either been "
+                           "removed or you do not have the permission required to view it."
+            })
+
+        dcloud_client._request = fake_request
+        result = dcloud_client.reset_session("token", "sjc", "491872")
+        check(
+            "the admin route is used after a permission error",
+            result["ok"] is True
+            and calls == [
+                "https://dcloud2-sjc.cisco.com/api/sessions/491872/reset",
+                "https://dcloud2-sjc.cisco.com/api/admin/sessions/491872/reset",
+            ],
+            str(calls),
+        )
+
+        calls.clear()
+        end_result = dcloud_client.end_session("token", "sjc", "491872")
+        check(
+            "End falls back the same way",
+            end_result["ok"] is True and calls[-1].endswith("/api/admin/sessions/491872/end"),
+            str(calls),
+        )
+
+        calls.clear()
+
+        def owner_ok(method, url, token, **kwargs):
+            calls.append(url)
+            return FakeResponse(200, {"success": True, "message": []})
+
+        dcloud_client._request = owner_ok
+        dcloud_client.reset_session("token", "sjc", "123")
+        check(
+            "a session you own still uses the plain route only",
+            calls == ["https://dcloud2-sjc.cisco.com/api/sessions/123/reset"],
+            str(calls),
+        )
+    finally:
+        dcloud_client._request = real_request
+
     real_fetch = dcloud_client.fetch_admin_records
     try:
         def fake_fetch(token, site, *, resource, refresh=False):
