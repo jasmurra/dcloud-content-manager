@@ -1,3 +1,8 @@
+## 1.14.1 — 2026-09-21
+
+- **Bulk Reset and End in Events go out one session at a time**, 1 second apart by default, instead of firing every session at once. The gap is adjustable from 0 to 30 seconds in the Events toolbar
+- **A failed bulk action now says why.** A batch that failed used to report only `0 succeeded · 20 failed`; dCloud's reason for each session is now shown on screen and written to the Log
+
 ## 1.14.0 — 2026-09-21
 
 - Added an **Events** section that finds an event by datacenter and numeric event ID, then lists every session attached to it

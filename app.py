@@ -1124,6 +1124,7 @@ class EventSessionActionPayload(TokenPayload):
     site: str
     session_ids: list[str] = Field(default_factory=list)
     action: str
+    delay_seconds: float = Field(default=1.0, ge=0, le=30)
 
 
 class CatalogIdsPayload(TokenPayload):
@@ -7800,28 +7801,33 @@ def api_event_session_action(body: EventSessionActionPayload) -> dict[str, Any]:
 
     token = _resolve_token(body)
     operation = reset_session if action == "reset" else end_session
+    # dCloud rejects a burst of resets against one event, so these go out one at a
+    # time with a pause in between rather than all at once.
     results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(len(session_ids), 8)) as pool:
-        futures = {
-            pool.submit(operation, token, site, session_id): session_id
-            for session_id in session_ids
-        }
-        for future in as_completed(futures):
-            session_id = futures[future]
-            try:
-                result = future.result()
-            except Exception as exc:
-                result = {"ok": False, "sessionId": session_id, "message": str(exc)}
-            results.append(result)
-    order = {session_id: index for index, session_id in enumerate(session_ids)}
-    results.sort(key=lambda row: order.get(str(row.get("sessionId") or ""), len(order)))
+    for index, session_id in enumerate(session_ids):
+        if index:
+            time.sleep(body.delay_seconds)
+        try:
+            result = operation(token, site, session_id)
+        except Exception as exc:
+            result = {"ok": False, "sessionId": session_id, "message": str(exc)}
+        result.setdefault("sessionId", session_id)
+        results.append(result)
     succeeded = sum(1 for result in results if result.get("ok"))
+    failures = [
+        f"{result.get('sessionId')}: {result.get('message') or 'no reason given'}"
+        for result in results
+        if not result.get("ok")
+    ]
     return {
         "ok": succeeded == len(results),
         "action": action,
         "requested": len(session_ids),
         "succeeded": succeeded,
         "failed": len(results) - succeeded,
+        "delaySeconds": body.delay_seconds,
+        # The UI only showed counts, so a whole failed batch gave no reason at all.
+        "failures": failures,
         "results": results,
     }
 

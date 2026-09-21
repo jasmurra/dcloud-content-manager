@@ -1698,6 +1698,20 @@ def test_event_management_section() -> None:
         and "len(session_ids) > 250" in source
         and 'action not in {"end", "reset"}' in source,
     )
+    check(
+        "bulk event actions are paced one at a time instead of fired in parallel",
+        "delay_seconds: float = Field(default=1.0, ge=0, le=30)" in source
+        and "time.sleep(body.delay_seconds)" in source
+        and "ThreadPoolExecutor" not in source[source.index('@app.post("/api/events/session-action")'):]
+        .split("@app.post", 2)[1],
+    )
+    check(
+        "a failed bulk action reports dCloud's reason instead of only a count",
+        '"failures": failures' in source
+        and "result.failures || []" in INDEX
+        and "First reason — ${failures[0]}" in INDEX
+        and 'id="event-action-delay"' in INDEX,
+    )
 
     real_fetch = dcloud_client.fetch_admin_records
     try:

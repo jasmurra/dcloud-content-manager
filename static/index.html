@@ -2528,6 +2528,10 @@
           <button type="button" class="secondary" id="btn-events-refresh">Refresh all</button>
           <button type="button" class="secondary" id="btn-events-expand">Expand all</button>
           <button type="button" class="secondary" id="btn-events-collapse">Collapse all</button>
+          <label class="check-line" for="event-action-delay" data-tip="Reset and End go out one session at a time. dCloud rejects a burst against one event, so this pause sits between each one.">
+            <span>Seconds between bulk actions</span>
+            <input id="event-action-delay" type="number" min="0" max="30" step="1" value="1" style="width:4.5rem" />
+          </label>
         </div>
         <p id="events-status" class="hint"></p>
         <div id="events-results"></div>
@@ -3518,18 +3522,28 @@
       $("events-results")?.querySelectorAll("details.event-group").forEach(syncEventSelection);
     }
 
+    function eventActionDelaySeconds() {
+      const value = Number.parseFloat($("event-action-delay")?.value);
+      return Number.isFinite(value) ? Math.min(30, Math.max(0, value)) : 1;
+    }
+
     async function runEventSessionAction(site, eventId, sessionIds, action) {
       if (!sessionIds.length) return;
       const verb = action === "reset" ? "Reset" : "End";
+      const delay = eventActionDelaySeconds();
       const detail = action === "reset"
         ? "Each selected session will be torn down and rebuilt with the same session ID."
         : "This ends the selected sessions without saving them and cannot be undone.";
+      const spacing = Math.round((sessionIds.length - 1) * delay);
+      const pacing = sessionIds.length > 1
+        ? `\n\nThese go out one at a time, ${delay}s apart — at least ${spacing < 60 ? `${spacing}s` : `${Math.ceil(spacing / 60)} minute(s)`} of spacing, plus however long dCloud takes to answer each one. Leave this page open.`
+        : "";
       const ok = await confirmAction(
-        `${verb} ${sessionIds.length} event session${sessionIds.length === 1 ? "" : "s"}?\n\n${sessionIds.join(", ")}\n\n${detail}`,
+        `${verb} ${sessionIds.length} event session${sessionIds.length === 1 ? "" : "s"}?\n\n${sessionIds.join(", ")}\n\n${detail}${pacing}`,
         { title: `${verb} event sessions`, okLabel: verb }
       );
       if (!ok) return;
-      $("events-status").textContent = `${verb} requested for ${sessionIds.length} session(s)…`;
+      $("events-status").textContent = `${verb} requested for ${sessionIds.length} session(s), ${delay}s apart…`;
       const result = await api("/api/events/session-action", {
         method: "POST",
         body: JSON.stringify({
@@ -3537,11 +3551,20 @@
           site,
           session_ids: sessionIds,
           action,
+          delay_seconds: delay,
         }),
       });
       const summary = `${result.succeeded} succeeded${result.failed ? ` · ${result.failed} failed` : ""}.`;
-      $("events-status").textContent = `${verb}: ${summary}`;
+      const failures = result.failures || [];
+      // A whole batch used to fail with nothing but a count, so dCloud's own
+      // reason for each session goes on screen and into the log.
+      $("events-status").textContent = failures.length
+        ? `${verb}: ${summary} First reason — ${failures[0]}`
+        : `${verb}: ${summary}`;
       noteLog(`${site.toUpperCase()} event ${eventId}: ${verb.toLowerCase()} ${summary}`);
+      for (const failure of failures) {
+        noteLog(`${site.toUpperCase()} event ${eventId}: ${verb.toLowerCase()} failed — ${failure}`);
+      }
       await loadEvent(site, eventId, true);
     }
 

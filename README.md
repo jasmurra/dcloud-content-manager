@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.14.1** | Bulk Reset/End in Events are paced one session at a time (1s apart by default, adjustable), and a failed batch now reports dCloud's reason per session instead of only a count |
 | **1.14.0** | Added Events: save multiple site/event-ID lookups in nested collapsible sections, list all event sessions, and use confirmed individual or checked Reset/End actions |
 | **1.13.1** | Saved content is back in a collapsible section per DC (like Search dCloud) with Expand/Collapse all; one column click sorts every DC, and columns run Name → Content ID → Owner → State → Saved → Actions |
 | **1.13.0** | Manage saved content across every DC in one sortable list with Saved date, row Actions, confirmed row/bulk delete, and a protected EOL-only section; Cleanup is surveys only |
