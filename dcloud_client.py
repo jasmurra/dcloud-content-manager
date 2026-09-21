@@ -84,6 +84,8 @@ SESSION_STATUS_LABELS = {
     "10": "Preserve",
     "12": "Saving",
     "13": "Saved",
+    "95": "VC Unavailable",
+    "99": "Error",
 }
 POWER_ON_STATES = {"poweredon", "powered_on", "power_on", "poweron", "on", "running"}
 POWER_OFF_STATES = {"poweredoff", "powered_off", "power_off", "poweroff", "off", "notrunning"}
@@ -1714,13 +1716,6 @@ def list_event_sessions(
     if session_error:
         return {}, session_error
 
-    labels = {
-        "1": "Scheduled",
-        "2": "Starting",
-        "4": "Active",
-        "5": "Stopping",
-        "12": "Saving",
-    }
     rows: list[dict[str, Any]] = []
     for session in sessions:
         linked_event = session.get("event")
@@ -1735,7 +1730,6 @@ def list_event_sessions(
         if not sid:
             continue
         status = session.get("status")
-        status_key = _status_text(status)
         rows.append(
             {
                 "sessionId": sid,
@@ -1750,7 +1744,7 @@ def list_event_sessions(
                 "virtualCenter": str(session.get("virtualCenter") or "").strip(),
                 "start": str(session.get("start") or "").strip(),
                 "stop": str(session.get("stop") or "").strip(),
-                "status": labels.get(status_key, format_status(status)),
+                "status": format_status(status),
                 "rawStatus": status,
                 "active": is_active_status(status),
                 "canReset": session.get("canReset") is True,
@@ -3236,13 +3230,6 @@ def list_dashboard_sessions(token: str, site: str) -> tuple[list[dict[str, Any]]
     rows = body.get("content") or []
     if not isinstance(rows, list):
         return [], "Unexpected sessions response."
-    labels = {
-        "1": "Scheduled",
-        "2": "Starting",
-        "4": "Active",
-        "5": "Stopping",
-        "12": "Saving",
-    }
     out: list[dict[str, Any]] = []
     for session in rows:
         if not isinstance(session, dict):
@@ -3251,13 +3238,12 @@ def list_dashboard_sessions(token: str, site: str) -> tuple[list[dict[str, Any]]
         if not sid:
             continue
         status = session.get("status")
-        status_key = _status_text(status)
         out.append(
             {
                 "site": site_code,
                 "sessionId": sid,
                 "name": str(session.get("name") or "").strip(),
-                "status": labels.get(status_key, format_status(status)),
+                "status": format_status(status),
                 "rawStatus": status,
                 "active": is_active_status(status),
                 "demoId": str(session.get("demoId") or session.get("parentId") or "").strip(),

@@ -3323,6 +3323,8 @@
 
     const EVENTS_STORE = "dcloud-content-manager-events-v1";
     const eventEntries = new Map();
+    const eventActionWatches = new Map();
+    let eventActionPollBusy = false;
 
     function eventKey(site, eventId) {
       return `${String(site || "").toLowerCase()}:${String(eventId || "").trim()}`;
@@ -3348,6 +3350,16 @@
       return ["cancelled", "canceled", "deleted", "ended", "stopped"].includes(
         String(row.status || "").toLowerCase()
       );
+    }
+
+    function eventSessionIsVcUnavailable(row) {
+      return String(row.rawStatus ?? "") === "95"
+        || String(row.status || "").toLowerCase() === "vc unavailable";
+    }
+
+    function eventSessionIsError(row) {
+      return String(row.rawStatus ?? "") === "99"
+        || String(row.status || "").toLowerCase() === "error";
     }
 
     function eventSessionsTable(entry) {
@@ -3377,10 +3389,15 @@
           </thead>
           <tbody>${rows.map((row) => {
             const finished = eventSessionIsFinished(row);
+            const unavailable = eventSessionIsVcUnavailable(row);
+            const error = eventSessionIsError(row);
+            const selectable = !finished && !unavailable;
+            const canReset = selectable && (row.canReset || error);
+            const canEnd = selectable && !error;
             const rowData = `data-site="${escapeHtml(entry.site)}" data-event-id="${escapeHtml(entry.eventId)}" data-session-id="${escapeHtml(row.sessionId)}"`;
             return `
               <tr>
-                <td><input type="checkbox" class="event-session-check" ${rowData} ${finished ? "disabled" : ""} /></td>
+                <td><input type="checkbox" class="event-session-check" ${rowData} data-can-reset="${canReset ? "true" : "false"}" data-can-end="${canEnd ? "true" : "false"}" ${selectable ? "" : "disabled"} /></td>
                 <td class="mono">${escapeHtml(row.sessionId)}</td>
                 <td>${escapeHtml(row.owner || row.student || "")}</td>
                 <td class="name-cell" title="${escapeHtml(row.name || "")}">${escapeHtml(row.name || "")}</td>
@@ -3393,9 +3410,11 @@
                   <details class="vm-menu search-actions-menu event-session-actions" ${rowData}>
                     <summary data-tip="Actions for this event session.">Actions</summary>
                     <div class="vm-menu-list">
-                      ${row.canReset && !finished ? `<button type="button" class="event-session-reset" ${rowData}>Reset</button>` : ""}
-                      ${!finished ? `<button type="button" class="danger event-session-end" ${rowData}>End session</button>` : ""}
-                      ${row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
+                      <button type="button" class="event-session-info" ${rowData}>Info</button>
+                      ${canReset ? `<button type="button" class="event-session-reset" ${rowData}>Reset</button>` : ""}
+                      ${canEnd ? `<button type="button" class="danger event-session-end" ${rowData}>End session</button>` : ""}
+                      <button type="button" class="event-session-logs" ${rowData}>Logs</button>
+                      ${row.active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
                       ${row.demoId ? `<a href="https://dcloud2-${escapeHtml(entry.site)}.cisco.com/demo/${encodeURIComponent(row.demoId)}" target="_blank" rel="noopener noreferrer">Go to demo</a>` : ""}
                     </div>
                   </details>
@@ -3453,7 +3472,7 @@
       syncAllEventSelections();
     }
 
-    async function loadEvent(site, eventId, refresh = false) {
+    async function loadEvent(site, eventId, refresh = false, { quietStatus = false } = {}) {
       const key = eventKey(site, eventId);
       const entry = eventEntries.get(key) || { site, eventId };
       entry.loading = true;
@@ -3468,13 +3487,60 @@
           quiet: true,
         });
         entry.data = response.event;
-        $("events-status").textContent = `Loaded event ${eventId} from ${site.toUpperCase()}.`;
+        if (!quietStatus) {
+          $("events-status").textContent = `Loaded event ${eventId} from ${site.toUpperCase()}.`;
+        }
       } catch (err) {
         entry.error = err.message;
-        $("events-status").textContent = err.message;
+        if (!quietStatus) $("events-status").textContent = err.message;
       } finally {
         entry.loading = false;
         renderEvents();
+      }
+    }
+
+    function eventWatchIsDone(watch, entry) {
+      const rows = entry?.data?.sessions || [];
+      const byId = new Map(rows.map((row) => [String(row.sessionId), row]));
+      if (watch.action === "end") {
+        return watch.sessionIds.every((sessionId) => {
+          const row = byId.get(sessionId);
+          return !row || eventSessionIsFinished(row);
+        });
+      }
+      // Reset briefly moves through Stopping, Error, Starting, and back to Active.
+      // A row can also disappear while dCloud rebuilds it, so absence is not done.
+      const allActive = watch.sessionIds.every(
+        (sessionId) => byId.get(sessionId)?.active === true
+      );
+      watch.activePolls = allActive ? (watch.activePolls || 0) + 1 : 0;
+      // Two fresh Active reads avoid stopping on one stale admin-list response
+      // before dCloud has exposed the initial Stopping transition.
+      return watch.activePolls >= 2;
+    }
+
+    async function pollEventActionWatches() {
+      if (eventActionPollBusy || !eventActionWatches.size) return;
+      eventActionPollBusy = true;
+      try {
+        for (const [key, watch] of [...eventActionWatches]) {
+          if (Date.now() >= watch.expiresAt) {
+            eventActionWatches.delete(key);
+            noteLog(`${watch.site.toUpperCase()} event ${watch.eventId}: stopped status tracking after 20 minutes.`);
+            continue;
+          }
+          const entry = eventEntries.get(key);
+          if (!entry || entry.loading) continue;
+          await loadEvent(watch.site, watch.eventId, true, { quietStatus: true });
+          if (eventWatchIsDone(watch, eventEntries.get(key))) {
+            eventActionWatches.delete(key);
+            const outcome = watch.action === "reset" ? "Active again" : "ended";
+            $("events-status").textContent = `Event ${watch.eventId}: selected session(s) ${outcome}.`;
+            noteLog(`${watch.site.toUpperCase()} event ${watch.eventId}: selected session(s) ${outcome}; status tracking finished.`);
+          }
+        }
+      } finally {
+        eventActionPollBusy = false;
       }
     }
 
@@ -3513,9 +3579,16 @@
         head.checked = enabled.length > 0 && checked.length === enabled.length;
         head.indeterminate = checked.length > 0 && checked.length < enabled.length;
       }
-      group.querySelectorAll(".event-reset-checked, .event-end-checked").forEach((button) => {
-        button.disabled = checked.length === 0;
-      });
+      const resetButton = group.querySelector(".event-reset-checked");
+      const endButton = group.querySelector(".event-end-checked");
+      if (resetButton) {
+        resetButton.disabled = checked.length === 0
+          || checked.some((box) => box.dataset.canReset !== "true");
+      }
+      if (endButton) {
+        endButton.disabled = checked.length === 0
+          || checked.some((box) => box.dataset.canEnd !== "true");
+      }
     }
 
     function syncAllEventSelections() {
@@ -3565,7 +3638,21 @@
       for (const failure of failures) {
         noteLog(`${site.toUpperCase()} event ${eventId}: ${verb.toLowerCase()} failed — ${failure}`);
       }
-      await loadEvent(site, eventId, true);
+      const succeededIds = (result.results || [])
+        .filter((item) => item.ok)
+        .map((item) => String(item.sessionId || ""))
+        .filter(Boolean);
+      if (succeededIds.length) {
+        eventActionWatches.set(eventKey(site, eventId), {
+          site,
+          eventId,
+          action,
+          sessionIds: succeededIds,
+          activePolls: 0,
+          expiresAt: Date.now() + 20 * 60 * 1000,
+        });
+      }
+      await loadEvent(site, eventId, true, { quietStatus: true });
     }
 
     function selectedUnifiedSearchDcs() {
@@ -3774,16 +3861,18 @@
           const status = String(row.status || "").toLowerCase();
           const scheduled = status === "scheduled";
           const active = status === "active";
+          const unavailable = String(row.rawStatus ?? "") === "95" || status === "vc unavailable";
+          const error = String(row.rawStatus ?? "") === "99" || status === "error";
           const terminal = ["cancelled", "canceled", "deleted"].includes(status);
-          const attachable = !terminal;
+          const attachable = !terminal && !unavailable && !error;
           actions = `
             <button type="button" class="search-row-action" data-action="session-info">Info</button>
             ${attachable ? `<button type="button" class="search-row-action" data-action="session-workspace">Add to job workspace</button>` : ""}
             ${attachable ? `<button type="button" class="search-row-action" data-action="session-monitor">Add to session monitoring</button>` : ""}
             ${scheduled || active ? `<button type="button" class="search-row-action" data-action="session-edit">Edit…</button>` : ""}
             ${active ? `<button type="button" class="search-row-action" data-action="session-save">Save</button>` : ""}
-            ${active ? `<button type="button" class="search-row-action" data-action="session-reset">Reset</button>` : ""}
-            ${active || terminal ? `<button type="button" class="search-row-action" data-action="session-logs">Logs</button>` : ""}
+            ${active || (error && row.canReset !== false) ? `<button type="button" class="search-row-action" data-action="session-reset">Reset</button>` : ""}
+            ${active || terminal || unavailable || error ? `<button type="button" class="search-row-action" data-action="session-logs">Logs</button>` : ""}
             ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
             ${row.demoId ? `<a href="https://dcloud2-${escapeHtml(site)}.cisco.com/demo/${encodeURIComponent(row.demoId)}" target="_blank" rel="noopener noreferrer">Go to demo</a>` : ""}
             ${scheduled ? `<button type="button" class="danger search-row-action" data-action="session-cancel">Cancel session</button>` : ""}
@@ -12347,9 +12436,28 @@
         return;
       }
       if (ev.target.closest(".event-remove")) {
-        eventEntries.delete(eventKey(site, eventId));
+        const key = eventKey(site, eventId);
+        eventEntries.delete(key);
+        eventActionWatches.delete(key);
         persistEventRefs();
         renderEvents();
+        return;
+      }
+      const infoOne = ev.target.closest(".event-session-info");
+      const logsOne = ev.target.closest(".event-session-logs");
+      if (infoOne || logsOne) {
+        const button = infoOne || logsOne;
+        const entry = eventEntries.get(eventKey(site, eventId));
+        const row = (entry?.data?.sessions || []).find(
+          (item) => String(item.sessionId) === String(button.dataset.sessionId)
+        ) || {};
+        const session = {
+          site: site.toUpperCase(),
+          id: button.dataset.sessionId,
+          name: row.name || `Session ${button.dataset.sessionId}`,
+        };
+        if (infoOne) showSessionInfo({ site: session.site, sessionId: session.id, label: session.name });
+        else showSessionLog(session);
         return;
       }
       const resetOne = ev.target.closest(".event-session-reset");
@@ -12373,6 +12481,9 @@
     restoreUnifiedSearchSettings();
     unifiedSavedDataReady = restoreUnifiedSavedData();
     window.setInterval(updateUnifiedCacheStatus, 60 * 1000);
+    window.setInterval(() => {
+      pollEventActionWatches().catch((err) => noteLog(`Event status tracking failed: ${err.message}`));
+    }, 10 * 1000);
     $("btn-unified-search").addEventListener("click", () => searchAllDcloud());
     $("btn-unified-load-content").addEventListener("click", () => loadUnifiedDcData(["content"]));
     $("btn-unified-load-sessions").addEventListener("click", () => loadUnifiedDcData(["sessions"]));

@@ -1,3 +1,10 @@
+## 1.14.3 — 2026-09-21
+
+- dCloud admin session status **95** now displays as **VC Unavailable** instead of `95`. These broken sessions are read-only: only Info, Logs, and Go to demo are offered; they cannot be selected for bulk Reset or End
+- Admin session status **99** now displays as **Error** instead of `99`. Error sessions offer Info, Reset, Logs, and Go to demo, matching the useful actions in dCloud; they cannot be ended or added to the job workspace/session monitoring
+- Events now includes Info and Logs in each session's Actions menu, and its bulk buttons disable themselves when the checked sessions do not support that operation
+- After a successful Event Reset or End, the tool refreshes that event every 10 seconds for up to 20 minutes. Reset tracking follows Stopping/Error/Starting back to two fresh Active reads; End tracking stops when the selected sessions have ended or left the event
+
 ## 1.14.2 — 2026-09-21
 
 - **Reset and End now work on a session you do not own.** dCloud's `/api/sessions/{id}` route only acts on your own sessions, so an admin acting on someone else's session got "The content you are trying to access has either been removed or you do not have the permission required to view it" — even though the same admin could read that session. Both actions now retry on `/api/admin/sessions/{id}` after a permission error

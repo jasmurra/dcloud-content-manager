@@ -7678,6 +7678,8 @@ def _unified_session_result(site: str, item: dict[str, Any]) -> dict[str, Any]:
         "name": str(item.get("name") or item.get("parentDemoName") or "").strip(),
         "owner": str(item.get("owner") or "").strip(),
         "status": format_status(item.get("status"), ""),
+        "rawStatus": item.get("status"),
+        "canReset": item.get("canReset") is True,
         "start": str(item.get("start") or ""),
         "stop": str(item.get("stop") or ""),
         # Demo ID is the parent content this session was scheduled from.

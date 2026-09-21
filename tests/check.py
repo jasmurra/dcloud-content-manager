@@ -1664,6 +1664,27 @@ def test_event_management_section() -> None:
 
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     check(
+        "admin status 95 and 99 have their dCloud labels",
+        dcloud_client.format_status(95) == "VC Unavailable"
+        and dcloud_client.format_status(99) == "Error",
+    )
+    check(
+        "VC Unavailable is read-only and Error only adds Reset to the read actions",
+        'const unavailable = String(row.rawStatus ?? "") === "95"' in INDEX
+        and 'const error = String(row.rawStatus ?? "") === "99"' in INDEX
+        and "const attachable = !terminal && !unavailable && !error" in INDEX
+        and 'active || (error && row.canReset !== false)' in INDEX,
+    )
+    check(
+        "event actions poll until Reset or End reaches its settled state",
+        "const eventActionWatches = new Map()" in INDEX
+        and "function eventWatchIsDone(watch, entry)" in INDEX
+        and "watch.activePolls >= 2" in INDEX
+        and "20 * 60 * 1000" in INDEX
+        and "pollEventActionWatches()" in INDEX
+        and "10 * 1000" in INDEX,
+    )
+    check(
         "Events is a separate top-level section with site and event ID inputs",
         'id="panel-events"' in INDEX
         and 'id="event-site"' in INDEX
@@ -1821,6 +1842,26 @@ def test_event_management_section() -> None:
             and row["demoId"] == "483939"
             and row["virtualCenter"] == "10",
             str(row),
+        )
+        fake_status = {
+            "uid": 491873,
+            "event": {"uid": 399485},
+            "name": "Broken session",
+            "parentId": 483939,
+            "status": 95,
+            "canReset": False,
+        }
+        def status_fetch(token, site, *, resource, refresh=False):
+            if resource == "events":
+                return [{"uid": 399485, "name": "Workshop", "sessionCount": 1}], None
+            return [fake_status], None
+        dcloud_client.fetch_admin_records = status_fetch
+        unavailable, error = dcloud_client.list_event_sessions("token", "sjc", "399485")
+        check(
+            "event session preserves raw 95 while showing VC Unavailable",
+            error is None
+            and unavailable["sessions"][0]["rawStatus"] == 95
+            and unavailable["sessions"][0]["status"] == "VC Unavailable",
         )
     finally:
         dcloud_client.fetch_admin_records = real_fetch

@@ -16,6 +16,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 | Version | What changed |
 | --- | --- |
+| **1.14.3** | Session status 95 is labeled VC Unavailable and limited to Info/Logs/Go to demo; status 99 is labeled Error and offers Info/Reset/Logs/Go to demo |
 | **1.14.2** | Reset and End work on sessions you don't own: both retry on the dCloud admin route after a permission error, so an admin can act on another user's event sessions |
 | **1.14.1** | Bulk Reset/End in Events are paced one session at a time (1s apart by default, adjustable), and a failed batch now reports dCloud's reason per session instead of only a count |
 | **1.14.0** | Added Events: save multiple site/event-ID lookups in nested collapsible sections, list all event sessions, and use confirmed individual or checked Reset/End actions |
