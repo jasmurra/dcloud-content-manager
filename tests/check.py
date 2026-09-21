@@ -2094,7 +2094,9 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         '<details class="card${monitor ? " card-monitor" : ""}' in page
         and 'class="card-summary-name"' in page
         and 'class="card-open-session"' in page
-        and 'class="card-summary-end"' not in page,
+        and 'class="card-summary-end"' not in page
+        and 'dc.sessionId ? `#${dc.sessionId}`' not in page
+        and 'dc.sessionId ? String(dc.sessionId)' in page,
     )
     check(
         "card Actions is on the collapsed row, not buried in the expanded body",

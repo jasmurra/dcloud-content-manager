@@ -6051,7 +6051,7 @@
             </div>`
         : "";
       const summaryName = displayName || `Demo ${dc.demoId || "session"}`;
-      const summarySession = dc.sessionId ? `#${dc.sessionId}` : `demo ${dc.demoId || "—"}`;
+      const summarySession = dc.sessionId ? String(dc.sessionId) : `demo ${dc.demoId || "—"}`;
       const openSession = dc.viewUrl
         ? `<a class="card-open-session" href="${escapeHtml(dc.viewUrl)}" target="_blank" rel="noopener noreferrer">Open session</a>`
         : "";
