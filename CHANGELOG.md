@@ -1,3 +1,7 @@
+## 1.18.10 — 2026-09-22
+
+- **A small notice in the bottom-right confirms when a request is submitted.** Schedule, extend, end/reset, save, share, CAI/CAMGR submits, and similar actions show success or an error for about five seconds (click it to dismiss). Find lists still just show their results — no extra pop-ups there
+
 ## 1.18.9 — 2026-09-22
 
 - **Find my sessions, Find saved content, and Find events keep a local last-pull copy**, the same way Search dCloud does. Find uses that copy when it is already in this browser; a line under the list says how old each datacenter is. **Refresh** downloads a live list from dCloud. Only missing datacenters are fetched, so a later Find does not walk every DC again

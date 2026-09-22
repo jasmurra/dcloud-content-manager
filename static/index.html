@@ -1669,6 +1669,37 @@
       font-weight: 500;
       line-height: 1.25;
     }
+    #request-toasts {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      z-index: 1500;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 0.45rem;
+      width: min(22rem, calc(100vw - 2rem));
+      pointer-events: none;
+    }
+    .request-toast {
+      pointer-events: auto;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--ok);
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      font-size: 0.88rem;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .request-toast-err { border-left-color: var(--err); }
+    .request-toast-warn { border-left-color: var(--warn); }
+    .request-toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity 0.18s ease, transform 0.18s ease; }
+    @media (prefers-reduced-motion: reduce) {
+      .request-toast.leaving { transition: none; }
+    }
+
     .hover-tip {
       position: fixed;
       z-index: 2000;
@@ -3577,6 +3608,39 @@
       showActionAlert(text, { title, scrollTo });
     }
 
+    const TOAST_MS = 5000;
+    const TOAST_MAX = 3;
+
+    function showToast(message, { kind = "ok" } = {}) {
+      const text = String(message || "").trim();
+      if (!text) return;
+      const host = $("request-toasts");
+      if (!host) return;
+      while (host.children.length >= TOAST_MAX) {
+        host.lastElementChild?.remove();
+      }
+      const el = document.createElement("div");
+      el.className = `request-toast request-toast-${kind === "err" ? "err" : kind === "warn" ? "warn" : "ok"}`;
+      el.setAttribute("role", kind === "err" ? "alert" : "status");
+      el.textContent = text;
+      const hide = () => {
+        if (!el.isConnected) return;
+        el.classList.add("leaving");
+        setTimeout(() => el.remove(), 180);
+      };
+      el.addEventListener("click", hide);
+      host.prepend(el);
+      setTimeout(hide, TOAST_MS);
+    }
+
+    function notifyRequestError(err) {
+      const msg = (err && err.message) || String(err || "Request failed.");
+      showError(msg);
+      if (!isTokenError(msg) && !isHubAuthError(msg)) {
+        showToast(msg, { kind: "err" });
+      }
+    }
+
     function ensureTokenReady(context) {
       const source = $("token-source").value;
       if (source === "paste" && !$("dtoken").value.trim()) {
@@ -4161,6 +4225,11 @@
         ? `${verb}: ${summary} First reason — ${failures[0]}`
         : `${verb}: ${summary}`;
       noteLog(`${site.toUpperCase()} event ${eventId}: ${verb.toLowerCase()} ${summary}`);
+      showToast(failures.length && !result.succeeded
+        ? `${verb} failed.`
+        : failures.length
+          ? `${verb}: ${summary}`
+          : `${verb} submitted.`, { kind: failures.length && !result.succeeded ? "err" : failures.length ? "warn" : "ok" });
       for (const failure of failures) {
         noteLog(`${site.toUpperCase()} event ${eventId}: ${verb.toLowerCase()} failed — ${failure}`);
       }
@@ -7323,8 +7392,11 @@
         if (data.errors?.length) showError(data.errors.join(" "));
         noteLog(`CAI replacement submitted for ${data.submitted?.length || 0} row(s).`);
         startCaiReplacePoll();
+        showToast(data.errors?.length
+          ? data.errors.join(" ")
+          : "CAI replacement submitted.", { kind: data.errors?.length ? "err" : "ok" });
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         if (/CAI session/i.test(err.message)) updateCaiStatus({ loggedIn: false, message: err.message });
       } finally {
         syncHubActionButtons();
@@ -7400,8 +7472,11 @@
         if (data.errors?.length) showError(data.errors.join(" "));
         noteLog(`CAI integration submitted for ${data.submitted?.length || 0} row(s).`);
         startCaiReplacePoll();
+        showToast(data.errors?.length
+          ? data.errors.join(" ")
+          : "CAI integration submitted.", { kind: data.errors?.length ? "err" : "ok" });
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         if (/CAI session/i.test(err.message)) updateCaiStatus({ loggedIn: false, message: err.message });
       } finally {
         syncHubActionButtons();
@@ -7668,7 +7743,7 @@
         renderCaiTemplateTasks(data.templates || []);
         startCaiTemplatePoll();
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         if (/CAI session/i.test(err.message)) updateCaiStatus({ loggedIn: false, message: err.message });
       } finally {
         syncCaiTemplateButton();
@@ -8010,8 +8085,9 @@
         const folder = `CDEV.${home.toUpperCase()}/vPod-${String(vpod).replace(/\D/g, "")}`;
         noteLog(`When it completes, these VMs live in ${folder} — use that folder to make a template.`);
         startCamgrTransferPoll();
+        showToast("Dev transfer submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         if (/CAMGR session|Content Automation Manager/i.test(err.message)) {
           updateCamgrStatus({ loggedIn: false, message: err.message });
         }
@@ -8160,8 +8236,11 @@
         if (autoIntegrate) noteLog("CAI Integrate will submit to those same DCs when CAMGR is COMPLETE.");
         if (autoBurnIn) noteLog(`Each new integrated demo will be scheduled as a regular ${burnInDays}-day burn-in session at its next available time.`);
         startCamgrTransferPoll();
+        showToast(data.errors?.length
+          ? data.errors.join(" ")
+          : "CAMGR transfer submitted.", { kind: data.errors?.length ? "err" : "ok" });
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         if (/CAMGR session|Content Automation Manager/i.test(err.message)) {
           updateCamgrStatus({ loggedIn: false, message: err.message });
         }
@@ -9276,11 +9355,12 @@
         lastLogLen = 0;
         renderJob(job, { forceCards: true });
         startPolling();
+        showToast("Scheduling submitted.");
         if (addToJob) {
           noteLog(`Scheduled additional demo on job ${job.id}. Existing session cards kept.`);
         }
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
       } finally {
         $("btn-run").disabled = false;
       }
@@ -9514,8 +9594,9 @@
         });
         renderJob(job);
         startPolling();
+        showToast("Save submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`Guest shutdown & save failed: ${err.message}`);
       }
     }
@@ -9886,8 +9967,9 @@
         });
         renderJob(job);
         startPolling();
+        showToast(notStarted ? "Cancel submitted." : "End submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`${notStarted ? "Cancel" : "End"} session failed: ${err.message}`);
       }
     }
@@ -9918,8 +10000,9 @@
         });
         renderJob(job);
         startPolling();
+        showToast("Reset submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`Reset failed: ${err.message}`);
       }
     }
@@ -9978,7 +10061,10 @@
         startPolling();
         const rows = Array.isArray(probed.extendProbe) ? probed.extendProbe : [];
         const offers = rows.filter((row) => row.offer && row.suggested_stop);
-        if (!offers.length) return;
+        if (!offers.length) {
+          showToast(targets.length === 1 ? "Session extended." : "Sessions extended.");
+          return;
+        }
         const offerList = offers.map((row) => {
           const label = [row.site && String(row.site).toUpperCase(), row.name, row.session_id && `(session ${row.session_id})`]
             .filter(Boolean)
@@ -10008,8 +10094,9 @@
         });
         renderJob(job, { forceCards: true });
         startPolling();
+        showToast("Session extended to the farthest available time.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`Extend failed: ${err.message}`);
       }
     }
@@ -10040,11 +10127,13 @@
         if (!data.ok) {
           showError(data.result?.message || `${label} failed.`);
           noteLog(`${site}: ${label.toLowerCase()} failed: ${data.result?.message || "unknown error"}`);
+          showToast(data.result?.message || `${label} failed.`, { kind: "err" });
         } else {
           noteLog(`${site}: ${label.toLowerCase()} ${name}: ${data.result?.message || "ok"}`);
+          showToast(`${label} submitted.`);
         }
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`${site}: ${label.toLowerCase()} failed: ${err.message}`);
         btn.disabled = false;
       }
@@ -10069,8 +10158,9 @@
         });
         renderJob(job, { forceCards: true });
         startPolling();
+        showToast("Guest shutdown submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`${site}: guest shutdown all failed: ${err.message}`);
         btn.disabled = false;
       }
@@ -10147,8 +10237,9 @@
             ? "keeping the guest-shutdown wait."
             : "powering off remaining VMs.")
         );
+        showToast(choice === "wait" ? "Keep waiting submitted." : "Power off submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         noteLog(`Shutdown choice failed: ${err.message}`);
       }
     }
@@ -11829,6 +11920,7 @@
         const failed = data.failed || 0;
         if (!declined && !failed) {
           noteLog("No pending surveys in any DC.");
+          showToast("No pending surveys.");
         } else {
           noteLog(`Declined ${declined} survey(s) across all DCs${failed ? ` — ${failed} failed (see log).` : "."}`);
           for (const row of data.results || []) {
@@ -11836,10 +11928,13 @@
               noteLog(`${String(row.site || "").toUpperCase()}: survey decline failed — ${row.message || "unknown error"}`);
             }
           }
+          showToast(failed
+            ? `Declined ${declined}, ${failed} failed.`
+            : (declined === 1 ? "Survey declined." : "Surveys declined."), { kind: failed ? "warn" : "ok" });
         }
         if (failed) showError(`${failed} survey decline(s) failed — see log.`);
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
       } finally {
         btn.disabled = false;
       }
@@ -12006,8 +12101,15 @@
         else if (data.savedIds) applySavedIds(data.savedIds);
         else await loadSavedIds();
         await findSavedContents("schedule");
+        if (failed.length && data.deleted) {
+          showToast(`Deleted ${data.deleted}, ${failed.length} failed.`, { kind: "warn" });
+        } else if (failed.length) {
+          showToast(`${failed.length} delete(s) failed.`, { kind: "err" });
+        } else {
+          showToast("Saved content deleted.");
+        }
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
       }
     }
 
@@ -12119,8 +12221,9 @@
         applyJobToForm(job);
         renderJob(job);
         startPolling();
+        showToast("Scheduling submitted.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
       } finally {
         $("btn-schedule-saved").disabled = false;
       }
@@ -12709,8 +12812,9 @@
         );
         closeShareModal();
         showError("");
+        showToast("Sharing updated.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
         if (status) status.textContent = err.message;
       } finally {
         if (saveBtn) saveBtn.disabled = false;
@@ -12747,8 +12851,9 @@
         if (data.job) renderJob(data.job, { forceCards: true });
         noteLog(`${site.toUpperCase()}: renamed session to "${name}".`);
         showError("");
+        showToast("Session renamed.");
       } catch (err) {
-        showError(err.message);
+        notifyRequestError(err);
       } finally {
         btn.disabled = false;
         if (input) input.disabled = false;
@@ -14060,5 +14165,6 @@
     syncJobAppendHint();
     syncScheduleSavedButton();
   </script>
+  <div id="request-toasts" aria-live="polite" aria-relevant="additions"></div>
 </body>
 </html>

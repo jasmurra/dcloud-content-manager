@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **1.18.10** | A short bottom-right notice confirms schedule, extend, and other submitted requests |
 | **1.18.9** | Find my sessions, Find saved content, and Find events reuse a last-pull copy in this browser; Refresh downloads a live list |
 | **1.18.8** | First-time install is the GitHub Release `-full` zip; open Actions menus survive background job refreshes |
 | **1.18.7** | Find events by datacenter (Add or View sessions); job workspace cards survive Check for updates; save descriptions are not capped at 255 characters; Log in opens the browser immediately instead of probing first |

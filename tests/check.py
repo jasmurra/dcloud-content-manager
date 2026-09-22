@@ -1964,6 +1964,14 @@ def test_event_management_section() -> None:
         and 'resource="mine-sessions"' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
         and 'resource="mine-content"' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
     )
+    check(
+        "submitted requests show a short bottom-right notice",
+        'id="request-toasts"' in INDEX
+        and "function showToast(" in INDEX
+        and "function notifyRequestError(" in INDEX
+        and 'showToast("Scheduling submitted.")' in INDEX
+        and 'showToast(targets.length === 1 ? "Session extended." : "Sessions extended.")' in INDEX,
+    )
     empty_events, empty_errors, empty_fetched = dcloud_client.list_admin_events("token", [])
     check(
         "an empty Find events request still returns a last-pull map",
