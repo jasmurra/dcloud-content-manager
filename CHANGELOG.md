@@ -1,3 +1,7 @@
+## 1.18.9 — 2026-09-22
+
+- **Find my sessions, Find saved content, and Find events keep a local last-pull copy**, the same way Search dCloud does. Find uses that copy when it is already in this browser; a line under the list says how old each datacenter is. **Refresh** downloads a live list from dCloud. Only missing datacenters are fetched, so a later Find does not walk every DC again
+
 ## 1.18.8 — 2026-09-22
 
 - **First-time install is a GitHub download.** New Macs use [dCloud-Content-Manager-Mac-full.zip](https://github.com/jasmurra/dcloud-content-manager/releases/latest/download/dCloud-Content-Manager-Mac-full.zip) from the latest Release (Python for Apple Silicon and Intel is inside). Existing copies still update with **Check for updates** or a restart of `start.command` — no Slack zip required

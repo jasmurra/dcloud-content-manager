@@ -1947,6 +1947,37 @@ def test_event_management_section() -> None:
         ],
     )
     check(
+        "Find events, my sessions, and saved content reuse a local last-pull copy",
+        "const finderLists =" in INDEX
+        and "function persistFinderRows(" in INDEX
+        and "function finderOkSites(" in INDEX
+        and 'id="btn-events-find-refresh"' in INDEX
+        and 'id="btn-refresh-sessions"' in INDEX
+        and 'id="btn-refresh-workspace-sessions"' in INDEX
+        and 'id="btn-refresh-schedule-saved"' in INDEX
+        and 'id="btn-saved-ids-find-refresh"' in INDEX
+        and "Showing the last pull" in INDEX
+        and '"fetchedAt": fetched_at' in source
+        and "refresh=body.refresh" in source[source.index("def api_my_sessions(") : source.index("def _share_kind(")]
+        and "sites=body.sites" in source[source.index("def api_my_sessions(") : source.index("def _share_kind(")]
+        and "refresh=body.refresh" in source[source.index("def api_my_contents(") : source.index("def api_decline_surveys(")]
+        and 'resource="mine-sessions"' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+        and 'resource="mine-content"' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
+    )
+    empty_events, empty_errors, empty_fetched = dcloud_client.list_admin_events("token", [])
+    check(
+        "an empty Find events request still returns a last-pull map",
+        empty_events == [] and "sites" in empty_errors and empty_fetched == {},
+        str((empty_events, empty_errors, empty_fetched)),
+    )
+    dcloud_client._write_admin_cache("sjc", "mine-sessions", [{"site": "sjc", "sessionId": "42"}], time.time())
+    cached_rows, cached_error = dcloud_client.list_dashboard_sessions("token", "sjc")
+    check(
+        "Find my sessions reuses the 15-minute server cache",
+        cached_rows == [{"site": "sjc", "sessionId": "42"}] and cached_error is None,
+        str((cached_rows, cached_error)),
+    )
+    check(
         "multiple events persist and render inside site and event groups",
         "dcloud-content-manager-events-v1" in INDEX
         and 'class="dc-group event-site-group"' in INDEX
@@ -2275,8 +2306,8 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         "function renderCardGroups(" in page
         and 'class="card-site-group"' in page
         and 'class="card-site-count"' in page
-        and "renderCardGroups(\n            visibleJob" in page
-        and "renderCardGroups(\n            visibleMonitor" in page,
+        and '$("cards").innerHTML = renderCardGroups(' in page
+        and '$("monitor-cards").innerHTML = renderCardGroups(' in page,
     )
     check(
         "session cards collapse to a compact status row",

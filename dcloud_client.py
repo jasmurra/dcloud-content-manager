@@ -1642,6 +1642,19 @@ def _admin_search_value(item: dict[str, Any], *keys: str) -> str:
     return " ".join(values)
 
 
+def _read_admin_cache(site: str, resource: str) -> tuple[float, list[dict[str, Any]]] | None:
+    cache_key = (str(site or "").lower(), resource)
+    with _admin_search_cache_lock:
+        cached = _admin_search_cache.get(cache_key)
+        return (cached[0], list(cached[1])) if cached else None
+
+
+def _write_admin_cache(site: str, resource: str, records: list[dict[str, Any]], fetched_at: float | None = None) -> None:
+    cache_key = (str(site or "").lower(), resource)
+    with _admin_search_cache_lock:
+        _admin_search_cache[cache_key] = (fetched_at or time.time(), list(records))
+
+
 def fetch_admin_records(
     token: str,
     site: str,
@@ -1652,11 +1665,10 @@ def fetch_admin_records(
     """Load one complete DC-local admin list, with a short server cache."""
     if resource not in {"demos", "events", "sessions"}:
         return [], "Unsupported dCloud admin search resource."
-    cache_key = (str(site or "").lower(), resource)
     now = time.time()
-    with _admin_search_cache_lock:
-        cached = _admin_search_cache.get(cache_key)
-        if cached and not refresh and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
+    if not refresh:
+        cached = _read_admin_cache(str(site or "").lower(), resource)
+        if cached and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
             return list(cached[1]), None
     try:
         response = _request(
@@ -1678,8 +1690,7 @@ def fetch_admin_records(
     if not isinstance(records, list):
         return [], None
     records = [item for item in records if isinstance(item, dict)]
-    with _admin_search_cache_lock:
-        _admin_search_cache[cache_key] = (now, records)
+    _write_admin_cache(str(site or "").lower(), resource, records, now)
     return list(records), None
 
 
@@ -1807,7 +1818,7 @@ def list_admin_events(
     sites: list[str],
     *,
     refresh: bool = False,
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float]]:
     """List events in each DC. Does not download the full Sessions admin list."""
     wanted = [
         str(site or "").strip().lower()
@@ -1818,7 +1829,7 @@ def list_admin_events(
     events: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
     if not wanted:
-        return events, {"sites": "Choose at least one datacenter."}
+        return events, {"sites": "Choose at least one datacenter."}, {}
     workers = min(5, len(wanted))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
@@ -1846,7 +1857,12 @@ def list_admin_events(
             str(row.get("site") or ""),
         )
     )
-    return events, errors
+    fetched_at = {
+        site: stamp
+        for site in wanted
+        if (stamp := admin_records_cached_at(site, resource="events"))
+    }
+    return events, errors, fetched_at
 
 
 def admin_records_cached_at(site: str, *, resource: str) -> float | None:
@@ -3291,11 +3307,16 @@ def guest_shutdown_vms(
     return results
 
 
-def list_dashboard_sessions(token: str, site: str) -> tuple[list[dict[str, Any]], str | None]:
+def list_dashboard_sessions(token: str, site: str, *, refresh: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     """GET /api/sessions?expand=sharedWith — same list the bot /ms command uses."""
     site_code = (site or "").strip().lower()
     if site_code not in KNOWN_SITES:
         return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    now = time.time()
+    if not refresh:
+        cached = _read_admin_cache(site_code, "mine-sessions")
+        if cached and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
+            return list(cached[1]), None
     url = f"{site_base(site_code)}/api/sessions?expand=sharedWith"
     try:
         response = _request("GET", url, token)
@@ -3334,15 +3355,32 @@ def list_dashboard_sessions(token: str, site: str) -> tuple[list[dict[str, Any]]
                 "viewUrl": session_view_url(site_code, sid, session=session),
             }
         )
+    _write_admin_cache(site_code, "mine-sessions", out, now)
     return out, None
 
 
-def list_dashboard_sessions_all_sites(token: str) -> dict[str, Any]:
+def _list_sites(sites: list[str] | None) -> list[str]:
+    wanted = [
+        str(site or "").strip().lower()
+        for site in (sites or SITES)
+        if str(site or "").strip().lower() in KNOWN_SITES
+    ]
+    return list(dict.fromkeys(wanted)) or list(SITES)
+
+
+def list_dashboard_sessions_all_sites(
+    token: str,
+    *,
+    refresh: bool = False,
+    sites: list[str] | None = None,
+) -> dict[str, Any]:
     sessions: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+    fetched_at: dict[str, float] = {}
+    wanted = _list_sites(sites)
+    with ThreadPoolExecutor(max_workers=len(wanted)) as pool:
         futures = {
-            pool.submit(list_dashboard_sessions, token, site): site for site in SITES
+            pool.submit(list_dashboard_sessions, token, site, refresh=refresh): site for site in wanted
         }
         for future in as_completed(futures):
             site = futures[future]
@@ -3350,9 +3388,12 @@ def list_dashboard_sessions_all_sites(token: str) -> dict[str, Any]:
             if err:
                 errors[site] = err
             sessions.extend(rows)
+            stamp = admin_records_cached_at(site, resource="mine-sessions")
+            if stamp:
+                fetched_at[site] = stamp
     order = {site: index for index, site in enumerate(SITES)}
     sessions.sort(key=lambda row: (order.get(row.get("site") or "", 99), row.get("sessionId") or ""))
-    return {"sessions": sessions, "errors": errors}
+    return {"sessions": sessions, "errors": errors, "fetchedAt": fetched_at}
 
 
 def _monitor_session_name(session: dict[str, Any]) -> str:
@@ -4269,7 +4310,7 @@ def extract_save_ids(body: Any) -> dict[str, str]:
     return found
 
 
-def list_saved_contents(token: str, site: str, *, state: str | None = "saved") -> list[dict[str, Any]]:
+def list_saved_contents(token: str, site: str, *, state: str | None = "saved") -> tuple[list[dict[str, Any]], str | None]:
     url = f"{site_base(site)}/api/contents?expand=sharedWith"
     if state:
         url = f"{site_base(site)}/api/contents?state={state}&expand=sharedWith"
@@ -4364,24 +4405,37 @@ def summarize_saved_content(item: dict[str, Any], site: str) -> dict[str, Any]:
     }
 
 
-def list_saved_contents_for_site(token: str, site: str) -> tuple[list[dict[str, Any]], str | None]:
+def list_saved_contents_for_site(token: str, site: str, *, refresh: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     site_code = (site or "").strip().lower()
     if site_code not in KNOWN_SITES:
         return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
+    now = time.time()
+    if not refresh:
+        cached = _read_admin_cache(site_code, "mine-content")
+        if cached and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
+            return list(cached[1]), None
     items, err = list_saved_contents(token, site_code, state="saved")
     if err:
         return [], err
     rows = [summarize_saved_content(item, site_code) for item in items if extract_demo_numeric_id(item)]
     rows.sort(key=lambda row: (row.get("name") or "").lower())
+    _write_admin_cache(site_code, "mine-content", rows, now)
     return rows, None
 
 
-def list_saved_contents_all_sites(token: str) -> dict[str, Any]:
+def list_saved_contents_all_sites(
+    token: str,
+    *,
+    refresh: bool = False,
+    sites: list[str] | None = None,
+) -> dict[str, Any]:
     contents: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+    fetched_at: dict[str, float] = {}
+    wanted = _list_sites(sites)
+    with ThreadPoolExecutor(max_workers=len(wanted)) as pool:
         futures = {
-            pool.submit(list_saved_contents_for_site, token, site): site for site in SITES
+            pool.submit(list_saved_contents_for_site, token, site, refresh=refresh): site for site in wanted
         }
         for future in as_completed(futures):
             site = futures[future]
@@ -4389,6 +4443,9 @@ def list_saved_contents_all_sites(token: str) -> dict[str, Any]:
             if err:
                 errors[site] = err
             contents.extend(rows)
+            stamp = admin_records_cached_at(site, resource="mine-content")
+            if stamp:
+                fetched_at[site] = stamp
     order = {site: index for index, site in enumerate(SITES)}
     contents.sort(
         key=lambda row: (
@@ -4397,7 +4454,7 @@ def list_saved_contents_all_sites(token: str) -> dict[str, Any]:
             row.get("contentId") or "",
         )
     )
-    return {"contents": contents, "errors": errors}
+    return {"contents": contents, "errors": errors, "fetchedAt": fetched_at}
 
 
 def delete_saved_content(token: str, site: str, content_id: str) -> dict[str, Any]:

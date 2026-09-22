@@ -555,6 +555,11 @@ class TokenPayload(BaseModel):
     dcloud_token_source: str = "browser"
 
 
+class RefreshListsPayload(TokenPayload):
+    refresh: bool = False
+    sites: list[str] = Field(default_factory=list)
+
+
 def _env_auth_allowed() -> bool:
     """When false (default), only per-user browser import or pasted token is accepted."""
     return os.getenv("DCLOUD_ALLOW_ENV_AUTH", "").strip().lower() in ("1", "true", "yes")
@@ -7824,7 +7829,7 @@ def api_unified_session_action(body: SearchItemPayload) -> dict[str, Any]:
 def api_events_list(body: EventsListPayload) -> dict[str, Any]:
     sites = [str(site or "").strip().lower() for site in (body.sites or [])]
     token = _resolve_token(body)
-    events, errors = list_admin_events(token, sites, refresh=body.refresh)
+    events, errors, fetched_at = list_admin_events(token, sites, refresh=body.refresh)
     if errors and not events:
         first = next(iter(errors.values()))
         raise HTTPException(400, first)
@@ -7833,6 +7838,7 @@ def api_events_list(body: EventsListPayload) -> dict[str, Any]:
         "events": events,
         "errors": errors,
         "sites": [site.upper() for site in dict.fromkeys(sites) if site in SITES],
+        "fetchedAt": fetched_at,
     }
 
 
@@ -8118,9 +8124,9 @@ def api_unified_catalog_ids(body: CatalogIdsPayload) -> dict[str, Any]:
 
 
 @app.post("/api/sessions/mine")
-def api_my_sessions(body: TokenPayload) -> dict[str, Any]:
+def api_my_sessions(body: RefreshListsPayload) -> dict[str, Any]:
     token = _resolve_token(body)
-    result = list_dashboard_sessions_all_sites(token)
+    result = list_dashboard_sessions_all_sites(token, refresh=body.refresh, sites=body.sites)
     return {"ok": True, **result}
 
 
@@ -9283,9 +9289,9 @@ def api_share_update(body: ShareUpdatePayload) -> dict[str, Any]:
 
 
 @app.post("/api/contents/mine")
-def api_my_contents(body: TokenPayload) -> dict[str, Any]:
+def api_my_contents(body: RefreshListsPayload) -> dict[str, Any]:
     token = _resolve_token(body)
-    result = list_saved_contents_all_sites(token)
+    result = list_saved_contents_all_sites(token, refresh=body.refresh, sites=body.sites)
     return {"ok": True, **result}
 
 

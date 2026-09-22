@@ -2122,7 +2122,8 @@
         <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs.
       </p>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Lists saved content in each DC so you can check rows and schedule new sessions from them.">Find saved content</button>
+        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Lists saved content in each DC so you can check rows and schedule new sessions from them. Uses the last pull if one is saved.">Find saved content</button>
+        <button type="button" class="secondary" id="btn-refresh-schedule-saved" data-tip="Downloads a fresh copy of your saved content from every datacenter.">Refresh</button>
       </div>
       <details id="found-schedule-saved-panel" class="found-sessions-panel hidden">
         <summary id="found-schedule-saved-summary">Your saved content</summary>
@@ -2139,6 +2140,7 @@
             <input type="search" class="list-filter" id="filter-schedule-saved" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
           </div>
           <p class="hint list-filter-status" id="filter-schedule-saved-status" aria-live="polite"></p>
+          <p class="hint" id="found-schedule-saved-cache-status" aria-live="polite"></p>
           <div id="found-schedule-saved" style="margin-top:0.35rem"></div>
           <p class="step-label" style="margin-top:1rem">Session schedule</p>
           <div class="row">
@@ -2267,7 +2269,8 @@
             </div>
           </div>
           <div class="actions">
-            <button type="button" class="secondary" id="btn-find-workspace-sessions">Find my sessions</button>
+            <button type="button" class="secondary" id="btn-find-workspace-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them to the job workspace. Uses the last pull if one is saved.">Find my sessions</button>
+            <button type="button" class="secondary" id="btn-refresh-workspace-sessions" data-tip="Downloads a fresh copy of your dashboard sessions from every datacenter.">Refresh</button>
           </div>
           <details id="found-workspace-sessions-panel" class="found-sessions-panel hidden">
             <summary id="found-workspace-sessions-summary">Your active dCloud sessions</summary>
@@ -2282,6 +2285,7 @@
                 <input type="search" class="list-filter" id="filter-workspace-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
               </div>
               <p class="hint list-filter-status" id="filter-workspace-sessions-status" aria-live="polite"></p>
+              <p class="hint" id="found-workspace-sessions-cache-status" aria-live="polite"></p>
               <div id="found-workspace-sessions" style="margin-top:0.35rem"></div>
               <div class="actions" style="margin-top:0.65rem">
                 <button type="button" class="secondary" id="btn-attach-workspace-sessions" disabled>Add checked to job workspace</button>
@@ -2390,7 +2394,8 @@
         </div>
       </div>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-find-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them for monitoring.">Find my sessions</button>
+        <button type="button" class="secondary" id="btn-find-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them for monitoring. Uses the last pull if one is saved.">Find my sessions</button>
+        <button type="button" class="secondary" id="btn-refresh-sessions" data-tip="Downloads a fresh copy of your dashboard sessions from every datacenter.">Refresh</button>
         <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Polls dCloud for every monitoring card below.">Refresh monitoring cards</button>
         <button type="button" class="secondary hidden" id="btn-expand-monitor-dcs">Expand all DCs</button>
         <button type="button" class="secondary hidden" id="btn-collapse-monitor-dcs">Collapse all DCs</button>
@@ -2410,6 +2415,7 @@
             <input type="search" class="list-filter" id="filter-found-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
           </div>
           <p class="hint list-filter-status" id="filter-found-sessions-status" aria-live="polite"></p>
+          <p class="hint" id="found-sessions-cache-status" aria-live="polite"></p>
           <div id="found-sessions" style="margin-top:0.35rem"></div>
           <div class="actions" style="margin-top:0.65rem">
             <button type="button" class="secondary" id="btn-attach-sessions" disabled data-tip="Adds checked sessions as monitoring cards (no bulk end/save). Move to job workspace later if needed.">Add to monitoring</button>
@@ -2441,7 +2447,8 @@
         Connect to CAMGR, Load transfer VMs, check dest DCs, then Submit transfer.
       </p>
       <div class="list-toolbar" style="margin-top:0.75rem">
-        <button type="button" class="secondary" id="btn-saved-ids-find" data-tip="Lists your saved content in each DC under this button so you can add rows to the table below.">Find saved content</button>
+        <button type="button" class="secondary" id="btn-saved-ids-find" data-tip="Lists your saved content in each DC under this button so you can add rows to the table below. Uses the last pull if one is saved.">Find saved content</button>
+        <button type="button" class="secondary" id="btn-saved-ids-find-refresh" data-tip="Downloads a fresh copy of your saved content from every datacenter.">Refresh</button>
         <button type="button" class="secondary" id="btn-saved-ids-remove" data-tip="Removes checked rows from this list only. Does not uncheck them, and does not delete saved content in dCloud.">Remove from list</button>
         <button type="button" class="secondary" id="btn-saved-ids-remove-all" data-tip="Removes every row from this list in one step. Does not delete saved content in dCloud.">Remove all</button>
         <button type="button" class="secondary" id="btn-use-root-as-target" disabled data-tip="Copies Root ID into Target ID for checked rows. Use this when you want CAI to replace VMs in the original base demo instead of the previous save.">Use root as target</button>
@@ -2483,6 +2490,7 @@
           <input type="search" class="list-filter" id="filter-saved-ids-found" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
         </div>
         <p class="hint list-filter-status" id="filter-saved-ids-found-status" aria-live="polite"></p>
+        <p class="hint" id="saved-ids-found-cache-status" aria-live="polite"></p>
         <div id="saved-ids-found" style="margin-top:0.35rem"></div>
         </div>
       </details>
@@ -2719,6 +2727,7 @@
         <p class="hint">
           Find events by datacenter, or add one by ID. Finding lists the events only
           (about a second per DC) — sessions load when you Add or View sessions.
+          The last pull stays in this browser; Refresh downloads a live copy.
           Added events stay in the section below. Check sessions to reset or end them together.
         </p>
         <div>
@@ -2734,7 +2743,8 @@
           </div>
         </div>
         <div class="list-toolbar" style="margin-top:0.65rem">
-          <button type="button" id="btn-events-find" data-tip="Lists events in the checked datacenters. Does not download every session until you Add or View sessions.">Find events</button>
+          <button type="button" id="btn-events-find" data-tip="Lists events in the checked datacenters from the last pull if one is saved. Does not download every session until you Add or View sessions.">Find events</button>
+          <button type="button" class="secondary" id="btn-events-find-refresh" data-tip="Downloads a fresh copy of events in the checked datacenters.">Refresh</button>
         </div>
         <details id="found-events-panel" class="found-sessions-panel hidden">
           <summary id="found-events-summary">Found events</summary>
@@ -2750,6 +2760,7 @@
               <input type="search" class="list-filter" id="filter-found-events" autocomplete="off" placeholder="Filter by event ID, name, owner, or status" aria-label="Filter found events" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
             </div>
             <p class="hint list-filter-status" id="filter-found-events-status" aria-live="polite"></p>
+            <p class="hint" id="found-events-cache-status" aria-live="polite"></p>
             <div id="found-events" style="margin-top:0.35rem"></div>
           </div>
         </details>
@@ -2921,6 +2932,11 @@
       fetchedAt: { content: {}, sessions: {} },
     };
     const unifiedSearchLimits = new Map();
+    const finderLists = {
+      "mine-sessions": { rows: [], fetchedAt: {}, errors: {} },
+      "mine-content": { rows: [], fetchedAt: {}, errors: {} },
+      events: { rows: [], fetchedAt: {}, errors: {} },
+    };
     const unifiedGroupOpen = new Map();
     const unifiedSectionOpen = new Map();
     const unifiedContentDetailsCache = new Map();
@@ -3810,22 +3826,41 @@
     }
 
     async function findEvents({ refresh = false } = {}) {
-      if (!ensureTokenReady("finding events")) return;
+      await unifiedSavedDataReady;
       const sites = selectedEventFindDcs();
       if (!sites.length) {
         showActionAlert("Check at least one datacenter.", { title: "Find events" });
         return;
       }
+      const missing = refresh ? sites : sites.filter((site) => !finderMs(finderLists.events.fetchedAt[site]));
+      if (!missing.length) {
+        lastFoundEvents = rowsForFinderSites("events", sites);
+        renderFoundEvents();
+        setFinderCacheHint("found-events-cache-status", "events", sites, { usedCache: true });
+        $("events-status").textContent =
+          `Showing ${lastFoundEvents.length} cached event(s) from ${finderAgeLine("events", sites)}.`;
+        return;
+      }
+      if (!ensureTokenReady("finding events")) return;
       showError("");
-      $("events-status").textContent = `Finding events in ${sites.map((site) => site.toUpperCase()).join(", ")}…`;
+      $("events-status").textContent = `${refresh ? "Refreshing" : "Finding"} events in ${missing.map((site) => site.toUpperCase()).join(", ")}…`;
       try {
         const data = await api("/api/events/list", {
           method: "POST",
-          body: JSON.stringify({ ...tokenPayload(), sites, refresh }),
+          body: JSON.stringify({ ...tokenPayload(), sites: missing, refresh: Boolean(refresh) }),
         });
-        lastFoundEvents = data.events || [];
-        foundEventViews.clear();
+        const okSites = finderOkSites(missing, data.errors);
+        mergeFinderRows("events", okSites, data.events || [], data.fetchedAt || {});
+        await persistFinderRows("events", okSites);
+        lastFoundEvents = rowsForFinderSites("events", sites);
+        if (refresh) {
+          for (const key of [...foundEventViews.keys()]) {
+            const site = key.split(":")[0];
+            if (missing.includes(site)) foundEventViews.delete(key);
+          }
+        }
         renderFoundEvents(data.errors || {});
+        setFinderCacheHint("found-events-cache-status", "events", sites);
         const failed = Object.keys(data.errors || {});
         $("events-status").textContent = lastFoundEvents.length
           ? `Found ${lastFoundEvents.length} event(s)${failed.length ? ` — ${failed.join(", ")} failed` : ""}.`
@@ -4250,6 +4285,80 @@
       return `${days} day${days === 1 ? "" : "s"} ago`;
     }
 
+    function finderMs(value) {
+      const timestamp = Number(value);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
+      return timestamp < 1e12 ? timestamp * 1000 : timestamp;
+    }
+
+    function finderCachedSites(source, sites) {
+      return (sites || SITE_ORDER).filter((site) => finderMs(finderLists[source].fetchedAt[site]));
+    }
+
+    function finderOkSites(sites, errors) {
+      const failed = new Set(Object.keys(errors || {}).map((site) => String(site).toLowerCase()));
+      return sites.filter((site) => !failed.has(site));
+    }
+
+    function mergeFinderErrors(source, sites, errors) {
+      for (const site of sites) {
+        if (errors?.[site]) finderLists[source].errors[site] = errors[site];
+        else delete finderLists[source].errors[site];
+      }
+    }
+
+    function finderAgeLine(source, sites) {
+      const cached = finderCachedSites(source, sites);
+      if (!cached.length) return "";
+      return cached
+        .map((site) => `${site.toUpperCase()} ${formatUnifiedDataAge(finderLists[source].fetchedAt[site])}`)
+        .join(", ");
+    }
+
+    function setFinderCacheHint(elementId, source, sites, { usedCache = false } = {}) {
+      const el = $(elementId);
+      if (!el) return;
+      const line = finderAgeLine(source, sites);
+      if (!line) {
+        el.textContent = "";
+        return;
+      }
+      el.textContent = usedCache
+        ? `Showing the last pull — ${line}. Refresh for a live list from dCloud.`
+        : `Last pulled ${line}. Refresh if this looks stale.`;
+    }
+
+    function mergeFinderRows(source, sites, rows, fetchedAtBySite) {
+      const siteSet = new Set(sites);
+      finderLists[source].rows = [
+        ...finderLists[source].rows.filter((row) => !siteSet.has(String(row.site || "").toLowerCase())),
+        ...(rows || []),
+      ];
+      for (const site of sites) {
+        finderLists[source].fetchedAt[site] = finderMs(fetchedAtBySite?.[site]) || Date.now();
+      }
+    }
+
+    async function persistFinderRows(source, sites) {
+      const entries = sites.map((site) => ({
+        key: `${source}:${site}`,
+        source,
+        site,
+        fetchedAt: finderLists[source].fetchedAt[site] || Date.now(),
+        rows: finderLists[source].rows.filter((row) => String(row.site || "").toLowerCase() === site),
+      }));
+      try {
+        await saveUnifiedDataEntries(entries);
+      } catch {
+        // Keep the downloaded data for this page even if browser storage is unavailable.
+      }
+    }
+
+    function rowsForFinderSites(source, sites) {
+      const wanted = new Set(sites);
+      return finderLists[source].rows.filter((row) => wanted.has(String(row.site || "").toLowerCase()));
+    }
+
     function updateUnifiedCacheStatus() {
       const hasSavedData = ["content", "sessions"].some((source) =>
         (unifiedSearchDcData.sites[source] || []).length
@@ -4277,10 +4386,17 @@
         for (const entry of entries) {
           const source = String(entry?.source || "").toLowerCase();
           const site = String(entry?.site || "").toLowerCase();
-          if (!["content", "sessions"].includes(source) || !SITE_ORDER.includes(site) || !Array.isArray(entry.rows)) continue;
-          unifiedSearchDcData[source].push(...entry.rows);
-          if (!unifiedSearchDcData.sites[source].includes(site)) unifiedSearchDcData.sites[source].push(site);
-          unifiedSearchDcData.fetchedAt[source][site] = Number(entry.fetchedAt) || 0;
+          if (!SITE_ORDER.includes(site) || !Array.isArray(entry.rows)) continue;
+          if (["content", "sessions"].includes(source)) {
+            unifiedSearchDcData[source].push(...entry.rows);
+            if (!unifiedSearchDcData.sites[source].includes(site)) unifiedSearchDcData.sites[source].push(site);
+            unifiedSearchDcData.fetchedAt[source][site] = Number(entry.fetchedAt) || 0;
+            continue;
+          }
+          if (finderLists[source]) {
+            finderLists[source].rows.push(...entry.rows);
+            finderLists[source].fetchedAt[site] = finderMs(entry.fetchedAt);
+          }
         }
         for (const source of ["content", "sessions"]) {
           unifiedSearchDcData.sites[source] = SITE_ORDER.filter((site) => unifiedSearchDcData.sites[source].includes(site));
@@ -11729,8 +11845,8 @@
       }
     }
 
-    async function findSavedContents(mount = "schedule") {
-      if (!ensureTokenReady("finding saved content")) return;
+    async function findSavedContents(mount = "schedule", { refresh = false } = {}) {
+      await unifiedSavedDataReady;
       showError("");
       const thisMount = mount === "saved-ids" ? mount : "schedule";
       foundSavedMount = thisMount;
@@ -11738,31 +11854,48 @@
         const panel = $("panel-saved-schedule");
         if (panel) panel.open = true;
       }
+      const sites = SITE_ORDER;
+      const missing = refresh ? sites : sites.filter((site) => !finderMs(finderLists["mine-content"].fetchedAt[site]));
       try {
-        const data = await api("/api/contents/mine", {
-          method: "POST",
-          body: JSON.stringify(tokenPayload()),
-        });
+        let data;
+        if (!missing.length) {
+          data = {
+            contents: rowsForFinderSites("mine-content", sites),
+            errors: finderLists["mine-content"].errors,
+            usedCache: true,
+          };
+        } else {
+          if (!ensureTokenReady("finding saved content")) return;
+          data = await api("/api/contents/mine", {
+            method: "POST",
+            body: JSON.stringify({ ...tokenPayload(), refresh: Boolean(refresh), sites: missing }),
+          });
+          const okSites = finderOkSites(missing, data.errors);
+          mergeFinderRows("mine-content", okSites, data.contents || [], data.fetchedAt || {});
+          mergeFinderErrors("mine-content", missing, data.errors);
+          await persistFinderRows("mine-content", okSites);
+          data = {
+            contents: rowsForFinderSites("mine-content", sites),
+            errors: { ...finderLists["mine-content"].errors },
+            usedCache: false,
+          };
+        }
         renderFoundSaved(data, thisMount);
+        const hintId = thisMount === "saved-ids" ? "saved-ids-found-cache-status" : "found-schedule-saved-cache-status";
+        setFinderCacheHint(hintId, "mine-content", sites, { usedCache: data.usedCache });
         const rows = data.contents || [];
         const deletable = rows.filter((row) => row.deletable !== false && !row.eolOnly).length;
         const promoted = rows.filter((row) => row.eolOnly).length;
-        // Rows are no longer pre-checked just for being in the Content Automation
-        // Hub list: with a filter and bulk actions on this list, arriving with a
-        // scattered selection already made is a hazard. Recheck saved IDs still
-        // does it on request.
         if (rows.length) {
           noteLog(
-            `Found ${rows.length} saved content item(s)`
-            + (thisMount === "saved-ids" || thisMount === "schedule"
-              ? ", newest first"
-              : "")
+            (data.usedCache ? `Showing ${rows.length} cached saved content item(s)` : `Found ${rows.length} saved content item(s)`)
+            + (thisMount === "saved-ids" || thisMount === "schedule" ? ", newest first" : "")
             + (promoted
               ? thisMount === "saved-ids"
                 ? ` (${promoted} TBv2 promoted/EOL-only, listed with saved)`
                 : ` (${deletable} directly deletable, ${promoted} TBv2 promoted/EOL-only)`
               : "")
-            + "."
+            + (data.usedCache ? ` from ${finderAgeLine("mine-content", sites)}.` : ".")
           );
         } else {
           noteLog("No saved custom content found in any DC.");
@@ -11993,21 +12126,44 @@
       }
     }
 
-    async function findSessions() {
-      if (!ensureTokenReady("finding sessions")) return;
+    async function loadMineSessions({ refresh = false } = {}) {
+      await unifiedSavedDataReady;
+      const sites = SITE_ORDER;
+      const missing = refresh ? sites : sites.filter((site) => !finderMs(finderLists["mine-sessions"].fetchedAt[site]));
+      if (!missing.length) {
+        return {
+          sessions: rowsForFinderSites("mine-sessions", sites),
+          errors: finderLists["mine-sessions"].errors,
+          usedCache: true,
+        };
+      }
+      if (!ensureTokenReady("finding sessions")) return null;
+      const data = await api("/api/sessions/mine", {
+        method: "POST",
+        body: JSON.stringify({ ...tokenPayload(), refresh: Boolean(refresh), sites: missing }),
+      });
+      const okSites = finderOkSites(missing, data.errors);
+      mergeFinderRows("mine-sessions", okSites, data.sessions || [], data.fetchedAt || {});
+      mergeFinderErrors("mine-sessions", missing, data.errors);
+      await persistFinderRows("mine-sessions", okSites);
+      return {
+        sessions: rowsForFinderSites("mine-sessions", sites),
+        errors: { ...finderLists["mine-sessions"].errors },
+        usedCache: false,
+      };
+    }
+
+    async function findSessions({ refresh = false } = {}) {
       showError("");
-      setFoundSessionsPanelVisible(false);
-      $("found-sessions").innerHTML = "";
       try {
-        const data = await api("/api/sessions/mine", {
-          method: "POST",
-          body: JSON.stringify(tokenPayload()),
-        });
+        const data = await loadMineSessions({ refresh });
+        if (!data) return;
         renderFoundSessions(data);
+        setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: data.usedCache });
         const count = (data.sessions || []).length;
-        noteLog(count
-          ? `Found ${count} session(s) on your dashboard.`
-          : "No active sessions on your dCloud dashboard.");
+        noteLog(data.usedCache
+          ? `Showing ${count} cached session(s) from ${finderAgeLine("mine-sessions", SITE_ORDER)}.`
+          : (count ? `Found ${count} session(s) on your dashboard.` : "No active sessions on your dCloud dashboard."));
       } catch (err) {
         $("found-sessions").innerHTML = "";
         setFoundSessionsPanelVisible(false);
@@ -12074,24 +12230,27 @@
       applyListFilter(listFilterConfig("filter-workspace-sessions"));
     }
 
-    async function findWorkspaceSessions() {
-      if (!ensureTokenReady("finding sessions")) return;
-      const button = $("btn-find-workspace-sessions");
-      button.disabled = true;
-      button.textContent = "Finding…";
-      $("found-workspace-sessions-panel").classList.add("hidden");
+    async function findWorkspaceSessions({ refresh = false } = {}) {
+      const button = refresh ? $("btn-refresh-workspace-sessions") : $("btn-find-workspace-sessions");
+      if (button) {
+        button.disabled = true;
+        button.textContent = refresh ? "Refreshing…" : "Finding…";
+      }
       try {
-        const data = await api("/api/sessions/mine", {
-          method: "POST",
-          body: JSON.stringify(tokenPayload()),
-        });
+        const data = await loadMineSessions({ refresh });
+        if (!data) return;
         renderFoundWorkspaceSessions(data);
-        noteLog(`Found ${(data.sessions || []).length} session(s) for the job workspace picker.`);
+        setFinderCacheHint("found-workspace-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: data.usedCache });
+        noteLog(data.usedCache
+          ? `Showing ${(data.sessions || []).length} cached session(s) for the job workspace picker.`
+          : `Found ${(data.sessions || []).length} session(s) for the job workspace picker.`);
       } catch (err) {
         showError(err.message);
       } finally {
-        button.disabled = false;
-        button.textContent = "Find my sessions";
+        if (button) {
+          button.disabled = false;
+          button.textContent = refresh ? "Refresh" : "Find my sessions";
+        }
       }
     }
 
@@ -13105,11 +13264,13 @@
     }
 
     $("btn-find-sessions").addEventListener("click", () => findSessions().catch((err) => showError(err.message)));
+    $("btn-refresh-sessions")?.addEventListener("click", () => findSessions({ refresh: true }).catch((err) => showError(err.message)));
     $("btn-monitor-manual").addEventListener("click", () => addManualMonitoring().catch((err) => showError(err.message)));
     $("monitor-manual-id").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") addManualMonitoring().catch((err) => showError(err.message));
     });
     $("btn-find-workspace-sessions").addEventListener("click", () => findWorkspaceSessions().catch((err) => showError(err.message)));
+    $("btn-refresh-workspace-sessions")?.addEventListener("click", () => findWorkspaceSessions({ refresh: true }).catch((err) => showError(err.message)));
     $("btn-workspace-manual").addEventListener("click", () => addManualWorkspaceSession().catch((err) => showError(err.message)));
     $("workspace-manual-id").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") addManualWorkspaceSession().catch((err) => showError(err.message));
@@ -13131,6 +13292,7 @@
     });
     $("btn-decline-all-surveys").addEventListener("click", () => declineAllSurveys().catch((err) => showError(err.message)));
     $("btn-find-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule").catch((err) => showError(err.message)));
+    $("btn-refresh-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule", { refresh: true }).catch((err) => showError(err.message)));
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
     $("btn-schedule-saved").addEventListener("click", () => scheduleSelectedSaved().catch((err) => showError(err.message)));
     $("saved-schedule-export").addEventListener("change", () => syncScheduleSavedButton());
@@ -13174,6 +13336,7 @@
     bindFoundSavedListEvents("found-schedule-saved", "schedule-saved-content", "schedule-saved-dc-head", syncScheduleSavedAll);
     bindFoundSavedListEvents("saved-ids-found", "saved-ids-found-content", "saved-ids-found-dc-head", syncSavedIdsFoundAll);
     $("btn-saved-ids-find").addEventListener("click", () => findSavedContents("saved-ids").catch((err) => showError(err.message)));
+    $("btn-saved-ids-find-refresh")?.addEventListener("click", () => findSavedContents("saved-ids", { refresh: true }).catch((err) => showError(err.message)));
     $("btn-hub-manual-add").addEventListener("click", () => addManualHubContent().catch((err) => showError(err.message)));
     $("hub-manual-id").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") addManualHubContent().catch((err) => showError(err.message));
@@ -13273,6 +13436,7 @@
       }
     });
     $("btn-events-find")?.addEventListener("click", () => findEvents().catch((err) => showError(err.message)));
+    $("btn-events-find-refresh")?.addEventListener("click", () => findEvents({ refresh: true }).catch((err) => showError(err.message)));
     $("btn-event-find-all-dcs")?.addEventListener("click", () => {
       document.querySelectorAll(".event-find-dc").forEach((box) => { box.checked = true; });
     });
@@ -13404,6 +13568,19 @@
     restoreUnifiedSearchSettings();
     unifiedSavedDataReady = restoreUnifiedSavedData();
     window.setInterval(updateUnifiedCacheStatus, 60 * 1000);
+    window.setInterval(() => {
+      if (finderCachedSites("events", selectedEventFindDcs()).length) {
+        setFinderCacheHint("found-events-cache-status", "events", selectedEventFindDcs());
+      }
+      if (finderCachedSites("mine-sessions", SITE_ORDER).length) {
+        setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER);
+        setFinderCacheHint("found-workspace-sessions-cache-status", "mine-sessions", SITE_ORDER);
+      }
+      if (finderCachedSites("mine-content", SITE_ORDER).length) {
+        setFinderCacheHint("saved-ids-found-cache-status", "mine-content", SITE_ORDER);
+        setFinderCacheHint("found-schedule-saved-cache-status", "mine-content", SITE_ORDER);
+      }
+    }, 60 * 1000);
     window.setInterval(() => {
       pollEventActionWatches().catch((err) => noteLog(`Event status tracking failed: ${err.message}`));
     }, 10 * 1000);
