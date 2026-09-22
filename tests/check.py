@@ -242,6 +242,29 @@ def test_zip_contents() -> None:
     check("install id stays on the machine", ".dcloud-install.json" in update_from_github.SKIP_FILE_NAMES)
     check("the -update zip is the overlay without Python", pack_for_mac.ZIP_NAME_UPDATE.endswith("-update.zip"))
     check("the -full zip is the first-time install with Python", pack_for_mac.ZIP_NAME_FULL.endswith("-full.zip"))
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    start_here = (ROOT / "START HERE.txt").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release-mac-zips.yml").read_text(encoding="utf-8")
+    check(
+        "README install uses the GitHub Release zip",
+        pack_for_mac.GITHUB_FULL_ZIP_URL in readme,
+    )
+    check(
+        "START HERE names the GitHub Release zip",
+        pack_for_mac.GITHUB_FULL_ZIP_URL in start_here,
+    )
+    check(
+        "a version tag packs the coworker zips onto a GitHub Release",
+        "pack_for_mac.py --full" in workflow
+        and "dCloud-Content-Manager-Mac-full.zip" in workflow
+        and 'tags:' in workflow,
+    )
+    check(
+        "open Actions menus survive a background job refresh",
+        "function deferUiRebuildWhileMenuOpen(" in INDEX
+        and "function flushUiRebuildsAfterMenusClose(" in INDEX
+        and 'pendingUiRebuilds.set("job-cards"' in INDEX,
+    )
 
 
 def test_anonymous_update_usage() -> None:

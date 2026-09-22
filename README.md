@@ -6,16 +6,19 @@ A local Mac app for scheduling dCloud sessions and managing saved content (CAI r
 
 You do not need to clone this repository or log in to GitHub.
 
-1. Unzip the folder you were sent. **`-full`** is a first-time install (includes Python for Apple Silicon and Intel). **`-update`** is the smaller overlay for a folder that already exists.
-2. Double-click `start.command`.
+1. Download **[dCloud-Content-Manager-Mac-full.zip](https://github.com/jasmurra/dcloud-content-manager/releases/latest/download/dCloud-Content-Manager-Mac-full.zip)** from the latest [GitHub Release](https://github.com/jasmurra/dcloud-content-manager/releases/latest). That zip includes Python for Apple Silicon and Intel.
+2. Unzip it anywhere (Downloads is fine) and double-click `start.command`.
 3. Sign in to dCloud in the app.
 
-Keep the Terminal window open while you use the tool. Details, troubleshooting, and how to overlay a new zip without losing jobs are in `START HERE.txt`.
+Keep the Terminal window open while you use the tool. Later versions install themselves — **Check for updates** or restart `start.command`. You do not need a new zip after the first install.
+
+Details, troubleshooting, and how to overlay a new zip without losing jobs are in `START HERE.txt`.
 
 ## What’s new
 
 | Version | What changed |
 | --- | --- |
+| **1.18.8** | First-time install is the GitHub Release `-full` zip; open Actions menus survive background job refreshes |
 | **1.18.7** | Find events by datacenter (Add or View sessions); job workspace cards survive Check for updates; save descriptions are not capped at 255 characters; Log in opens the browser immediately instead of probing first |
 | **1.18.6** | Load VMs sits at the top of Schedule sessions as an optional nested block, not its own movable section |
 | **1.18.5** | Top chrome buttons (What’s new, Check for updates, Settings, Sign in, Collapse/Expand/Reset) are smaller |
@@ -68,7 +71,7 @@ Keep the Terminal window open while you use the tool. Details, troubleshooting, 
 
 Full notes: [CHANGELOG.md](CHANGELOG.md). In the running app, use **What’s new** next to the version number.
 
-GitHub’s usual pattern is this changelog file in the repo. Optional extra: a [Release](https://github.com/jasmurra/dcloud-content-manager/releases) per version (for example, a `v1.8` tag with the same notes). People do not need Releases to update — they only need a newer `VERSION` on `main`.
+GitHub’s usual pattern is this changelog file in the repo. A [Release](https://github.com/jasmurra/dcloud-content-manager/releases/latest) holds the first-time **`-full`** zip. People who already have 1.5+ do not need that zip — they only need a newer `VERSION` on `main`.
 
 ## Updates
 
@@ -91,7 +94,7 @@ These stay in GitHub for the person who builds zips. They are **not** packed int
 | `show_usage.py` | Prints how many distinct installs have checked GitHub for updates (hashed ids only, no names) |
 | `collect_usage.py` | Merges those pings into `usage.json` (also runs on GitHub Actions every few hours) |
 
-To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`. People who already have 1.5+ update from GitHub. Rebuild zips only for a first-time install (`-full`) or a one-time overlay onto an older copy (`-update`).
+To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`, then tag `v` plus that version (for example `v1.18.8`) and push the tag. GitHub Actions attaches `dCloud-Content-Manager-Mac-full.zip` and `-update.zip` to that Release. People who already have 1.5+ still update from GitHub without a zip. Rebuild/upload zips only so a first-time install (`-full`) or a one-time overlay (`-update`) stays current.
 
 ## What is not in GitHub
 

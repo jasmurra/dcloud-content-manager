@@ -1,5 +1,9 @@
 dCloud Content Manager (Mac)
 
+First install: download the -full zip from
+https://github.com/jasmurra/dcloud-content-manager/releases/latest/download/dCloud-Content-Manager-Mac-full.zip
+Unzip it, then follow Start below. You do not need a GitHub login.
+
 Kick the tires: unzip, double-click start.command, log in with YOUR dCloud account.
 
 
@@ -31,9 +35,10 @@ newer VERSION. Your jobs, logins, .venv, and the bundled runtime/ Python stay
 put. Set DCLOUD_SKIP_UPDATE=1 to skip the check.
 
 
-GitHub (optional, stops the zip shuffle)
+GitHub (first install and later updates)
 The updater is already pointed at the public jasmurra/dcloud-content-manager repo.
-Zip installs download public updates directly — no GitHub login, SSH key, Git,
+New people download the -full zip from the latest GitHub Release (link at the top).
+Zip installs then download public updates directly — no GitHub login, SSH key, Git,
 or Xcode Command Line Tools are required. Use Check for updates at the top of
 the page, or just start.command; both install a newer VERSION automatically.
 

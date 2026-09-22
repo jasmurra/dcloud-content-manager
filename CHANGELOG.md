@@ -1,3 +1,8 @@
+## 1.18.8 — 2026-09-22
+
+- **First-time install is a GitHub download.** New Macs use [dCloud-Content-Manager-Mac-full.zip](https://github.com/jasmurra/dcloud-content-manager/releases/latest/download/dCloud-Content-Manager-Mac-full.zip) from the latest Release (Python for Apple Silicon and Intel is inside). Existing copies still update with **Check for updates** or a restart of `start.command` — no Slack zip required
+- **Open Actions menus stay open through background refreshes.** Job polling used to rebuild session cards every couple of seconds, which closed the Actions (and VM) menu you were looking at. The rebuild waits until the menu is closed
+
 ## 1.18.7 — 2026-09-22
 
 - **Events can Find events by datacenter.** Check sites, filter the list, then Add an event to the section below (loads sessions) or View sessions in place. Finding lists events only — about a second per DC — and does not download every session until you ask

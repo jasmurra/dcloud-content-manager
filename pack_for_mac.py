@@ -13,9 +13,12 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DESKTOP = Path.home() / "Desktop"
 ZIP_NAME_UPDATE = "dCloud-Content-Manager-Mac-update.zip"
 ZIP_NAME_FULL = "dCloud-Content-Manager-Mac-full.zip"
+GITHUB_FULL_ZIP_URL = (
+    "https://github.com/jasmurra/dcloud-content-manager/releases/latest/download/"
+    + ZIP_NAME_FULL
+)
 FOLDER = "dCloud Content Manager"
 VERSION_FILE = ROOT / "VERSION"
 CACHE_DIR = ROOT / ".python-runtime-cache"
@@ -145,6 +148,24 @@ def read_version() -> str:
     return (line[0].strip() if line else "") or "0.0"
 
 
+def changelog_notes(version: str | None = None) -> str:
+    """Release notes for GitHub: install link plus this version's changelog section."""
+    version = (version or read_version()).strip()
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    heading = f"## {version}"
+    start = text.find(heading)
+    body = f"dCloud Content Manager {version}"
+    if start >= 0:
+        rest = text[start:]
+        nxt = rest.find("\n## ", 1)
+        body = (rest if nxt < 0 else rest[:nxt]).strip()
+    return (
+        f"First-time Mac install: {GITHUB_FULL_ZIP_URL}\n\n"
+        "Existing copies: Check for updates, or restart start.command.\n\n"
+        f"{body}\n"
+    )
+
+
 def bump_version(current: str) -> str:
     parts = current.split(".")
     try:
@@ -226,6 +247,14 @@ def ensure_runtimes() -> dict[str, Path]:
     return runtimes
 
 
+def pack_dir() -> Path:
+    """Desktop on a Mac; CI or DCLOUD_PACK_DIR can send the zips somewhere else."""
+    override = (os.environ.get("DCLOUD_PACK_DIR") or "").strip()
+    path = Path(override).expanduser() if override else Path.home() / "Desktop"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def pack_zip(dest: Path, runtimes: dict[str, Path] | None) -> tuple[int, int]:
     if dest.exists():
         dest.unlink()
@@ -258,8 +287,7 @@ def main() -> None:
         version = bump_version(version)
         write_version(version)
 
-    DESKTOP.mkdir(parents=True, exist_ok=True)
-    dest = DESKTOP / (ZIP_NAME_FULL if with_python else ZIP_NAME_UPDATE)
+    dest = pack_dir() / (ZIP_NAME_FULL if with_python else ZIP_NAME_UPDATE)
     runtimes = ensure_runtimes() if with_python else None
     try:
         file_count, extra = pack_zip(dest, runtimes)
@@ -275,7 +303,10 @@ def main() -> None:
     else:
         print(f"This is the -update zip: app files plus browser_auth ({extra} files). No Python bundled.")
         print("Overlay it on an existing install, or use it if the Mac already has Python 3.9+.")
-    print("Send that zip. Do not zip this project folder yourself — that would include your login files.")
+    print("Attach that zip to a GitHub Release so coworkers download it from the repo.")
+    print("Do not zip this project folder yourself — that would include your login files.")
+    if os.environ.get("CI") or os.environ.get("DCLOUD_PACK_DIR"):
+        return
     os.system(f'open -R "{dest}"')
 
 

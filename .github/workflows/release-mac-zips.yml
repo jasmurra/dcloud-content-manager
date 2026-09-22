@@ -1,0 +1,41 @@
+name: Publish Mac zips
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache bundled CPython
+        uses: actions/cache@v4
+        with:
+          path: .python-runtime-cache
+          key: python-runtime-${{ hashFiles('pack_for_mac.py') }}
+      - name: Pack coworker zips
+        env:
+          DCLOUD_PACK_DIR: ${{ github.workspace }}/dist
+        run: |
+          python3 pack_for_mac.py --full
+          python3 pack_for_mac.py
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import pack_for_mac; print(pack_for_mac.read_version())')"
+          python3 -c 'import pack_for_mac; print(pack_for_mac.changelog_notes(), end="")' > /tmp/release-notes.md
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/dCloud-Content-Manager-Mac-full.zip \
+            dist/dCloud-Content-Manager-Mac-update.zip \
+            --title "${version}" \
+            --notes-file /tmp/release-notes.md

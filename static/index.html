@@ -3733,6 +3733,7 @@
     function renderFoundEvents(errors = {}) {
       const root = $("found-events");
       if (!root) return;
+      if (deferUiRebuildWhileMenuOpen("found-events", root, () => renderFoundEvents(errors))) return;
       const rows = lastFoundEvents;
       const groups = groupRowsBySite(rows);
       const checked = new Set(
@@ -3908,6 +3909,7 @@
     function renderEvents() {
       const root = $("events-results");
       if (!root) return;
+      if (deferUiRebuildWhileMenuOpen("events-results", root, () => renderEvents())) return;
       const openSites = new Set(
         [...root.querySelectorAll("details.event-site-group[open]")].map((el) => el.dataset.site)
       );
@@ -4474,6 +4476,7 @@
 
     function renderUnifiedDcData() {
       syncUnifiedSessionStatusFilter();
+      if (deferUiRebuildWhileMenuOpen("unified-search-results", "unified-search-results", () => renderUnifiedDcData())) return;
       const needle = $("unified-search-filter").value.trim().toLowerCase();
       const statusFilter = selectedSessionStatusFilter();
       const groups = [];
@@ -5885,6 +5888,25 @@
     let lastVmCatalogLookup = null;
     let lastCardsFingerprint = "";
     let lastSavedIdsFingerprint = "";
+    const pendingUiRebuilds = new Map();
+
+    function vmMenuIsOpen(root = document) {
+      const node = typeof root === "string" ? $(root) : root;
+      return Boolean(node?.querySelector("details.vm-menu[open]"));
+    }
+
+    function deferUiRebuildWhileMenuOpen(key, root, rebuild) {
+      if (!vmMenuIsOpen(root)) return false;
+      pendingUiRebuilds.set(key, rebuild);
+      return true;
+    }
+
+    function flushUiRebuildsAfterMenusClose() {
+      if (vmMenuIsOpen()) return;
+      const queued = [...pendingUiRebuilds.values()];
+      pendingUiRebuilds.clear();
+      queued.forEach((rebuild) => rebuild());
+    }
 
     function jobCardsFingerprint(job) {
       const visible = (job?.dcs || []).filter((dc) => !["saved", "ended"].includes(dc.phase));
@@ -6453,32 +6475,38 @@
         const cardsFingerprint = jobCardsFingerprint(job);
         const cardsChanged = forceCards || cardsFingerprint !== lastCardsFingerprint;
         if (cardsChanged) {
-          if (document.querySelector("#cards details.card, #monitor-cards details.card")) {
-            captureCardLayoutFromDom();
+          if (vmMenuIsOpen("cards") || vmMenuIsOpen("monitor-cards")) {
+            pendingUiRebuilds.set("job-cards", () => {
+              if (lastRenderedJob) renderJob(lastRenderedJob, { forceCards: true });
+            });
+          } else {
+            if (document.querySelector("#cards details.card, #monitor-cards details.card")) {
+              captureCardLayoutFromDom();
+            }
+            const { checkedCards } = captureCardsUiState();
+            const openVmMore = openVmMoreForRender();
+            lastCardsFingerprint = cardsFingerprint;
+            const visibleJob = visibleWorkspaceDcs(job);
+            const visibleMonitor = visibleMonitorDcs(job);
+            $("cards").innerHTML = renderCardGroups(
+              visibleJob,
+              { monitor: false, openVmMore, checkedCards }
+            );
+            $("monitor-cards").innerHTML = renderCardGroups(
+              visibleMonitor,
+              { monitor: true, openVmMore, checkedCards }
+            );
+            $("monitor-cards-label")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("btn-refresh-monitor")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("btn-expand-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("btn-collapse-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("btn-expand-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("btn-collapse-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("job-card-view-actions")?.classList.toggle("hidden", visibleJob.length === 0);
+            $("job-cards-label")?.classList.toggle("hidden", visibleJob.length === 0);
+            if (!$("sched-extend").value) suggestExtendDate(job);
+            saveUiStateFromDom();
           }
-          const { checkedCards } = captureCardsUiState();
-          const openVmMore = openVmMoreForRender();
-          lastCardsFingerprint = cardsFingerprint;
-          const visibleJob = visibleWorkspaceDcs(job);
-          const visibleMonitor = visibleMonitorDcs(job);
-          $("cards").innerHTML = renderCardGroups(
-            visibleJob,
-            { monitor: false, openVmMore, checkedCards }
-          );
-          $("monitor-cards").innerHTML = renderCardGroups(
-            visibleMonitor,
-            { monitor: true, openVmMore, checkedCards }
-          );
-          $("monitor-cards-label")?.classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-refresh-monitor")?.classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-expand-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-collapse-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-expand-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
-          $("btn-collapse-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
-          $("job-card-view-actions")?.classList.toggle("hidden", visibleJob.length === 0);
-          $("job-cards-label")?.classList.toggle("hidden", visibleJob.length === 0);
-          if (!$("sched-extend").value) suggestExtendDate(job);
-          saveUiStateFromDom();
         }
       }
 
@@ -8254,6 +8282,10 @@
         syncHubActionButtons();
         return;
       }
+      if (deferUiRebuildWhileMenuOpen("saved-ids-body", "saved-ids-body", () => {
+        lastSavedIdsFingerprint = "";
+        renderSavedIdRows(lastSavedIdRows);
+      })) return;
       lastSavedIdsFingerprint = fingerprint;
       const panel = $("saved-ids-panel");
       const body = $("saved-ids-body");
@@ -10522,6 +10554,9 @@
       document.addEventListener("toggle", (ev) => {
         const el = ev.target;
         if (!(el instanceof HTMLDetailsElement)) return;
+        if (el.classList.contains("vm-menu") && !el.open) {
+          queueMicrotask(flushUiRebuildsAfterMenusClose);
+        }
         if (
           !el.matches(PERSIST_PANEL_SELECTOR)
           && !el.matches(PERSIST_VM_MORE_SELECTOR)
