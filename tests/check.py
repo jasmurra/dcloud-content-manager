@@ -240,7 +240,6 @@ def test_zip_contents() -> None:
     check("updater skips this tests folder", "tests" in update_from_github.SKIP_DIR_NAMES)
     check("updater skips GitHub workflows", ".github" in update_from_github.SKIP_DIR_NAMES)
     check("install id stays on the machine", ".dcloud-install.json" in update_from_github.SKIP_FILE_NAMES)
-    check("the -update zip is the overlay without Python", pack_for_mac.ZIP_NAME_UPDATE.endswith("-update.zip"))
     check("the -full zip is the first-time install with Python", pack_for_mac.ZIP_NAME_FULL.endswith("-full.zip"))
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     start_here = (ROOT / "START HERE.txt").read_text(encoding="utf-8")
@@ -254,9 +253,10 @@ def test_zip_contents() -> None:
         pack_for_mac.GITHUB_FULL_ZIP_URL in start_here,
     )
     check(
-        "a version tag packs the coworker zips onto a GitHub Release",
+        "a version tag packs only the -full zip onto a GitHub Release",
         "pack_for_mac.py --full" in workflow
         and "dCloud-Content-Manager-Mac-full.zip" in workflow
+        and "dCloud-Content-Manager-Mac-update.zip" not in workflow
         and 'tags:' in workflow,
     )
     check(

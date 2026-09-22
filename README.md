@@ -12,7 +12,7 @@ You do not need to clone this repository or log in to GitHub.
 
 Keep the Terminal window open while you use the tool. Later versions install themselves — **Check for updates** or restart `start.command`. You do not need a new zip after the first install.
 
-Details, troubleshooting, and how to overlay a new zip without losing jobs are in `START HERE.txt`.
+Details and troubleshooting are in `START HERE.txt`.
 
 ## What’s new
 
@@ -90,12 +90,12 @@ These stay in GitHub for the person who builds zips. They are **not** packed int
 | File | What it is for |
 | --- | --- |
 | `pack_for_mac.py` | Builds the Desktop zip files |
-| `share-for-mac.command` | Builds `dCloud-Content-Manager-Mac-update.zip` (app files only) |
+| `share-for-mac.command` | Local overlay zip for this Mac only — not published |
 | `share-for-mac-with-python.command` | Builds `dCloud-Content-Manager-Mac-full.zip` (app plus Python for both Mac chips) |
 | `show_usage.py` | Prints how many distinct installs have checked GitHub for updates (hashed ids only, no names) |
 | `collect_usage.py` | Merges those pings into `usage.json` (also runs on GitHub Actions every few hours) |
 
-To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`, then tag `v` plus that version (for example `v1.18.8`) and push the tag. GitHub Actions attaches `dCloud-Content-Manager-Mac-full.zip` and `-update.zip` to that Release. People who already have 1.5+ still update from GitHub without a zip. Rebuild/upload zips only so a first-time install (`-full`) or a one-time overlay (`-update`) stays current.
+To ship a new version: add a heading in `CHANGELOG.md`, bump `VERSION`, commit and push `main`, then tag `v` plus that version (for example `v1.18.9`) and push the tag. GitHub Actions attaches `dCloud-Content-Manager-Mac-full.zip` to that Release. People who already have 1.5+ still update from GitHub without a zip. Rebuild the `-full` zip so a first-time install stays current.
 
 ## What is not in GitHub
 

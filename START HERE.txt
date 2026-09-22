@@ -11,9 +11,7 @@ You need
 - A Mac
 - Google Chrome
 - Cisco VPN or the office network (to reach dCloud)
-- Python 3.9+ only if this folder has no runtime directory
-  (the -update zip). Install from https://www.python.org/downloads/macos/
-  The -full zip already includes Python for Apple Silicon and Intel — skip this.
+- The -full zip already includes Python for Apple Silicon and Intel — you do not install Python yourself.
 
 
 Start
@@ -43,14 +41,13 @@ or Xcode Command Line Tools are required. Use Check for updates at the top of
 the page, or just start.command; both install a newer VERSION automatically.
 
 
-Already have the tool? (keep jobs)
-Close the Terminal window that is running the tool first.
+Already have the tool?
+You do not need a new zip. Click Check for updates at the top of the page, or
+restart start.command. Jobs, logins, and your saved-content list stay put.
 
-Unzip the -update zip, then copy the files from the new “dCloud Content Manager”
-folder on top of your existing folder. When macOS asks, replace the files.
-
-That is safe. The zip does not contain your jobs, saved-content list, or
-logins — those stay in the folder you already have:
+If you ever start over from the -full zip in a brand-new folder, copy these
+from your old folder first, or in-flight jobs and the saved-content list
+will not come with you:
 
   last-job.json
   managed-saved-ids.json
@@ -61,16 +58,10 @@ logins — those stay in the folder you already have:
   .env
   .venv
 
-Do not start from a brand-new empty folder unless you copy those files in
-first, or in-flight jobs and the saved-content list will not come with you.
-
-Then double-click start.command. Confirm Version in the top right.
-
 
 If something fails
 - “Python 3.9+ is required”
-    You have the -update zip. Install Python from the link above, then run
-    start.command again — or use the -full zip that already includes Python.
+    Use the -full zip from the GitHub Release link at the top. It already includes Python.
 - Login popup blocked
     Allow popups for this page, or click Log in to dCloud and finish Cisco SSO in the tool browser.
 - CAI / CAMGR (transfers, integrations, VM replace)
