@@ -1087,6 +1087,41 @@ def test_ended_card_is_not_a_dead_end() -> None:
     check("a reused job is not re-run for its existing cards", "burn_scheduled.get(days)" in burn)
 
 
+def test_job_cards_survive_an_update_restart() -> None:
+    """Check for updates reloads uvicorn. Live workspace cards used to be pruned
+    if they had not been touched in 12 hours, and auto-restore skipped jobs older
+    than 4 hours, so Mario's sessions vanished after an update."""
+    import app
+
+    old = time.time() - (20 * 3600)
+    job = {
+        "id": "j-keep",
+        "phase": "ready_to_patch",
+        "createdAt": old,
+        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(old)),
+        "log": [],
+        "dcs": [
+            {"site": "sjc", "sessionId": "13271", "phase": "ready", "touchedAt": old},
+            {"site": "rtp", "sessionId": "", "phase": "waiting", "touchedAt": old},
+        ],
+    }
+    dropped = app._prune_old_cards(job)
+    check("a live session card is not pruned after 20 hours", dropped == 1, str(job["dcs"]))
+    check(
+        "the leftover never-scheduled card is the only one dropped",
+        job["dcs"] == [{"site": "sjc", "sessionId": "13271", "phase": "ready", "touchedAt": old}],
+        str(job["dcs"]),
+    )
+    check(
+        "last-job.json with cards auto-restores after an update, even if it is older than 4 hours",
+        app._auto_restore_eligible({"id": "j-keep", "dcs": job["dcs"], "updatedAt": job["updatedAt"]}) is True,
+    )
+    check(
+        "an empty last-job snapshot is not auto-restored",
+        app._auto_restore_eligible({"id": "j-keep", "dcs": []}) is False,
+    )
+
+
 def test_stopping_card_picks_up_a_session_that_started_again() -> None:
     """Refresh used to skip cards in the ending/stopping phase, so a session that
     started again under the same ID kept saying dCloud was tearing it down."""
@@ -1494,7 +1529,10 @@ def test_staggered_session_copies_cards() -> None:
         and 'groupRowsBySite(deletableRows).filter((group) => group.rows.length > 0)' in INDEX
         and 'id="btn-expand-schedule-saved"' in INDEX
         and 'id="btn-collapse-schedule-saved"' in INDEX
-        and "#found-schedule-saved details.dc-group" in INDEX,
+        and '"found-schedule-saved"' in INDEX[
+            INDEX.index("const PERSIST_DC_GROUP_CONTAINERS")
+            : INDEX.index("const PERSIST_DC_GROUP_SELECTOR")
+        ],
     )
     check(
         "one column pick sorts every DC table, with Name first and Saved last",
@@ -1861,6 +1899,31 @@ def test_event_management_section() -> None:
         and 'id="btn-event-add"' in INDEX,
     )
     check(
+        "Events can find every event in checked datacenters without loading sessions first",
+        'id="btn-events-find"' in INDEX
+        and 'class="event-find-dc"' in INDEX
+        and 'id="filter-found-events"' in INDEX
+        and "function findEvents(" in INDEX
+        and "function viewFoundEventSessions(" in INDEX
+        and "liveOpen" in INDEX[
+            INDEX.index("function renderDcGroupedList(")
+            : INDEX.index("function setDcGroupsOpen(")
+        ]
+        and '"found-events"' in INDEX[
+            INDEX.index("const PERSIST_DC_GROUP_CONTAINERS")
+            : INDEX.index("const PERSIST_DC_GROUP_SELECTOR")
+        ]
+        and '@app.post("/api/events/list")' in source
+        and "resource=\"events\"" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")[
+            (ROOT / "dcloud_client.py").read_text(encoding="utf-8").index("def list_admin_events(")
+            : (ROOT / "dcloud_client.py").read_text(encoding="utf-8").index("def admin_records_cached_at(")
+        ]
+        and 'resource="sessions"' not in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")[
+            (ROOT / "dcloud_client.py").read_text(encoding="utf-8").index("def list_admin_events(")
+            : (ROOT / "dcloud_client.py").read_text(encoding="utf-8").index("def admin_records_cached_at(")
+        ],
+    )
+    check(
         "multiple events persist and render inside site and event groups",
         "dcloud-content-manager-events-v1" in INDEX
         and 'class="dc-group event-site-group"' in INDEX
@@ -2078,9 +2141,17 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "try_import_dcloud_session" not in login,
     )
     check(
+        "Log in opens the tool browser immediately instead of probing headless first",
+        "if allow_window:" in login
+        and login.index("if allow_window:") < login.index("headed=True")
+        and login.index("headed=True") < login.index("headed=False"),
+    )
+    check(
         "a silent warm-up can never open a sign-in window",
         "allow_window" in login
-        and login.index("allow_window") < login.index("headed=True"),
+        and "headed=False" in login
+        and login.count("headed=True") == 1
+        and "elif tool_browser_profile_exists()" in login,
     )
     check(
         "nothing decrypts Chrome cookies for a refresh token any more",
@@ -2130,16 +2201,40 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "Connect to CAMGR prefers the tool browser",
         "capture_camgr_session()" in source[source.index("def _connect_camgr(") : source.index("def _auth_camgr_needed(")],
     )
+    camgr_cap = (ROOT / "camgr_browser.py").read_text(encoding="utf-8")
+    cai_cap = (ROOT / "cai_client.py").read_text(encoding="utf-8")
+    cai_fn = cai_cap[
+        cai_cap.index("def capture_cai_session(") : cai_cap.index("def _dc_candidates(")
+    ]
+    check(
+        "Connect to CAMGR opens a window without a headless probe first",
+        "if headed is False:" in camgr_cap
+        and "headed=True" in camgr_cap
+        and "profile_exists()" not in camgr_cap,
+    )
+    check(
+        "Connect to CAI opens a window without a headless probe first",
+        "if headed is False:" in cai_fn
+        and "headed=True" in cai_fn
+        and "profile_exists()" not in cai_fn,
+    )
+    check(
+        "Playwright does not start a driver just to see if Chromium is installed",
+        "def _chromium_on_disk(" in browser
+        and "_playwright_ready" in browser
+        and "with sync_playwright() as playwright:" not in browser[browser.index("def ensure_playwright(") : browser.index("def _cookie_header(")],
+    )
 
 
 def test_compact_reorderable_session_cards_and_save_description() -> None:
     page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     client = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     check(
-        "save description is multiline and states dCloud's 255-character limit",
-        '<textarea id="prompt-alert-description" maxlength="255"' in page
+        "save description is multiline and counts characters without a 255 cap",
+        '<textarea id="prompt-alert-description"' in page
+        and "maxlength=\"255\"" not in page.split('id="prompt-alert-description"')[1].split("</textarea>")[0]
         and 'id="prompt-alert-description-count"' in page
-        and "dCloud saved-content descriptions are limited to 255 characters" in page,
+        and "TBv3 accepts a longer description than 255 characters" in page,
     )
     check(
         "save description character count updates while typing",
@@ -2147,9 +2242,10 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         and '"prompt-alert-description")?.addEventListener("input", updateSaveDescriptionCount)' in page,
     )
     check(
-        "the dCloud save payload enforces the same 255-character limit",
-        '"description": desc[:255]' in client
-        and "tbv3 requires description length 1–255" in client,
+        "the dCloud save payload sends the full description",
+        '"description": desc,' in client
+        and "tbv3 requires description length 1–255" not in client
+        and '"description": desc[:255]' not in client,
     )
     check(
         "workspace and monitoring cards are grouped into collapsible site sections",
@@ -2262,6 +2358,7 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         "filter-workspace-sessions",
         "filter-found-sessions",
         "filter-events",
+        "filter-found-events",
     ):
         check(
             f"{input_id} filters its cross-DC list and reports what it is showing",

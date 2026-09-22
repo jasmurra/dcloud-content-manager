@@ -1765,6 +1765,90 @@ def list_event_sessions(
     }, None
 
 
+def summarize_admin_event(site: str, event: dict[str, Any]) -> dict[str, Any] | None:
+    """One Events-list row. Nested session stubs stay off this payload."""
+    event_id = str(event.get("uid") or "").strip()
+    if not event_id.isdigit():
+        return None
+    owner = ""
+    owners = event.get("owners")
+    if isinstance(owners, list):
+        for row in owners:
+            if not isinstance(row, dict):
+                continue
+            owner = str(row.get("name") or row.get("userId") or "").strip()
+            if owner:
+                break
+    creator = event.get("creator") if isinstance(event.get("creator"), dict) else {}
+    if not owner:
+        owner = str(creator.get("name") or creator.get("userId") or "").strip()
+    nested = event.get("sessions") if isinstance(event.get("sessions"), list) else []
+    try:
+        session_count = int(event.get("sessionCount") or len(nested) or 0)
+    except (TypeError, ValueError):
+        session_count = len(nested)
+    return {
+        "site": str(site or "").strip().lower(),
+        "eventId": event_id,
+        "name": str(event.get("name") or "").strip(),
+        "demoName": str(event.get("demoName") or "").strip(),
+        "status": format_status(event.get("status")),
+        "approval": format_status(event.get("approval")),
+        "sessionCount": session_count,
+        "eventStart": str(event.get("eventStart") or "").strip(),
+        "eventEnd": str(event.get("eventEnd") or "").strip(),
+        "owner": owner,
+        "country": str(event.get("country") or "").strip(),
+    }
+
+
+def list_admin_events(
+    token: str,
+    sites: list[str],
+    *,
+    refresh: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """List events in each DC. Does not download the full Sessions admin list."""
+    wanted = [
+        str(site or "").strip().lower()
+        for site in sites
+        if str(site or "").strip().lower() in KNOWN_SITES
+    ]
+    wanted = list(dict.fromkeys(wanted))
+    events: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    if not wanted:
+        return events, {"sites": "Choose at least one datacenter."}
+    workers = min(5, len(wanted))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(
+                fetch_admin_records,
+                token,
+                site,
+                resource="events",
+                refresh=refresh,
+            ): site
+            for site in wanted
+        }
+        for future, site in futures.items():
+            records, error = future.result()
+            if error:
+                errors[site] = error
+                continue
+            for record in records:
+                row = summarize_admin_event(site, record)
+                if row:
+                    events.append(row)
+    events.sort(
+        key=lambda row: (
+            -int(row["eventId"]) if str(row.get("eventId") or "").isdigit() else 0,
+            str(row.get("site") or ""),
+        )
+    )
+    return events, errors
+
+
 def admin_records_cached_at(site: str, *, resource: str) -> float | None:
     """Return when a DC-local admin list was downloaded from dCloud."""
     cache_key = (str(site or "").lower(), resource)
@@ -4057,7 +4141,7 @@ def wait_for_power_state(
 
 
 def _save_payload(name: str, description: str) -> dict[str, Any]:
-    # tbv3 requires description length 1–255; empty/null is rejected.
+    # TBv3 still needs a non-empty description; it does not cap it at 255.
     desc = "" if description is None else str(description).strip()
     if not desc:
         desc = DEFAULT_SAVE_DESCRIPTION
@@ -4065,7 +4149,7 @@ def _save_payload(name: str, description: str) -> dict[str, Any]:
     return {
         "saveDocuments": False,
         "name": name_text[:255],
-        "description": desc[:255],
+        "description": desc,
     }
 
 

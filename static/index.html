@@ -1152,6 +1152,7 @@
     .list-filter-status:empty { display: none; }
     /* Rows and datacenter groups the filter box is hiding. */
     .filtered-out { display: none !important; }
+    tr.found-event-row.filtered-out + tr.found-event-sessions-row { display: none !important; }
     .chip-toolbar {
       margin: 0.5rem 0 0.2rem;
       align-items: center;
@@ -1828,10 +1829,10 @@
         <div class="prompt-field">
           <div class="prompt-label-row">
             <label for="prompt-alert-description">Description</label>
-            <span id="prompt-alert-description-count" class="character-count">0 / 255</span>
+            <span id="prompt-alert-description-count" class="character-count">0</span>
           </div>
-          <textarea id="prompt-alert-description" maxlength="255" rows="5" autocomplete="off" aria-describedby="prompt-alert-description-limit"></textarea>
-          <p id="prompt-alert-description-limit" class="hint" style="margin:0.3rem 0 0">dCloud saved-content descriptions are limited to 255 characters.</p>
+          <textarea id="prompt-alert-description" rows="5" autocomplete="off"></textarea>
+          <p id="prompt-alert-description-limit" class="hint" style="margin:0.3rem 0 0">TBv3 accepts a longer description than 255 characters. The count is just so you can see the length.</p>
         </div>
         <div class="actions">
           <button type="button" id="prompt-alert-ok">Save</button>
@@ -1903,10 +1904,10 @@
         <strong>Log in</strong> uses a tool-owned Chromium window for Cisco SSO (Duo included) —
         the same window CAMGR and CAI use, so one sign-in covers all three and renewals
         happen there instead of through Chrome Keychain prompts. If that profile is already
-        signed in, this finishes silently.
+        signed in, the window finishes as soon as it opens.
       </p>
       <div class="actions" style="margin-top:0.4rem">
-        <button type="button" id="btn-login" data-tip="Signs in through the tool's own Chromium window (Cisco SSO/Duo). Silent if CAMGR or CAI already signed in there.">Log in to dCloud</button>
+        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. If that profile is already signed in, it finishes right away.">Log in to dCloud</button>
         <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate token</button>
         <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear login session</button>
       </div>
@@ -2716,9 +2717,43 @@
       <summary class="panel-collapse-summary">Events</summary>
       <div class="panel-collapse-body">
         <p class="hint">
-          Add an event by datacenter and event ID. Each site and event stays in its own
-          collapsible section. Check sessions to reset or end them together.
+          Find events by datacenter, or add one by ID. Finding lists the events only
+          (about a second per DC) — sessions load when you Add or View sessions.
+          Added events stay in the section below. Check sessions to reset or end them together.
         </p>
+        <div>
+          <span>Find events in</span>
+          <div class="unified-search-dcs" id="event-find-dcs" data-dc-order>
+            <label><input type="checkbox" class="event-find-dc" value="sjc" /> SJC</label>
+            <label><input type="checkbox" class="event-find-dc" value="rtp" checked /> RTP</label>
+            <label><input type="checkbox" class="event-find-dc" value="lon" /> LON</label>
+            <label><input type="checkbox" class="event-find-dc" value="sng" /> SNG</label>
+            <label><input type="checkbox" class="event-find-dc" value="syd" /> SYD</label>
+            <button type="button" class="secondary" id="btn-event-find-all-dcs">All</button>
+            <button type="button" class="secondary" id="btn-event-find-no-dcs">None</button>
+          </div>
+        </div>
+        <div class="list-toolbar" style="margin-top:0.65rem">
+          <button type="button" id="btn-events-find" data-tip="Lists events in the checked datacenters. Does not download every session until you Add or View sessions.">Find events</button>
+        </div>
+        <details id="found-events-panel" class="found-sessions-panel hidden">
+          <summary id="found-events-summary">Found events</summary>
+          <div class="found-sessions-body">
+            <div class="list-toolbar">
+              <button type="button" class="secondary" id="btn-found-events-add" disabled data-tip="Adds checked events to the Events section below and loads their sessions.">Add checked</button>
+              <button type="button" class="secondary" id="btn-found-events-check-all">Check all</button>
+              <button type="button" class="secondary" id="btn-found-events-uncheck-all">Uncheck all</button>
+              <button type="button" class="secondary" id="btn-found-events-expand">Expand all DCs</button>
+              <button type="button" class="secondary" id="btn-found-events-collapse">Collapse all</button>
+            </div>
+            <div class="list-toolbar">
+              <input type="search" class="list-filter" id="filter-found-events" autocomplete="off" placeholder="Filter by event ID, name, owner, or status" aria-label="Filter found events" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
+            </div>
+            <p class="hint list-filter-status" id="filter-found-events-status" aria-live="polite"></p>
+            <div id="found-events" style="margin-top:0.35rem"></div>
+          </div>
+        </details>
+        <p class="step-label" style="margin-top:0.85rem">Add by event ID</p>
         <div class="row">
           <div>
             <label for="event-site">Datacenter</label>
@@ -3143,7 +3178,7 @@
     function updateSaveDescriptionCount() {
       const field = $("prompt-alert-description");
       const count = $("prompt-alert-description-count");
-      if (field && count) count.textContent = `${field.value.length} / 255`;
+      if (field && count) count.textContent = String(field.value.length);
     }
 
     function promptSaveDetails(
@@ -3550,6 +3585,8 @@
     const eventEntries = new Map();
     const eventActionWatches = new Map();
     let eventActionPollBusy = false;
+    let lastFoundEvents = [];
+    const foundEventViews = new Map();
 
     function eventKey(site, eventId) {
       return `${String(site || "").toLowerCase()}:${String(eventId || "").trim()}`;
@@ -3649,6 +3686,225 @@
         </table>`;
     }
 
+    function selectedEventFindDcs() {
+      return [...document.querySelectorAll(".event-find-dc:checked")].map((box) => box.value);
+    }
+
+    function setFoundEventsPanelVisible(visible, { open = true, eventCount = null } = {}) {
+      const panel = $("found-events-panel");
+      if (!panel) return;
+      panel.classList.toggle("hidden", !visible);
+      if (visible) {
+        panel.open = persistedPanelOpen("found-events-panel", open);
+        const summary = $("found-events-summary");
+        if (summary) {
+          const count = eventCount ?? lastFoundEvents.length;
+          summary.textContent = count
+            ? `Found events (${count}) — click to expand or collapse`
+            : "Found events — click to expand or collapse";
+        }
+      }
+    }
+
+    function foundEventIsAdded(site, eventId) {
+      return eventEntries.has(eventKey(site, eventId));
+    }
+
+    function syncFoundEventChecks() {
+      const addBtn = $("btn-found-events-add");
+      if (addBtn) {
+        addBtn.disabled = visibleBoxes(".found-event:not(:disabled)").filter((box) => box.checked).length === 0;
+      }
+      document.querySelectorAll("#found-events .found-event-dc-head").forEach((head) => {
+        const site = head.dataset.site;
+        const boxes = visibleBoxes(`.found-event[data-site="${site}"]:not(:disabled)`);
+        const checked = boxes.filter((box) => box.checked);
+        head.checked = boxes.length > 0 && checked.length === boxes.length;
+        head.indeterminate = checked.length > 0 && checked.length < boxes.length;
+        head.disabled = boxes.length === 0;
+      });
+    }
+
+    function setFoundEventChecks(checked) {
+      setBoxesChecked(document.querySelectorAll(".found-event:not(:disabled)"), checked);
+      syncFoundEventChecks();
+    }
+
+    function renderFoundEvents(errors = {}) {
+      const root = $("found-events");
+      if (!root) return;
+      const rows = lastFoundEvents;
+      const groups = groupRowsBySite(rows);
+      const checked = new Set(
+        [...document.querySelectorAll(".found-event:checked")].map(
+          (el) => eventKey(el.dataset.site, el.dataset.eventId)
+        )
+      );
+      root.innerHTML = renderDcGroupedList(
+        groups,
+        "No events in the selected datacenters.",
+        (site, siteRows) => `
+          <table class="dc-list">
+            <thead>
+              <tr>
+                <th><input type="checkbox" class="found-event-dc-head" data-site="${escapeHtml(site)}" title="Select all in ${escapeHtml(site.toUpperCase())}" /></th>
+                <th>Event ID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Sessions</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Owner</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${siteRows.map((row) => {
+                const key = eventKey(row.site, row.eventId);
+                const added = foundEventIsAdded(row.site, row.eventId);
+                const view = foundEventViews.get(key);
+                const isChecked = checked.has(key) ? " checked" : "";
+                const viewLabel = view?.data ? "Hide sessions" : "View sessions";
+                const sessionBlock = view
+                  ? `<tr class="found-event-sessions-row">
+                      <td colspan="9">
+                        <details class="event-group" data-site="${escapeHtml(row.site)}" data-event-id="${escapeHtml(row.eventId)}" open>
+                          <summary><span class="dc-group-title">Sessions for ${escapeHtml(row.eventId)}</span></summary>
+                          ${view.loading ? `<p class="hint">Loading sessions…</p>` : ""}
+                          ${view.error ? `<p class="error">${escapeHtml(view.error)}</p>` : ""}
+                          ${view.data ? eventSessionsTable(view) : ""}
+                        </details>
+                      </td>
+                    </tr>`
+                  : "";
+                return `
+                <tr class="found-event-row">
+                  <td><input type="checkbox" class="found-event" data-site="${escapeHtml(row.site)}" data-event-id="${escapeHtml(row.eventId)}" ${added ? "disabled" : ""}${isChecked} /></td>
+                  <td class="mono">${escapeHtml(row.eventId)}</td>
+                  <td class="name-cell" title="${escapeHtml(row.name || row.demoName || "")}">${escapeHtml(row.name || row.demoName || "")}</td>
+                  <td>${escapeHtml(row.status || "")}</td>
+                  <td class="mono">${escapeHtml(String(row.sessionCount ?? ""))}</td>
+                  <td>${escapeHtml(formatSessionWhen(row.eventStart) || row.eventStart || "—")}</td>
+                  <td>${escapeHtml(formatSessionWhen(row.eventEnd) || row.eventEnd || "—")}</td>
+                  <td>${escapeHtml(row.owner || "")}</td>
+                  <td class="saved-actions">
+                    <button type="button" class="secondary found-event-add" data-site="${escapeHtml(row.site)}" data-event-id="${escapeHtml(row.eventId)}" ${added ? "disabled" : ""} data-tip="${added ? "Already in the Events list below." : "Add this event below and load its sessions."}">${added ? "Added" : "Add"}</button>
+                    <button type="button" class="secondary found-event-view" data-site="${escapeHtml(row.site)}" data-event-id="${escapeHtml(row.eventId)}" data-tip="Load this event's sessions here without adding it to the list below.">${viewLabel}</button>
+                  </td>
+                </tr>
+                ${sessionBlock}`;
+              }).join("")}
+            </tbody>
+          </table>
+        `,
+        "found-events"
+      );
+      if (Object.keys(errors || {}).length) {
+        root.insertAdjacentHTML("afterbegin", renderErrorHints(errors));
+      }
+      setFoundEventsPanelVisible(true, { eventCount: rows.length });
+      syncFoundEventChecks();
+      applyListFilter(listFilterConfig("filter-found-events"));
+      syncAllEventSelections();
+    }
+
+    async function findEvents({ refresh = false } = {}) {
+      if (!ensureTokenReady("finding events")) return;
+      const sites = selectedEventFindDcs();
+      if (!sites.length) {
+        showActionAlert("Check at least one datacenter.", { title: "Find events" });
+        return;
+      }
+      showError("");
+      $("events-status").textContent = `Finding events in ${sites.map((site) => site.toUpperCase()).join(", ")}…`;
+      try {
+        const data = await api("/api/events/list", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), sites, refresh }),
+        });
+        lastFoundEvents = data.events || [];
+        foundEventViews.clear();
+        renderFoundEvents(data.errors || {});
+        const failed = Object.keys(data.errors || {});
+        $("events-status").textContent = lastFoundEvents.length
+          ? `Found ${lastFoundEvents.length} event(s)${failed.length ? ` — ${failed.join(", ")} failed` : ""}.`
+          : (failed.length ? `Could not list events: ${Object.values(data.errors).join(" · ")}` : "No events in those datacenters.");
+        noteLog($("events-status").textContent);
+      } catch (err) {
+        $("events-status").textContent = err.message;
+        showError(err.message);
+      }
+    }
+
+    async function addFoundEvent(site, eventId) {
+      await loadEvent(site, eventId, false);
+      if (lastFoundEvents.length) renderFoundEvents();
+      const added = $("events-results")?.querySelector(
+        `details.event-group[data-site="${CSS.escape(site)}"][data-event-id="${CSS.escape(eventId)}"]`
+      );
+      added?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    async function addCheckedFoundEvents() {
+      const selected = visibleBoxes(".found-event:checked:not(:disabled)");
+      if (!selected.length) {
+        showActionAlert("Check at least one event to add.", { title: "Add events" });
+        return;
+      }
+      for (const box of selected) {
+        await addFoundEvent(box.dataset.site, box.dataset.eventId);
+      }
+    }
+
+    async function viewFoundEventSessions(site, eventId) {
+      const key = eventKey(site, eventId);
+      if (foundEventViews.has(key) && foundEventViews.get(key).data && !foundEventViews.get(key).loading) {
+        foundEventViews.delete(key);
+        renderFoundEvents();
+        return;
+      }
+      const entry = { site, eventId, loading: true, error: "", data: null };
+      foundEventViews.set(key, entry);
+      renderFoundEvents();
+      try {
+        const response = await api("/api/events/lookup", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), site, event_id: eventId, refresh: false }),
+          quiet: true,
+        });
+        entry.data = response.event;
+      } catch (err) {
+        entry.error = err.message;
+      } finally {
+        entry.loading = false;
+        foundEventViews.set(key, entry);
+        renderFoundEvents();
+      }
+    }
+
+    async function refreshFoundEventView(site, eventId) {
+      const key = eventKey(site, eventId);
+      const entry = foundEventViews.get(key) || { site, eventId, data: null, error: "" };
+      entry.loading = true;
+      foundEventViews.set(key, entry);
+      renderFoundEvents();
+      try {
+        const response = await api("/api/events/lookup", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), site, event_id: eventId, refresh: true }),
+          quiet: true,
+        });
+        entry.data = response.event;
+        entry.error = "";
+      } catch (err) {
+        entry.error = err.message;
+      } finally {
+        entry.loading = false;
+        foundEventViews.set(key, entry);
+        renderFoundEvents();
+      }
+    }
+
     function renderEvents() {
       const root = $("events-results");
       if (!root) return;
@@ -3722,6 +3978,7 @@
       } finally {
         entry.loading = false;
         renderEvents();
+        if (lastFoundEvents.length) renderFoundEvents();
       }
     }
 
@@ -3756,9 +4013,14 @@
             continue;
           }
           const entry = eventEntries.get(key);
-          if (!entry || entry.loading) continue;
-          await loadEvent(watch.site, watch.eventId, true, { quietStatus: true });
-          if (eventWatchIsDone(watch, eventEntries.get(key))) {
+          if (entry && !entry.loading) {
+            await loadEvent(watch.site, watch.eventId, true, { quietStatus: true });
+          } else if (foundEventViews.has(key)) {
+            await refreshFoundEventView(watch.site, watch.eventId);
+          } else {
+            continue;
+          }
+          if (eventWatchIsDone(watch, eventEntries.get(key) || foundEventViews.get(key))) {
             eventActionWatches.delete(key);
             const outcome = watch.action === "reset" ? "Active again" : "ended";
             $("events-status").textContent = `Event ${watch.eventId}: selected session(s) ${outcome}.`;
@@ -3818,7 +4080,8 @@
     }
 
     function syncAllEventSelections() {
-      $("events-results")?.querySelectorAll("details.event-group").forEach(syncEventSelection);
+      document.querySelectorAll("#events-results details.event-group, #found-events details.event-group")
+        .forEach(syncEventSelection);
     }
 
     function eventActionDelaySeconds() {
@@ -3878,7 +4141,11 @@
           expiresAt: Date.now() + 20 * 60 * 1000,
         });
       }
-      await loadEvent(site, eventId, true, { quietStatus: true });
+      if (eventEntries.has(eventKey(site, eventId))) {
+        await loadEvent(site, eventId, true, { quietStatus: true });
+      } else if (foundEventViews.has(eventKey(site, eventId))) {
+        await refreshFoundEventView(site, eventId);
+      }
     }
 
     function selectedUnifiedSearchDcs() {
@@ -8270,7 +8537,7 @@
         const site = ($("src-site") && $("src-site").value) || "rtp";
         if (allowWindow) {
           $("auth-status").textContent =
-            "Signing in to dCloud in the tool browser — finish Cisco SSO/Duo if a window opens…";
+            "Opening the tool browser — if you are already signed in there, this finishes right away…";
         }
         const data = await api(
           `/api/auth/dcloud-browser-login?site=${encodeURIComponent(site)}`
@@ -9911,6 +10178,7 @@
       "details.advanced",
       "details.task-group",
       "details.found-sessions-panel",
+      "details#found-events-panel",
       "details#found-schedule-saved-panel",
       "details#saved-ids-found-panel",
       "details#saved-promoted-group",
@@ -9919,7 +10187,16 @@
     const TOP_LEVEL_PANEL_SELECTOR = "details.panel-collapse";
     const DEFAULT_PANEL_OPEN = new Map();
     const PERSIST_VM_MORE_SELECTOR = "#cards details.vm-more, #monitor-cards details.vm-more";
-    const PERSIST_DC_GROUP_SELECTOR = "#found-sessions details.dc-group, #found-workspace-sessions details.dc-group, #saved-ids-found details.dc-group, #found-schedule-saved details.dc-group";
+    const PERSIST_DC_GROUP_CONTAINERS = [
+      "found-sessions",
+      "found-workspace-sessions",
+      "saved-ids-found",
+      "found-schedule-saved",
+      "found-events",
+    ];
+    const PERSIST_DC_GROUP_SELECTOR = PERSIST_DC_GROUP_CONTAINERS
+      .map((id) => `#${id} details.dc-group`)
+      .join(", ");
 
     function canonicalDatacenter(value) {
       const text = String(value || "").trim().toLowerCase();
@@ -10161,7 +10438,7 @@
         .filter((el) => el.open && el.dataset.key)
         .map((el) => el.dataset.key);
       const dcGroups = {};
-      for (const containerId of ["found-sessions", "saved-ids-found", "found-schedule-saved"]) {
+      for (const containerId of PERSIST_DC_GROUP_CONTAINERS) {
         const root = $(containerId);
         if (!root) continue;
         dcGroups[containerId] = {};
@@ -10417,8 +10694,16 @@
 
     function renderDcGroupedList(groups, emptyHint, renderGroupBody, containerId = null) {
       if (!groups.length) return `<p class="hint">${escapeHtml(emptyHint)}</p>`;
+      // Keep currently expanded DCs open across a re-render (View/Hide sessions
+      // rebuilds this HTML). Persist only covers groups that were saved earlier.
+      const liveOpen = new Set();
+      if (containerId) {
+        $(containerId)?.querySelectorAll("details.dc-group[open]").forEach((el) => {
+          if (el.dataset.site) liveOpen.add(el.dataset.site);
+        });
+      }
       return groups.map(({ site, rows }) => {
-        const openAttr = containerId && dcGroupIsOpen(containerId, site) ? "open" : "";
+        const openAttr = (liveOpen.has(site) || (containerId && dcGroupIsOpen(containerId, site))) ? "open" : "";
         return `
         <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
           <summary>
@@ -10499,6 +10784,13 @@
         retitleGroups: false,
         sync: () => syncAllEventSelections(),
       },
+      {
+        input: "filter-found-events",
+        container: "found-events",
+        noun: "event",
+        rowSelector: "tr.found-event-row",
+        sync: () => syncFoundEventChecks(),
+      },
     ];
 
     function rowIsFilteredOut(el) {
@@ -10526,7 +10818,8 @@
       let total = 0;
       let shown = 0;
       let hiddenChecked = 0;
-      container.querySelectorAll("table tbody tr").forEach((row) => {
+      const rowSelector = config.rowSelector || "table tbody tr";
+      container.querySelectorAll(rowSelector).forEach((row) => {
         total += 1;
         const match = !needle || row.textContent.toLowerCase().includes(needle);
         row.classList.toggle("filtered-out", !match);
@@ -10540,7 +10833,7 @@
       const groupSelectors = ["details.event-group", "details.saved-promoted-group", "details.dc-group"];
       for (const selector of groupSelectors) {
         container.querySelectorAll(selector).forEach((group) => {
-          const rows = [...group.querySelectorAll("table tbody tr")];
+          const rows = [...group.querySelectorAll(rowSelector)];
           const visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
           group.classList.toggle("filtered-out", Boolean(needle) && rows.length > 0 && visible === 0);
           if (needle && visible) group.open = true;
@@ -12944,6 +13237,18 @@
         addEvent().catch((err) => showError(err.message));
       }
     });
+    $("btn-events-find")?.addEventListener("click", () => findEvents().catch((err) => showError(err.message)));
+    $("btn-event-find-all-dcs")?.addEventListener("click", () => {
+      document.querySelectorAll(".event-find-dc").forEach((box) => { box.checked = true; });
+    });
+    $("btn-event-find-no-dcs")?.addEventListener("click", () => {
+      document.querySelectorAll(".event-find-dc").forEach((box) => { box.checked = false; });
+    });
+    $("btn-found-events-add")?.addEventListener("click", () => addCheckedFoundEvents().catch((err) => showError(err.message)));
+    $("btn-found-events-check-all")?.addEventListener("click", () => setFoundEventChecks(true));
+    $("btn-found-events-uncheck-all")?.addEventListener("click", () => setFoundEventChecks(false));
+    $("btn-found-events-expand")?.addEventListener("click", () => setDcGroupsOpen("found-events", true));
+    $("btn-found-events-collapse")?.addEventListener("click", () => setDcGroupsOpen("found-events", false));
     $("btn-events-refresh")?.addEventListener("click", () => {
       refreshAllEvents().catch((err) => showError(err.message));
     });
@@ -12955,7 +13260,20 @@
       $("events-results")?.querySelectorAll("details.event-site-group, details.event-group")
         .forEach((group) => { group.open = false; });
     });
-    $("events-results")?.addEventListener("change", (ev) => {
+    $("panel-events")?.addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("found-event-dc-head")) {
+        const site = ev.target.dataset.site;
+        setBoxesChecked(
+          document.querySelectorAll(`.found-event[data-site="${site}"]:not(:disabled)`),
+          ev.target.checked,
+        );
+        syncFoundEventChecks();
+        return;
+      }
+      if (ev.target.classList.contains("found-event")) {
+        syncFoundEventChecks();
+        return;
+      }
       const group = ev.target.closest("details.event-group");
       if (!group) return;
       if (ev.target.classList.contains("event-head-check")) {
@@ -12969,7 +13287,17 @@
         || ev.target.classList.contains("event-session-check")
       ) syncEventSelection(group);
     });
-    $("events-results")?.addEventListener("click", (ev) => {
+    $("panel-events")?.addEventListener("click", (ev) => {
+      const addOne = ev.target.closest(".found-event-add");
+      if (addOne) {
+        addFoundEvent(addOne.dataset.site, addOne.dataset.eventId).catch((err) => showError(err.message));
+        return;
+      }
+      const viewOne = ev.target.closest(".found-event-view");
+      if (viewOne) {
+        viewFoundEventSessions(viewOne.dataset.site, viewOne.dataset.eventId).catch((err) => showError(err.message));
+        return;
+      }
       const group = ev.target.closest("details.event-group");
       if (!group) return;
       const site = group.dataset.site;
@@ -12994,6 +13322,7 @@
         eventActionWatches.delete(key);
         persistEventRefs();
         renderEvents();
+        if (lastFoundEvents.length) renderFoundEvents();
         return;
       }
       const contentOne = ev.target.closest(".event-session-content");
@@ -13006,7 +13335,7 @@
       const logsOne = ev.target.closest(".event-session-logs");
       if (infoOne || logsOne) {
         const button = infoOne || logsOne;
-        const entry = eventEntries.get(eventKey(site, eventId));
+        const entry = eventEntries.get(eventKey(site, eventId)) || foundEventViews.get(eventKey(site, eventId));
         const row = (entry?.data?.sessions || []).find(
           (item) => String(item.sessionId) === String(button.dataset.sessionId)
         ) || {};

@@ -108,6 +108,7 @@ from dcloud_client import (
     is_saving_in_progress_status,
     is_stopping_status,
     list_dashboard_sessions_all_sites,
+    list_admin_events,
     list_event_sessions,
     resolve_monitor_sessions,
     list_pending_surveys_all_sites,
@@ -1124,6 +1125,11 @@ class SearchItemPayload(TokenPayload):
 class EventLookupPayload(TokenPayload):
     site: str
     event_id: str
+    refresh: bool = False
+
+
+class EventsListPayload(TokenPayload):
+    sites: list[str] = Field(default_factory=list)
     refresh: bool = False
 
 
@@ -3403,13 +3409,8 @@ def _job_has_live_cards(snapshot: dict[str, Any]) -> bool:
 
 
 def _auto_restore_eligible(snapshot: dict[str, Any]) -> bool:
-    activity = _job_activity_ts(snapshot)
-    if activity <= 0:
-        return False
-    age = time.time() - activity
-    if age < 0 or age > _AUTO_RESTORE_MAX_AGE_SECS:
-        return False
-    return _job_has_live_cards(snapshot)
+    """Bring the last job back after an update or restart whenever it still has cards."""
+    return bool(snapshot.get("id") and snapshot.get("dcs"))
 
 
 def _last_job_preview() -> dict[str, Any]:
@@ -3458,15 +3459,17 @@ def _hydrate_job(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _prune_old_cards(job: dict[str, Any]) -> int:
-    """Drop unfinished cards left over from an earlier day, so nothing stale can be saved.
+    """Drop never-scheduled leftovers from an earlier run.
 
-    Saved and ended cards stay: they cannot be saved again and the saved content list is
-    built from them. A live session that gets dropped is not lost either — dCloud is the
-    record and session monitoring finds it again.
+    A card that already has a session ID stays. Check for updates restarts the
+    app, and those live workspace cards have to come back with the job.
     """
     keep: list[dict[str, Any]] = []
     dropped = 0
     for dc in job.get("dcs") or []:
+        if str(dc.get("sessionId") or "").strip():
+            keep.append(dc)
+            continue
         activity = _dc_activity_ts(job, dc)
         stale = activity > 0 and (time.time() - activity) > _FINISHED_CARD_KEEP_SECS
         if stale and str(dc.get("phase") or "") not in _TERMINAL_DC_PHASES:
@@ -5124,9 +5127,12 @@ async def api_dcloud_browser_login(
     """Sign in to dCloud inside the tool-owned Chromium profile.
 
     One Cisco SSO login in that profile covers dCloud, CAMGR and CAI, so this never
-    reads Chrome's cookie database and never raises a Keychain prompt. Callers that
-    run on their own (page load, keepalive) pass allow_window=0: without it a silent
-    warm-up could throw a sign-in window in front of someone who never asked for one.
+    reads Chrome's cookie database and never raises a Keychain prompt. A click that
+    asked for a window goes straight to a visible browser — if that profile is already
+    signed in, Cisco SSO finishes immediately instead of waiting on a hidden probe
+    first. Callers that run on their own (page load, keepalive) pass allow_window=0
+    so a silent warm-up cannot throw a sign-in window in front of someone who never
+    asked for one.
     """
     site_code = (site or "").strip().lower()
     if not site_code:
@@ -5134,13 +5140,13 @@ async def api_dcloud_browser_login(
             site_code = (_user_auth.get("site") or "rtp").strip().lower() or "rtp"
     try:
         token, refresh, site_out, message = "", "", site_code, ""
-        if tool_browser_profile_exists():
-            token, refresh, site_out, message = await run_in_threadpool(
-                partial(capture_dcloud_tokens, site_code, headed=False, timeout_s=25),
-            )
-        if not token and allow_window:
+        if allow_window:
             token, refresh, site_out, message = await run_in_threadpool(
                 partial(capture_dcloud_tokens, site_code, headed=True, timeout_s=300),
+            )
+        elif tool_browser_profile_exists():
+            token, refresh, site_out, message = await run_in_threadpool(
+                partial(capture_dcloud_tokens, site_code, headed=False, timeout_s=25),
             )
         if token:
             _apply_user_session(token, refresh, site_out or site_code, "browser")
@@ -7812,6 +7818,22 @@ def api_unified_session_action(body: SearchItemPayload) -> dict[str, Any]:
     if not result.get("ok"):
         raise HTTPException(400, result.get("message") or f"Could not {action} session.")
     return {"ok": True, "action": action, **result}
+
+
+@app.post("/api/events/list")
+def api_events_list(body: EventsListPayload) -> dict[str, Any]:
+    sites = [str(site or "").strip().lower() for site in (body.sites or [])]
+    token = _resolve_token(body)
+    events, errors = list_admin_events(token, sites, refresh=body.refresh)
+    if errors and not events:
+        first = next(iter(errors.values()))
+        raise HTTPException(400, first)
+    return {
+        "ok": True,
+        "events": events,
+        "errors": errors,
+        "sites": [site.upper() for site in dict.fromkeys(sites) if site in SITES],
+    }
 
 
 @app.post("/api/events/lookup")

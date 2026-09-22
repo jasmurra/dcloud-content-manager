@@ -331,26 +331,23 @@ def import_cai_cookies_from_chrome() -> tuple[str | None, str]:
 
 def capture_cai_session(*, headed: bool | None = None, timeout_s: float = 180) -> tuple[str | None, str]:
     """Sign in to CAI in the tool Chromium profile and return a Cookie header."""
-    from tool_browser import capture_site_cookies, profile_exists
+    from tool_browser import capture_site_cookies
 
     hosts = ("dcloud-cai.cisco.com",)
 
     def logged_in(cookie: str) -> bool:
         return bool(probe_cai_login(cookie).get("loggedIn"))
 
-    silent = headed is False or (headed is None and profile_exists())
-    if silent:
-        header, message = capture_site_cookies(
+    # A Connect click opens the window immediately. Background refresh stays
+    # headless and never escalates to a visible login.
+    if headed is False:
+        return capture_site_cookies(
             CAI_HOME,
             hosts,
             logged_in,
             headed=False,
             timeout_s=min(25.0, timeout_s),
         )
-        if header:
-            return header, message
-        if headed is False:
-            return None, message
     return capture_site_cookies(
         CAI_HOME,
         hosts,

@@ -1,3 +1,11 @@
+## 1.18.7 — 2026-09-22
+
+- **Events can Find events by datacenter.** Check sites, filter the list, then Add an event to the section below (loads sessions) or View sessions in place. Finding lists events only — about a second per DC — and does not download every session until you ask
+- **Check for updates no longer drops job workspace cards.** Live session cards stay on restore even if they have been sitting for more than 12 hours, and the last job comes back after a restart instead of only within a 4-hour window
+- **Save descriptions are no longer capped at 255 characters.** TBv3 accepts a longer description; the save box still shows a live character count
+- **Log in / Connect opens the sign-in window immediately.** It no longer runs a hidden Chromium check first (that is what sat on the Cisco email page for several seconds before anything appeared). If the tool browser is already signed in, the window finishes as soon as it opens
+- **View sessions / Hide sessions no longer collapses every datacenter** in the found-events list. The DCs you already had open stay open so the event and its sessions stay in view
+
 ## 1.18.6 — 2026-09-21
 
 - **Load VMs now lives at the top of Schedule sessions**, as an optional nested block, instead of its own movable section. Skip it for a normal session; open it when you want to pick which VMs power on after an exported session starts

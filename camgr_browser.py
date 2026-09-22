@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from camgr_client import CAMGR_BASE, CAMGR_HOME, probe_camgr_login
-from tool_browser import PROFILE_DIR, capture_site_cookies, profile_exists
+from tool_browser import PROFILE_DIR, capture_site_cookies
 
 
 def capture_camgr_session(
@@ -17,19 +17,16 @@ def capture_camgr_session(
     """Wait until CAMGR is signed in inside the tool browser and return Cookie header."""
     del profile_dir  # Kept so older callers still type-check; profile is shared.
     hosts = ("dcloud-camgr.cisco.com",)
-    silent = headed is False or (headed is None and profile_exists())
-    if silent:
-        header, message = capture_site_cookies(
+    # A Connect click opens the window immediately. Background refresh stays
+    # headless and never escalates to a visible login.
+    if headed is False:
+        return capture_site_cookies(
             CAMGR_HOME,
             hosts,
             lambda cookie: bool(probe_camgr_login(cookie, allow_tab=False).get("loggedIn")),
             headed=False,
             timeout_s=min(25.0, timeout_s),
         )
-        if header:
-            return header, message
-        if headed is False:
-            return None, message
     return capture_site_cookies(
         CAMGR_HOME,
         hosts,

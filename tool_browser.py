@@ -23,6 +23,7 @@ BROWSERS_DIR = APP_DIR / ".playwright-browsers"
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(BROWSERS_DIR))
 
 _launch_lock = threading.Lock()
+_playwright_ready = False
 
 # Hosts that mean "a person has to type something": Cisco's Okta tenant and Duo.
 IDP_HOSTS = ("id.cisco.com", "login.okta.com", "duosecurity.com", "cloudsso.cisco.com")
@@ -45,8 +46,22 @@ def profile_exists() -> bool:
     return (PROFILE_DIR / "Default").is_dir() or (PROFILE_DIR / "Cookies").is_file()
 
 
+def _chromium_on_disk() -> bool:
+    """True when Playwright Chromium is already downloaded into this install."""
+    if not BROWSERS_DIR.is_dir():
+        return False
+    names = {"Chromium", "chrome", "chrome.exe"}
+    for path in BROWSERS_DIR.rglob("*"):
+        if path.name in names and path.is_file():
+            return True
+    return False
+
+
 def ensure_playwright() -> str | None:
     """Install Playwright's Chromium once if needed. Returns an error or None."""
+    global _playwright_ready
+    if _playwright_ready:
+        return None
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
     except ImportError:
@@ -54,15 +69,11 @@ def ensure_playwright() -> str | None:
             "Playwright is not installed yet. Quit and double-click start.command "
             "so it can download Chromium (one time)."
         )
-    try:
-        from playwright.sync_api import sync_playwright
-
-        with sync_playwright() as playwright:
-            path = playwright.chromium.executable_path
-            if path and Path(path).exists():
-                return None
-    except Exception:
-        pass
+    # Do not start the Playwright driver just to ask where Chromium is — that
+    # adds several seconds before the sign-in window can open.
+    if _chromium_on_disk():
+        _playwright_ready = True
+        return None
     try:
         subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
@@ -74,6 +85,7 @@ def ensure_playwright() -> str | None:
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return f"Could not download Chromium for sign-in ({exc})."
+    _playwright_ready = True
     return None
 
 
