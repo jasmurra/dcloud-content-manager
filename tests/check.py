@@ -111,6 +111,29 @@ def test_jwt_session_user_reads_the_name() -> None:
         fake_jwt({"preferred_username": "jasmurra", "given_name": "Jason", "family_name": "Murra"})
     )
     check("given and family names fill in when name is missing", given["name"] == "Jason Murra", str(given))
+    mixed = jwt_session_user(
+        fake_jwt(
+            {
+                "ccoid": "jasmurra",
+                "name": "jasmurra",
+                "given_name": "Jason",
+                "family_name": "Murra",
+                "email": "jasmurra@cisco.com",
+            }
+        )
+    )
+    check("given/family win over a username in name", mixed["name"] == "Jason Murra", str(mixed))
+    dcloud = jwt_session_user(fake_jwt({"ccoid": "jasmurra", "email_address": "jasmurra@cisco.com"}))
+    check(
+        "a dCloud access token falls back to CEC id until userinfo is fetched",
+        dcloud == {"id": "jasmurra", "name": "jasmurra", "email": "jasmurra@cisco.com"},
+        str(dcloud),
+    )
+    from browser_auth.dcloud_token import display_name_from_claims
+    check(
+        "dCloud /api/users name is used",
+        display_name_from_claims({"name": "Jason Murra", "userId": "jasmurra"}, "jasmurra") == "Jason Murra",
+    )
     check("empty token has empty identity", jwt_session_user("") == {"id": "", "name": "", "email": ""})
 
 
@@ -1050,7 +1073,9 @@ def test_page_markup_is_balanced() -> None:
         'id="account-dropdown"' in INDEX
         and "function initAccountMenu(" in INDEX
         and "def jwt_session_user(" in (ROOT / "browser_auth" / "dcloud_token.py").read_text(encoding="utf-8")
-        and '"sessionUser": jwt_session_user(' in (ROOT / "app.py").read_text(encoding="utf-8"),
+        and '"sessionUser": _session_user_for_status(' in (ROOT / "app.py").read_text(encoding="utf-8")
+        and "def fetch_session_display_name(" in (ROOT / "browser_auth" / "dcloud_token.py").read_text(encoding="utf-8")
+        and "`${id} (${email})`" in INDEX,
     )
     check(
         "Harbor assets are served from /harbor-elements/",

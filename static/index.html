@@ -3958,9 +3958,17 @@
           : "Not signed in";
       }
       if (metaEl) {
-        metaEl.textContent = authorized
-          ? [lastSessionUser.id, lastSessionUser.email].filter(Boolean).join(" · ") || "dCloud"
-          : "Sign in to dCloud";
+        if (!authorized) {
+          metaEl.textContent = "Sign in to dCloud";
+        } else {
+          const id = lastSessionUser.id;
+          const email = lastSessionUser.email;
+          if (id && email && id.toLowerCase() !== email.toLowerCase()) {
+            metaEl.textContent = `${id} (${email})`;
+          } else {
+            metaEl.textContent = email || id || "dCloud";
+          }
+        }
       }
       $("account-signout")?.classList.toggle("hidden", !authorized);
       const openAuth = $("account-open-auth");

@@ -18,7 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
-| **2.0.1** | Selected is only for VMs checked in Load VMs on that session; WebRDP uses the VM you clicked; Copy to Schedule sessions fills demo IDs from checked saved content and loads VMs; saved-content last pull stays on screen after refresh |
+| **2.0.1** | Selected is only for VMs checked in Load VMs on that session; WebRDP uses the VM you clicked; Copy to Schedule sessions fills demo IDs from checked saved content and loads VMs; saved-content last pull stays on screen after refresh; account menu shows first and last name |
 | **2.0.0** | Harbor side navigation and Control Hub-style chrome: one task page at a time, outline pill buttons, account menu with your dCloud name |
 | **1.18.12** | Session cards no longer scrape WebRDP or `/servers/vm-*` on refresh; WebRDP is fetched only on click |
 | **1.18.11** | Dismissed End error banners stay gone; auto-integrate does not fake CAI errors; Connect to CAMGR skips extra Chrome tabs; Discover VMs walks nested vPod folders |

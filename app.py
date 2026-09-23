@@ -61,6 +61,7 @@ from browser_auth.dcloud_oauth import (
 from browser_auth.dcloud_token import (
     DCLOUD_SITES,
     effective_dcloud_token,
+    fetch_session_display_name,
     jwt_expires_at,
     jwt_session_user,
     normalize_dcloud_token,
@@ -277,6 +278,8 @@ _user_auth: dict[str, Any] = {
     "expires_at": 0.0,
     "source": "",
     "has_refresh": False,
+    "profile_name": "",
+    "profile_user_id": "",
 }
 
 _cai_auth_lock = threading.Lock()
@@ -595,7 +598,18 @@ def _apply_user_session(
 
 def _persist_user_session() -> None:
     with _user_auth_lock:
-        snap = {k: _user_auth.get(k) for k in ("access_token", "refresh_token", "site", "expires_at", "source")}
+        snap = {
+            k: _user_auth.get(k)
+            for k in (
+                "access_token",
+                "refresh_token",
+                "site",
+                "expires_at",
+                "source",
+                "profile_name",
+                "profile_user_id",
+            )
+        }
     if not (snap.get("refresh_token") or snap.get("access_token")):
         try:
             SESSION_FILE.unlink(missing_ok=True)
@@ -641,7 +655,13 @@ def _load_persisted_session() -> None:
     if stored_exp:
         with _user_auth_lock:
             _user_auth["expires_at"] = stored_exp
-        _persist_user_session()
+    profile_name = str(data.get("profile_name") or "").strip()
+    profile_user_id = str(data.get("profile_user_id") or "").strip()
+    if profile_name:
+        with _user_auth_lock:
+            _user_auth["profile_name"] = profile_name
+            _user_auth["profile_user_id"] = profile_user_id
+    _persist_user_session()
 
 
 def _read_user_session() -> tuple[str, float, str, str]:
@@ -5064,6 +5084,30 @@ def api_update_check() -> dict[str, Any]:
         raise HTTPException(500, f"Could not check for updates: {exc}")
 
 
+def _session_user_for_status(token: str) -> dict[str, str]:
+    """JWT identity plus a cached first/last name from userinfo or /api/users."""
+    user = jwt_session_user(token)
+    user_id = str(user.get("id") or "").strip()
+    name = str(user.get("name") or "").strip()
+    with _user_auth_lock:
+        cached = str(_user_auth.get("profile_name") or "").strip()
+        cached_id = str(_user_auth.get("profile_user_id") or "").strip()
+        site = str(_user_auth.get("site") or "rtp")
+    if cached and (not cached_id or cached_id == user_id) and cached.lower() != user_id.lower():
+        user["name"] = cached
+        return user
+    if name and name.lower() != user_id.lower():
+        return user
+    looked = fetch_session_display_name(token, site=site, user_id=user_id)
+    if looked:
+        user["name"] = looked
+        with _user_auth_lock:
+            _user_auth["profile_name"] = looked
+            _user_auth["profile_user_id"] = user_id
+        _persist_user_session()
+    return user
+
+
 @app.get("/api/auth/status")
 def api_auth_status() -> dict[str, Any]:
     dcloud = dcloud_auth_status(ENV_FILE, ENV_EXAMPLE_FILE)
@@ -5088,7 +5132,7 @@ def api_auth_status() -> dict[str, Any]:
         "sessionHasRefresh": has_refresh,
         "sessionExpiresAt": int(expires_at) if expires_at else 0,
         "accessToken": access_token if logged_in else "",
-        "sessionUser": jwt_session_user(access_token) if logged_in and access_token else {
+        "sessionUser": _session_user_for_status(access_token) if logged_in and access_token else {
             "id": "",
             "name": "",
             "email": "",

@@ -70,28 +70,94 @@ def jwt_expires_at(token: str) -> float:
         return 0.0
 
 
+def _claim_text(claims: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        text = str(claims.get(key) or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def display_name_from_claims(claims: dict[str, Any], user_id: str = "") -> str:
+    """Prefer first + last name. Ignore a name claim that is just the CEC id."""
+    if not isinstance(claims, dict):
+        return ""
+    given = _claim_text(claims, "given_name", "first_name", "firstName")
+    family = _claim_text(claims, "family_name", "last_name", "lastName")
+    joined = " ".join(part for part in (given, family) if part)
+    raw = _claim_text(claims, "name", "full_name", "fullName", "displayName")
+    uid = (user_id or "").strip().lower()
+    if joined and joined.lower() != uid:
+        return joined
+    if raw and raw.lower() not in {uid, ""} and "@" not in raw:
+        return raw
+    return joined or raw
+
+
 def jwt_session_user(token: str) -> dict[str, str]:
-    """CEC id / name / email from a dCloud access token, for the header menu."""
+    """CEC id / name / email from a dCloud access token, for the header menu.
+
+    dCloud access tokens only carry ccoid and email_address. given_name /
+    family_name show up on OpenID userinfo and GET /api/users/{ccoid}.
+    """
     claims = jwt_claims(token)
-    email = str(claims.get("email") or claims.get("email_address") or "").strip()
-    user_id = str(
-        claims.get("ccoid")
-        or claims.get("preferred_username")
-        or claims.get("uid")
-        or ""
-    ).strip()
+    email = _claim_text(claims, "email", "email_address")
+    user_id = _claim_text(claims, "ccoid", "preferred_username")
     if not user_id and "@" in email:
         user_id = email.split("@", 1)[0]
     if not user_id:
-        user_id = str(claims.get("sub") or "").strip()
-    given = str(claims.get("given_name") or "").strip()
-    family = str(claims.get("family_name") or "").strip()
-    name = str(claims.get("name") or "").strip() or " ".join(
-        part for part in (given, family) if part
-    )
-    if not name:
-        name = user_id
+        user_id = _claim_text(claims, "uid", "sub")
+        if "@" in user_id:
+            user_id = user_id.split("@", 1)[0]
+    name = display_name_from_claims(claims, user_id) or user_id
     return {"id": user_id, "name": name, "email": email}
+
+
+def fetch_session_display_name(
+    token: str,
+    *,
+    site: str = "",
+    user_id: str = "",
+) -> str:
+    """Look up first/last name. The access token JWT does not include them."""
+    clean = normalize_dcloud_token(token)
+    if not clean:
+        return ""
+    headers = dcloud_auth_header(clean)
+    uid = (user_id or jwt_session_user(clean)["id"]).strip()
+    try:
+        response = requests.get(
+            "https://id.cisco.com/oauth2/default/v1/userinfo",
+            headers=headers,
+            verify=False,
+            timeout=8,
+        )
+        if response.status_code < 400:
+            body = response.json()
+            if isinstance(body, dict):
+                name = display_name_from_claims(body, uid)
+                if name and name.lower() != uid.lower():
+                    return name
+    except (requests.RequestException, ValueError, json.JSONDecodeError):
+        pass
+    site_code = (site or "rtp").strip().lower() or "rtp"
+    if uid:
+        try:
+            response = requests.get(
+                f"https://dcloud2-{site_code}.cisco.com/api/users/{uid}",
+                headers=headers,
+                verify=False,
+                timeout=8,
+            )
+            if response.status_code < 400:
+                body = response.json()
+                if isinstance(body, dict):
+                    name = display_name_from_claims(body, uid)
+                    if name and name.lower() != uid.lower():
+                        return name
+        except (requests.RequestException, ValueError, json.JSONDecodeError):
+            pass
+    return ""
 
 
 def effective_dcloud_token(override: str | None = None) -> str | None:

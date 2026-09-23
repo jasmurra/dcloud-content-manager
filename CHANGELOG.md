@@ -4,6 +4,7 @@
 - **WebRDP on an already-active session** fetches credentials for the VM you clicked. VM console was already a per-VM dCloud page link (`/servers/{uid}/console`), not that cookie GET, so it did not need the same change
 - **Copy to Schedule sessions** on Find saved content fills each DC’s demo ID from the checked rows and loads that demo’s VMs. Use it when an exported session needs Load VMs; stay on this page to schedule without picking VMs
 - **Manage your own saved content keeps the last pull on screen after a refresh.** If this browser already has a Find saved content copy, the list opens with it instead of waiting for another Find
+- **The account menu shows your first and last name** from Cisco userinfo (the access token only has CEC id and email). Username stays on the line below as `jasmurra (email)`
 
 ## 2.0.0 — 2026-09-23
 
