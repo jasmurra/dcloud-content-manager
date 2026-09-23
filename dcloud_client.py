@@ -209,32 +209,90 @@ def webrdp_connect_url(site: str, session_id: str, vm_uid: str, credentials: str
     )
 
 
-def fetch_webrdp_credentials(token: str, site: str, session_id: str) -> str:
-    """Session-level WebRDP cookie — call only when the user opens WebRDP.
-
-    The old bot /sd command used this GET. Hitting it on every VM refresh
-    showed up in dCloud logs as scraping, including 400s on sessions that
-    are not ready yet.
-    """
-    url = f"{site_base(site)}/api/sessions/{session_id}/servers/{session_id}/webrdp"
-    try:
-        response = _request("GET", url, token, timeout=30)
-    except requests.RequestException:
+def _webrdp_server_ident(ident: str) -> str:
+    """Numeric (or other) server uid for /servers/{id}/webrdp. Never a vm-* MOR."""
+    text = str(ident or "").strip()
+    if not text or text.lower().startswith("vm-"):
         return ""
-    body = _json_or_text(response)
+    return text
+
+
+def _parse_webrdp_credentials(body: Any) -> str:
+    if isinstance(body, str):
+        text = body.strip()
+        if not text or _looks_like_html(text):
+            return ""
+        try:
+            return _parse_webrdp_credentials(json.loads(text))
+        except ValueError:
+            return text
     if not isinstance(body, dict):
         return ""
-    cookie = body.get("cookie") or {}
-    value = cookie.get("value") if isinstance(cookie, dict) else ""
-    if not value:
+    direct = body.get("credentials")
+    if direct:
+        return str(direct).strip()
+    cookie = body.get("cookie")
+    if isinstance(cookie, str) and cookie.strip():
+        return _parse_webrdp_credentials(cookie)
+    if not isinstance(cookie, dict):
+        return ""
+    value = cookie.get("value")
+    if isinstance(value, dict):
+        return str(value.get("credentials") or "").strip()
+    if not isinstance(value, str) or not value.strip():
         return ""
     try:
         parsed = json.loads(value)
     except ValueError:
-        return ""
+        return value.strip()
     if isinstance(parsed, dict):
-        return str(parsed.get("credentials") or "")
-    return ""
+        return str(parsed.get("credentials") or "").strip()
+    return str(parsed).strip() if parsed else ""
+
+
+def fetch_webrdp_credentials(
+    token: str,
+    site: str,
+    session_id: str,
+    vm_uid: str = "",
+) -> tuple[str, str]:
+    """Cookie/credentials for WebRDP. Call only when the user opens it.
+
+    Prefer this VM's uid. The old /sd session-id path is a fallback; that
+    GET 400s on some already-active sessions and is what painted
+    "not available yet" after we stopped scraping on every card refresh.
+    Never GET /servers/vm-* — those 404 and showed up as scraping.
+    """
+    sid = str(session_id or "").strip()
+    last_error = ""
+    tried: list[str] = []
+    for ident in (_webrdp_server_ident(vm_uid), _webrdp_server_ident(sid)):
+        if not ident or ident in tried:
+            continue
+        tried.append(ident)
+        url = f"{site_base(site)}/api/sessions/{sid}/servers/{ident}/webrdp"
+        try:
+            response = _request("GET", url, token, timeout=30)
+        except requests.RequestException as exc:
+            last_error = (
+                "Could not reach dCloud. Get on the VPN and try again."
+                if looks_off_network(exc)
+                else "Could not reach dCloud for WebRDP."
+            )
+            continue
+        body = _json_or_text(response)
+        if response.status_code == 401:
+            return "", "dCloud token was rejected (401). Sign in again."
+        creds = _parse_webrdp_credentials(body)
+        if creds:
+            return creds, ""
+        if response.status_code >= 400:
+            last_error = _short_http_message(body, response.status_code)
+            continue
+        last_error = "dCloud did not return WebRDP credentials for this VM."
+    return "", last_error or (
+        "WebRDP is not available for this session yet. Try again after the session is active."
+    )
 
 
 def attach_vm_access_links(
@@ -253,6 +311,8 @@ def attach_vm_access_links(
         item.pop("webRdpUrl", None)
         item.pop("webRdp", None)
         if uid:
+            # Console/RDP are dCloud page links with this VM's uid — not API
+            # scrapes. WebRDP credentials are fetched on click instead.
             item["consoleUrl"] = vm_console_url(site, session_id, uid)
             if _flag_true(item.get("rdpEnabled")):
                 item["rdpUrl"] = server_rdp_url(site, session_id, uid)

@@ -2049,6 +2049,8 @@ def test_event_management_section() -> None:
         "const finderLists =" in INDEX
         and "function persistFinderRows(" in INDEX
         and "function finderOkSites(" in INDEX
+        and "function restoreCachedSavedContentList(" in INDEX
+        and "restoreCachedSavedContentList()" in INDEX
         and 'id="btn-events-find-refresh"' in INDEX
         and 'id="btn-refresh-sessions"' in INDEX
         and 'id="btn-refresh-workspace-sessions"' in INDEX
@@ -2645,6 +2647,15 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and 'class="advanced schedule-load-vms"' in page,
     )
     check(
+        "checked saved content can copy IDs to Schedule sessions and load VMs",
+        'id="btn-copy-saved-to-schedule"' in page
+        and "function copyCheckedSavedToSchedule(" in page
+        and "keepDemoIds" in page
+        and "Check only one row per DC" in page
+        and 'id="panel-step2"' in page
+        and "Copy to Schedule sessions" in page,
+    )
+    check(
         "list columns can be dragged wider and remember it",
         "function makeColumnsResizable(containerId)" in page
         and "function startColumnResize(ev, containerId, table, index)" in page
@@ -2705,23 +2716,150 @@ def test_webrdp_is_on_demand() -> None:
     client = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     attach = client[client.index("def attach_vm_access_links(") : client.index("def parse_site_and_id(")]
     runtime = client[client.index("def fetch_vm_runtime_details(") : client.index("def apply_tbv3_power_states(")]
+    fetch = client[client.index("def _webrdp_server_ident(") : client.index("def attach_vm_access_links(")]
     check(
-        "VM refresh does not GET webrdp credentials",
-        "fetch_webrdp_credentials" not in attach and 'item["webRdp"] = True' in attach,
+        "VM console is a uid page link, not a webrdp cookie GET",
+        'item["consoleUrl"] = vm_console_url(site, session_id, uid)' in attach
+        and "fetch_webrdp_credentials" not in attach
+        and 'item["webRdp"] = True' in attach,
     )
     check(
         "VM refresh does not GET /servers/{mor}",
         "_fetch_session_server" not in runtime,
     )
+    check(
+        "WebRDP prefers the VM uid and skips vm-* MORs",
+        'startswith("vm-")' in fetch
+        and "_webrdp_server_ident(vm_uid)" in fetch,
+    )
     page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
     source = (ROOT / "app.py").read_text(encoding="utf-8")
+    webrdp_api = source[source.index("def api_webrdp(") :]
     check(
         "WebRDP is fetched when the user clicks it",
         'class="btn-vm-webrdp"' in page
         and "function openWebrdp(" in page
         and 'api("/api/webrdp"' in page
         and "@app.post(\"/api/webrdp\")" in source
-        and "fetch_webrdp_credentials(token, site, session_id)" in source[source.index("def api_webrdp(") :],
+        and "fetch_webrdp_credentials(token, site, session_id, uid)" in webrdp_api,
+    )
+
+
+def test_webrdp_accepts_uid_cookie() -> None:
+    """Clicking WebRDP must use the VM uid, not only the session-id path that 400s."""
+    import dcloud_client
+
+    class FakeResp:
+        def __init__(self, status: int, body: object) -> None:
+            self.status_code = status
+            self._body = body
+
+        def json(self):
+            if isinstance(self._body, (dict, list)):
+                return self._body
+            raise ValueError("not json")
+
+        @property
+        def text(self) -> str:
+            if isinstance(self._body, str):
+                return self._body
+            return json.dumps(self._body)
+
+    calls: list[str] = []
+
+    def fake_request(method, url, token, **kwargs):
+        del method, token, kwargs
+        calls.append(url)
+        if "/servers/vm-" in url:
+            raise AssertionError("must not GET /servers/vm-* for WebRDP")
+        if url.endswith("/servers/399485/webrdp"):
+            return FakeResp(200, {"cookie": {"value": json.dumps({"credentials": "abc123"})}})
+        return FakeResp(400, {"message": "WebRDP is not available for this session yet."})
+
+    real = dcloud_client._request
+    dcloud_client._request = fake_request
+    try:
+        creds, err = dcloud_client.fetch_webrdp_credentials("t", "sjc", "492825", "399485")
+        check("WebRDP uses the VM uid cookie", creds == "abc123" and err == "")
+        check(
+            "WebRDP does not need the session-id path when uid works",
+            any(url.endswith("/servers/399485/webrdp") for url in calls)
+            and not any(url.endswith("/servers/492825/webrdp") for url in calls),
+        )
+        calls.clear()
+        creds2, err2 = dcloud_client.fetch_webrdp_credentials("t", "sjc", "492825", "vm-1")
+        check(
+            "a vm-* id never hits /servers/vm-*",
+            creds2 == "" and "not available" in err2.lower()
+            and not any("/servers/vm-" in url for url in calls)
+            and any(url.endswith("/servers/492825/webrdp") for url in calls),
+        )
+        check(
+            "a plain cookie value is accepted",
+            dcloud_client._parse_webrdp_credentials({"cookie": {"value": "raw-cred"}}) == "raw-cred",
+        )
+    finally:
+        dcloud_client._request = real
+
+
+def test_selected_badge_is_per_card() -> None:
+    """selected means Load VMs on that session, not leftover checks on monitoring cards."""
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    load = source[source.index("def _load_dc_vms(") : source.index("def _vm_is_powered_on(")]
+    attach = source[source.index("def _attach_card(") : source.index("def _enrich_attached_card(")]
+    attach_api = source[source.index("chosen = [vm.model_dump() for vm in payload.selected_vms]") :]
+    check(
+        "card refresh does not paint selected from the job-wide Load VMs list",
+        'tag_selected_vms(live, list(dc.get("powerOnTargets") or []))' in load
+        and "_dc_power_targets" not in load,
+    )
+    check(
+        "monitoring attach ignores Load VMs checks",
+        "if payload.monitor_only:" in attach_api
+        and "chosen = []" in attach_api[:400]
+        and "[] if monitor_only else chosen" in attach,
+    )
+    check(
+        "Add to monitoring does not send Load VMs checks",
+        page.count("selected_vms: selectedVms(),\n            monitor_only: true") == 0
+        and page.count("selected_vms: [],\n            monitor_only: true") >= 3,
+    )
+    check(
+        "an already-open card drops selected unless this session had Load VMs",
+        "def _retag_dc_selected_vms(" in source
+        and "_retag_dc_selected_vms(job)" in source[source.index("def _public_job(") :]
+        and "vm.selected && (dc.powerOnTargets || []).length" in page,
+    )
+
+
+def test_stale_selected_badge_is_cleared() -> None:
+    import app
+
+    job = {
+        "dcs": [
+            {
+                "powerOnTargets": [],
+                "vms": [{"name": "Microsoft Active Directory", "selected": True}],
+            },
+            {
+                "powerOnTargets": [{"name": "Jumphost"}],
+                "vms": [
+                    {"name": "Jumphost", "displayName": "Jumphost", "selected": False},
+                    {"name": "Other", "displayName": "Other", "selected": True},
+                ],
+            },
+        ]
+    }
+    app._retag_dc_selected_vms(job)
+    check(
+        "a regular/monitoring card loses leftover selected",
+        job["dcs"][0]["vms"][0]["selected"] is False,
+    )
+    check(
+        "Load VMs on that session still marks the checked VM",
+        job["dcs"][1]["vms"][0]["selected"] is True
+        and job["dcs"][1]["vms"][1]["selected"] is False,
     )
 
 

@@ -1348,6 +1348,7 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     _backfill_session_names(job)
     _repair_false_saved_dcs(job)
     _annotate_dc_ownership(job)
+    _retag_dc_selected_vms(job)
     _persist_job(job)
     content_name = ""
     for dc in job.get("dcs") or []:
@@ -2647,6 +2648,19 @@ def _dc_power_targets(dc: dict[str, Any], job: dict[str, Any]) -> list[dict[str,
     return job.get("selected_vms") or []
 
 
+def _retag_dc_selected_vms(job: dict[str, Any]) -> None:
+    """Paint selected from this card's Load VMs list, not leftover job-wide checks.
+
+    Powered-on cards skip a full VM reload, so a stale selected flag on
+    Microsoft Active Directory would otherwise sit there until the session ended.
+    """
+    for dc in job.get("dcs") or []:
+        vms = dc.get("vms") or []
+        if not vms:
+            continue
+        dc["vms"] = tag_selected_vms(list(vms), list(dc.get("powerOnTargets") or []))
+
+
 def _load_dc_vms(job: dict[str, Any], dc: dict[str, Any], token: str) -> str | None:
     site = dc["site"]
     sid = str(dc.get("sessionId") or "").strip()
@@ -2657,7 +2671,10 @@ def _load_dc_vms(job: dict[str, Any], dc: dict[str, Any], token: str) -> str | N
         return err
     live, _power_err = apply_tbv3_power_states(token, site, sid, vms, details)
     live = attach_vm_access_links(token, site, sid, live)
-    live = tag_selected_vms(live, _dc_power_targets(dc, job))
+    # Only this card's Load VMs list. Job-wide selected_vms would paint
+    # "selected" on Microsoft Active Directory (and similar names) for every
+    # attached/monitoring session after a normal power-on.
+    live = tag_selected_vms(live, list(dc.get("powerOnTargets") or []))
     extra = _dc_ids_from_session(details)
     if details:
         extra["viewUrl"] = session_view_url(site, sid, session=details)
@@ -3453,7 +3470,7 @@ def _last_job_preview() -> dict[str, Any]:
 def _hydrate_job(data: dict[str, Any]) -> dict[str, Any]:
     data = dict(data)
     data.pop("token", None)
-    return {
+    job = {
         "id": str(data.get("id") or ""),
         "phase": str(data.get("phase") or "ready_to_patch"),
         "createdAt": data.get("createdAt") or time.time(),
@@ -3475,6 +3492,8 @@ def _hydrate_job(data: dict[str, Any]) -> dict[str, Any]:
         "camgrTransfers": list(data.get("camgrTransfers") or []),
         "savedIdHidden": list(data.get("savedIdHidden") or []),
     }
+    _retag_dc_selected_vms(job)
+    return job
 
 
 def _prune_old_cards(job: dict[str, Any]) -> int:
@@ -6695,7 +6714,7 @@ def _attach_card(
     # Put attached cards on screen after the initial session call. Live runtime
     # state and WebRDP credentials are filled in by a background worker instead
     # of holding this request for 2+ calls per VM.
-    live = tag_selected_vms(list(vms), chosen)
+    live = tag_selected_vms(list(vms), [] if monitor_only else chosen)
     demo_id = str(details.get("demoId") or details.get("parentId") or "").strip()
     status = details.get("status")
     active = is_active_status(status)
@@ -6795,6 +6814,9 @@ def _attach_job(payload: AttachPayload) -> dict[str, Any]:
 
     token = _resolve_token(payload)
     chosen = [vm.model_dump() for vm in payload.selected_vms]
+    if payload.monitor_only:
+        # Monitoring is watch-only. Do not inherit Load VMs checks from Schedule.
+        chosen = []
     existing: dict[str, Any] | None = None
     job_id = str(payload.job_id or "").strip()
     if job_id:
@@ -7589,11 +7611,12 @@ def api_webrdp(body: WebrdpPayload) -> dict[str, Any]:
     if not session_id or not uid:
         raise HTTPException(400, "WebRDP needs a session ID and a VM uid.")
     token = _resolve_token(body)
-    creds = fetch_webrdp_credentials(token, site, session_id)
+    creds, err = fetch_webrdp_credentials(token, site, session_id, uid)
     if not creds:
         raise HTTPException(
             400,
-            "WebRDP is not available for this session yet. Try again after the session is active.",
+            err
+            or "WebRDP is not available for this session yet. Try again after the session is active.",
         )
     return {
         "ok": True,

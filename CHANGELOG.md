@@ -1,3 +1,10 @@
+## 2.0.1 — 2026-09-23
+
+- **Selected on a VM** only means that session was scheduled with Load VMs for that machine. Already-open cards drop a leftover selected badge without waiting for a VM reload. Monitoring cards and a normal power-on no longer pick up leftover Load VMs checks
+- **WebRDP on an already-active session** fetches credentials for the VM you clicked. VM console was already a per-VM dCloud page link (`/servers/{uid}/console`), not that cookie GET, so it did not need the same change
+- **Copy to Schedule sessions** on Find saved content fills each DC’s demo ID from the checked rows and loads that demo’s VMs. Use it when an exported session needs Load VMs; stay on this page to schedule without picking VMs
+- **Manage your own saved content keeps the last pull on screen after a refresh.** If this browser already has a Find saved content copy, the list opens with it instead of waiting for another Find
+
 ## 2.0.0 — 2026-09-23
 
 - **New app shell:** Harbor side navigation, dark theme by default, and one task page at a time instead of every section stacked on one long page

@@ -2699,7 +2699,9 @@
       <p class="hint">
         Find, sort, schedule, share, edit, or delete your saved copies from one list.
         Duration, delay, start/stop, and the nearby-slot option stay in sync with the demo-ID scheduler above.
-        <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs.
+        <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs on Schedule sessions.
+        Check the same demo in each DC, then <strong>Copy to Schedule sessions</strong> to fill those IDs and load VMs.
+        Stay here to schedule without picking VMs.
       </p>
       <div class="actions">
         <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Lists saved content in each DC so you can check rows and schedule new sessions from them. Uses the last pull if one is saved.">Find saved content</button>
@@ -2714,6 +2716,7 @@
             <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check all</button>
             <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck all</button>
             <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
+            <button type="button" class="secondary" id="btn-copy-saved-to-schedule" disabled data-tip="Copies the checked content ID in each DC into Schedule sessions, then loads that demo’s VMs so you can pick which ones power on. Use this for an exported session. Stay here to schedule without Load VMs.">Copy to Schedule sessions</button>
             <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete checked</button>
           </div>
           <div class="list-toolbar">
@@ -3495,7 +3498,7 @@
     </div>
   </div>
 
-  <script type="module" src="/harbor-elements/harbor-elements.esm.js" data-id="dcloud-content-manager" data-version="2.0.0" data-theme="hbr-theme-magnetic"></script>
+  <script type="module" src="/harbor-elements/harbor-elements.esm.js" data-id="dcloud-content-manager" data-version="2.0.1" data-theme="hbr-theme-magnetic"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const JOB_STORE = "dcloud-content-manager-job-id";
@@ -5158,6 +5161,20 @@
       }
       renderUnifiedDcData();
       updateUnifiedCacheStatus();
+      restoreCachedSavedContentList();
+    }
+
+    function restoreCachedSavedContentList() {
+      if (!finderCachedSites("mine-content", SITE_ORDER).length) return;
+      renderFoundSaved(
+        {
+          contents: rowsForFinderSites("mine-content", SITE_ORDER),
+          errors: finderLists["mine-content"].errors,
+          usedCache: true,
+        },
+        "schedule",
+      );
+      setFinderCacheHint("found-schedule-saved-cache-status", "mine-content", SITE_ORDER, { usedCache: true });
     }
 
     function unifiedSearchErrors(errors, source) {
@@ -6464,7 +6481,9 @@
         links.push(`<a href="${vm.rdpUrl}" target="_blank" rel="noopener noreferrer">RDP</a>`);
       }
       if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM console</a>`);
-      const selectedBadge = vm.selected ? `<span class="badge ok vm-selected">selected</span>` : "";
+      const selectedBadge = vm.selected && (dc.powerOnTargets || []).length
+        ? `<span class="badge ok vm-selected" data-tip="Checked in Load VMs when this session was scheduled">selected</span>`
+        : "";
       const powerHint = groupKey ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
       return `
             <div class="vm-line">
@@ -9497,27 +9516,28 @@
       }
     }
 
-    async function loadVms() {
-      if (!ensureTokenReady("loading VMs")) return;
+    async function loadVms(options = {}) {
+      if (!ensureTokenReady("loading VMs")) return false;
       showError("");
+      const keepDemoIds = Boolean(options.keepDemoIds);
       const mode = vmSourceMode();
       const idValue = $("src-session").value.trim();
       if (!idValue) {
         showError(mode === "content"
           ? "Provide a datacenter and a published/saved content ID."
           : "Provide a datacenter and an active session ID.");
-        return;
+        return false;
       }
-      $("session-meta").textContent = $("skip-catalog").checked
+      $("session-meta").textContent = keepDemoIds || $("skip-catalog").checked
         ? "Loading VMs…"
         : "Loading VMs and catalog IDs…";
-      clearDemoIdFields();
+      if (!keepDemoIds) clearDemoIdFields();
       try {
         const payload = {
           ...tokenPayload(),
           site: $("src-site").value,
           source: mode,
-          skip_catalog_lookup: $("skip-catalog").checked,
+          skip_catalog_lookup: keepDemoIds || $("skip-catalog").checked,
         };
         if (mode === "content") {
           payload.content_id = idValue;
@@ -9533,7 +9553,14 @@
         vms = data.vms || [];
         renderVms();
         $("session-meta").textContent = "";
-        applyLookups(data);
+        if (keepDemoIds) {
+          const loadPanel = $("panel-step2");
+          if (loadPanel) loadPanel.open = true;
+          const schedulePanel = $("panel-step3");
+          if (schedulePanel) schedulePanel.open = true;
+        } else {
+          applyLookups(data);
+        }
         syncJobAppendHint();
         lastVmCatalogLookup = {
           name: data.name || "",
@@ -9541,9 +9568,11 @@
           site: data.site || "",
           at: Date.now(),
         };
+        return true;
       } catch (err) {
         $("session-meta").textContent = "";
         showError(err.message);
+        return false;
       }
     }
 
@@ -12659,7 +12688,7 @@
             ${body}
           `;
         }
-        setScheduleSavedPanelVisible(rows.length > 0);
+        setScheduleSavedPanelVisible(true);
         const promotedEl = $("saved-promoted-group");
         if (promotedEl) promotedEl.open = persistedPanelOpen("saved-promoted-group", promotedEl.open);
         restoreFoundContentChecks(itemClass, checkedKeys);
@@ -12775,6 +12804,10 @@
     function syncScheduleSavedAll() {
       syncGroupChecks(null, ".schedule-saved-content", "schedule-saved-dc-head");
       syncDeleteSavedButton();
+      const copyBtn = $("btn-copy-saved-to-schedule");
+      if (copyBtn) {
+        copyBtn.disabled = document.querySelectorAll(".schedule-saved-content:checked").length === 0;
+      }
     }
 
     function setFoundSavedChecks(checked) {
@@ -13107,6 +13140,84 @@
       });
     }
 
+    function checkedSavedContentRows() {
+      return [...document.querySelectorAll(".schedule-saved-content:checked")].map((box) => ({
+        site: String(box.dataset.site || "").toLowerCase(),
+        content_id: String(box.dataset.contentId || "").trim(),
+        name: box.dataset.name || "",
+      })).filter((row) => row.site && row.content_id);
+    }
+
+    async function copyCheckedSavedToSchedule() {
+      if (!ensureTokenReady("loading VMs")) return;
+      const selected = checkedSavedContentRows();
+      if (!selected.length) {
+        showError("Check the saved content rows to copy — one per datacenter.");
+        return;
+      }
+      const bySite = new Map();
+      const extra = [];
+      for (const row of selected) {
+        if (bySite.has(row.site)) extra.push(row.site.toUpperCase());
+        else bySite.set(row.site, row);
+      }
+      if (extra.length) {
+        showError(`Check only one row per DC. Extra checks in ${[...new Set(extra)].join(", ")}.`);
+        return;
+      }
+      const names = [...new Set([...bySite.values()].map((row) => row.name).filter(Boolean))];
+      if (names.length > 1) {
+        if (!await confirmAction(
+          `Checked rows have different names:\n\n${names.map((name) => `• ${name}`).join("\n")}\n\nCopy them anyway? Each DC keeps its own content ID.`,
+          { title: "Different saved content names", okLabel: "Copy anyway", cancelLabel: "Go back" },
+        )) {
+          return;
+        }
+      }
+      showError("");
+      clearDemoIdFields();
+      for (const site of SITE_ORDER) {
+        const row = bySite.get(site);
+        if (!row) continue;
+        const input = document.querySelector(`.demo-id[data-dc="${site}"]`);
+        if (!input) continue;
+        input.value = row.content_id;
+        input.classList.remove("stale-id");
+        const hint = document.getElementById(`hint-${site}`);
+        if (hint) hint.textContent = row.name || "";
+      }
+      syncRunButton();
+      if ($("export-sessions")) $("export-sessions").checked = true;
+      const first = SITE_ORDER.map((site) => bySite.get(site)).find(Boolean);
+      const contentRadio = $("vm-source-content");
+      if (contentRadio) contentRadio.checked = true;
+      syncVmSourceUi();
+      if (first) {
+        $("src-site").value = first.site;
+        $("src-session").value = first.content_id;
+      }
+      showAppView("schedule");
+      revealScheduleLoadVms();
+      const dcs = SITE_ORDER.filter((site) => bySite.has(site)).map((site) => site.toUpperCase());
+      noteLog(`Copied ${dcs.join(", ")} saved content ID(s) to Schedule sessions. Loading VMs…`);
+      const btn = $("btn-copy-saved-to-schedule");
+      if (btn) btn.disabled = true;
+      try {
+        const loaded = await loadVms({ keepDemoIds: true });
+        if (!loaded) return;
+        const label = names.length === 1 ? names[0] : `${bySite.size} datacenters`;
+        const status = $("lookup-status");
+        if (status) {
+          status.textContent =
+            `Copied “${label}” (${dcs.join(", ")}). Check the VMs to power on, set the dates, then Schedule exported sessions.`;
+          status.classList.add("lookup-ready");
+        }
+        showToast(`Filled ${dcs.join(", ")}. Check the VMs to power on, then Schedule exported sessions.`);
+      } finally {
+        syncScheduleSavedAll();
+      }
+    }
+
     async function scheduleSelectedSaved() {
       if (!ensureTokenReady("scheduling saved content")) return;
       const selected = [...document.querySelectorAll(".schedule-saved-content:checked")].map((box) => ({
@@ -13409,7 +13520,7 @@
             ...tokenPayload(),
             job_id: jobId || "",
             sessions: [{ site, session_id: sessionId }],
-            selected_vms: selectedVms(),
+            selected_vms: [],
             monitor_only: true,
           }),
         });
@@ -13496,7 +13607,7 @@
             ...tokenPayload(),
             job_id: jobId || "",
             sessions,
-            selected_vms: selectedVms(),
+            selected_vms: [],
             monitor_only: true,
           }),
         });
@@ -13543,7 +13654,7 @@
             ...tokenPayload(),
             job_id: jobId || "",
             sessions: selected,
-            selected_vms: selectedVms(),
+            selected_vms: [],
             monitor_only: true,
           }),
         });
@@ -14368,6 +14479,7 @@
     $("btn-find-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule").catch((err) => showError(err.message)));
     $("btn-refresh-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule", { refresh: true }).catch((err) => showError(err.message)));
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
+    $("btn-copy-saved-to-schedule")?.addEventListener("click", () => copyCheckedSavedToSchedule().catch((err) => showError(err.message)));
     $("btn-schedule-saved").addEventListener("click", () => scheduleSelectedSaved().catch((err) => showError(err.message)));
     $("saved-schedule-export").addEventListener("change", () => syncScheduleSavedButton());
     $("btn-expand-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", true));
