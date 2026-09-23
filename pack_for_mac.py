@@ -56,6 +56,8 @@ FILES = (
     "tool_browser.py",
     "net_errors.py",
     "static/index.html",
+    "static/app-icon.svg",
+    "static/app-icon.png",
     "static/atm.css",
 )
 # Harbor / Atmosphere copies from npm. Coworkers cannot hit Cisco Artifactory.

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>dCloud Content Manager</title>
+  <link rel="icon" href="/static/app-icon.png?v=2" type="image/png">
   <style>
     :root {
       --bg: #0f1419;
@@ -178,7 +179,6 @@
       border: none;
       color: var(--ok);
     }
-    .sub { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.95rem; }
     .panel {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -1972,6 +1972,19 @@
       background: var(--panel);
       flex-shrink: 0;
     }
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-width: 0;
+    }
+    .app-mark {
+      width: 1.85rem;
+      height: 1.85rem;
+      flex-shrink: 0;
+      border-radius: 6px;
+      display: block;
+    }
     .app-topbar h1 { margin: 0; font-size: 0.95rem; font-weight: 600; }
     .app-shell {
       display: flex;
@@ -2011,6 +2024,33 @@
     hbr-shell-nav {
       flex-shrink: 0;
       align-self: stretch;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless]),
+    hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item {
+      --nav-item-normal-width: 160px;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless]) {
+      width: 176px;
+      min-width: 176px;
+      max-width: 176px;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless])::part(base) {
+      width: 176px;
+      min-width: 176px;
+      max-width: 176px;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless])::part(nav-container) {
+      padding: 8px;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless])::part(collapsible-icon) {
+      max-width: none;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless])::part(nav-items) {
+      margin-left: 0;
+      width: 160px;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item::part(base) {
+      width: 160px;
     }
     hbr-nav-item {
       --nav-item-border-radius: 12px;
@@ -2145,6 +2185,30 @@
       --nav-item-active-box-shadow: none !important;
       --nav-item-active-extra-box-shadow: none !important;
     }
+    #app-nav:not([collapsed]):not([titleless]),
+    #app-nav:not([collapsed]):not([titleless]) hbr-nav-item {
+      --nav-item-normal-width: 160px;
+    }
+    #app-nav:not([collapsed]):not([titleless]) {
+      width: 176px;
+      min-width: 176px;
+      max-width: 176px;
+    }
+    #app-nav:not([collapsed]):not([titleless])::part(base) {
+      width: 176px;
+      min-width: 176px;
+      max-width: 176px;
+    }
+    #app-nav:not([collapsed]):not([titleless])::part(nav-container) {
+      padding: 8px;
+    }
+    #app-nav:not([collapsed]):not([titleless])::part(nav-items) {
+      margin-left: 0;
+      width: 160px;
+    }
+    #app-nav:not([collapsed]):not([titleless]) hbr-nav-item::part(base) {
+      width: 160px;
+    }
     #app-nav::part(base) {
       background: var(--bg, #0f1419);
     }
@@ -2190,9 +2254,12 @@
     }
   </script>
   <header class="app-topbar">
-    <h1>dCloud Content Manager</h1>
-    <div class="header-actions">
+    <div class="app-brand">
+      <img class="app-mark" src="/static/app-icon.png?v=2" width="30" height="30" alt="">
+      <h1 data-tip="Schedule sessions and manage saved content across datacenters — transfer, integrate, replace VMs, clean up, and keep live sessions running from one place.">dCloud Content Manager</h1>
       <span id="app-version" class="app-version">Version 1.0</span>
+    </div>
+    <div class="header-actions">
       <span id="header-status" class="header-status" hidden></span>
       <button type="button" class="icon-btn" id="btn-whats-new" aria-label="What’s new" data-tip="What changed in this version and earlier ones.">
         <hbr-icon name="info"></hbr-icon>
@@ -2267,10 +2334,6 @@
       </hbr-nav-item>
     </hbr-shell-nav>
     <div class="app-main wrap">
-    <p class="sub">
-      Schedule sessions and manage saved content across datacenters — transfer, integrate, replace VMs,
-      clean up, and keep live sessions running from one place.
-    </p>
     <div class="layout-toolbar">
       <button type="button" class="secondary" id="btn-collapse-all-ui" data-tip="Collapse every section, session card VM list, and DC group on this page. Sections always start collapsed when the page loads.">Collapse all</button>
       <button type="button" class="secondary" id="btn-expand-all-ui" data-tip="Expand every collapsible section on this page. Sections collapse again on the next page load.">Expand all</button>
@@ -3498,7 +3561,7 @@
     </div>
   </div>
 
-  <script type="module" src="/harbor-elements/harbor-elements.esm.js" data-id="dcloud-content-manager" data-version="2.0.1" data-theme="hbr-theme-magnetic"></script>
+  <script type="module" src="/harbor-elements/harbor-elements.esm.js" data-id="dcloud-content-manager" data-version="2.0.2" data-theme="hbr-theme-magnetic"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const JOB_STORE = "dcloud-content-manager-job-id";
@@ -4050,7 +4113,8 @@
         const response = await fetch("/api/changelog", { cache: "no-store" });
         if (!response.ok) throw new Error("Could not load the changelog.");
         const data = await response.json();
-        showDetailsModal("What’s new", changelogHtml(data.text));
+        const blurb = `<p class="hint">Schedule sessions and manage saved content across datacenters — transfer, integrate, replace VMs, clean up, and keep live sessions running from one place.</p>`;
+        showDetailsModal("What’s new", blurb + changelogHtml(data.text));
       } catch (err) {
         showDetailsModal(
           "What’s new",

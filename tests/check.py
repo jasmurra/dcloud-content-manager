@@ -1061,6 +1061,33 @@ def test_page_markup_is_balanced() -> None:
         and "hbr-shell-nav[titleless]::part(collapse-button)" in INDEX,
     )
     check(
+        "expanded nav is tighter than Harbor’s 248px rail",
+        "--nav-item-normal-width: 160px" in INDEX
+        and "hbr-shell-nav:not([collapsed]):not([titleless])" in INDEX
+        and "width: 176px" in INDEX,
+    )
+    header_html = INDEX.split("<header class=\"app-topbar\">", 1)[1].split("</header>", 1)[0]
+    check(
+        "version sits next to the app name",
+        'class="app-brand"' in header_html
+        and 'id="app-version"' in header_html.split("header-actions", 1)[0]
+        and 'id="app-version"' not in header_html.split("header-actions", 1)[1],
+    )
+    check(
+        "the long tool blurb is not on every page",
+        "<p class=\"sub\">" not in INDEX
+        and "showDetailsModal(\"What’s new\", blurb + changelogHtml(data.text))" in INDEX
+        and 'data-tip="Schedule sessions and manage saved content' in header_html,
+    )
+    check(
+        "header and tab use the app icon",
+        'class="app-mark"' in header_html
+        and 'rel="icon"' in INDEX
+        and (ROOT / "static" / "app-icon.png").is_file()
+        and (ROOT / "static" / "app-icon.svg").is_file()
+        and "static/app-icon.png" in (ROOT / "pack_for_mac.py").read_text(encoding="utf-8"),
+    )
+    check(
         "Control Hub chrome kills Harbor’s blue selected nav and uses pill buttons",
         'id="control-hub-chrome"' in INDEX
         and "--interact-bg-default: rgba(255, 255, 255, 0.08)" in INDEX

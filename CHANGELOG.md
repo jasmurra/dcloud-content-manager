@@ -1,3 +1,10 @@
+## 2.0.2 — 2026-09-23
+
+- **Narrower side nav** so the main page has more room. Collapsed stays the icon rail
+- **Version sits next to the app name** in the header, same muted font as before
+- **App icon** in the browser tab and next to the title: teal square with a dCloud screen and four admin tools (gear, pencil, transfer, search)
+- **The long tool blurb is not on every page.** Hover the app name, or open What’s new
+
 ## 2.0.1 — 2026-09-23
 
 - **Selected on a VM** only means that session was scheduled with Load VMs for that machine. Already-open cards drop a leftover selected badge without waiting for a VM reload. Monitoring cards and a normal power-on no longer pick up leftover Load VMs checks
