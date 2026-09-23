@@ -18,3 +18,4 @@ managed-saved-ids.json
 runtime/
 .dcloud-install.json
 usage.json
+node_modules/

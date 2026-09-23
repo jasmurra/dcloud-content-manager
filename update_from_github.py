@@ -44,6 +44,7 @@ SKIP_DIR_NAMES = {
     "__pycache__",
     # Maintainer regression checks — they stay on GitHub, not in installs.
     "tests",
+    "node_modules",
 }
 SKIP_FILE_NAMES = {
     ".env",

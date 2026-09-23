@@ -180,6 +180,13 @@ echo "Checking Python packages..."
   exit 1
 }
 
+if [ -f "package.json" ] && command -v npm >/dev/null 2>&1; then
+  if [ ! -d "static/vendor/harbor-elements" ]; then
+    echo "Installing Atmosphere / Harbor UI packages (Cisco Artifactory, first run on this branch)..."
+    npm install || echo "Atmosphere install failed — the tool still runs with the previous look."
+  fi
+fi
+
 # Tool-owned Chromium for Cisco SSO (CAMGR/CAI/dCloud). Lives in this folder so a
 # GitHub update does not require a new zip, and Chrome Keychain is never opened.
 export PLAYWRIGHT_BROWSERS_PATH="$(pwd)/.playwright-browsers"

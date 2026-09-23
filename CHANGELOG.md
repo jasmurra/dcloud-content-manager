@@ -1,3 +1,11 @@
+## Unreleased — atmosphere-ui
+
+- **Cisco app shell (this branch):** Harbor side navigation, dark theme, and one task page at a time instead of every section stacked on one long page. `main` is unchanged until this merges
+- **Shell polish:** tighter buttons, short icon nav labels, slim icon header (settings, theme, updates, sign-in), light/dark toggle with dark as the default, and side-menu order in Settings. Datacenter order is unchanged
+- **Control Hub-style chrome:** selected nav is a gray rounded pill (not Harbor’s interact blue) with a left accent. Action buttons are outline pills like Control Hub’s Reset access / Reset MFA; dropdowns stay squarer (4px). The header avatar menu shows the dCloud signed-in name from the token. Collapsed nav is a 56px icon rail so the hamburger lines up with the icons
+- **Schedule Clear / Verify** stay text links under each demo ID; they no longer pick up the larger action-button height
+- **Nav collapse is icon-only**, and action buttons (toolbars, sign-in, confirms, danger/end) share one Harbor-sized style. Harbor/Atmosphere files ship in `static/vendor` (the coworker zip includes them; Cisco npm is only for rebuilding). Tailwind is installed with the Atmosphere preset but not used for these controls yet
+
 ## 1.18.12 — 2026-09-23
 
 - **Session cards no longer probe WebRDP or `/servers/vm-*` on every refresh.** Those calls were flooding dCloud logs with 404s and a webrdp 400 while a session sat in the job workspace. Power still comes from tbv3. WebRDP is fetched only when you click it

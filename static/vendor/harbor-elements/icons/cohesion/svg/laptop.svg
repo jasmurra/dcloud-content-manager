@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16px" height="16px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 60.1 (88133) - https://sketch.com -->
+    <title>Networking/Endpoints/laptop/laptop_16</title>
+    <desc>Created with Sketch.</desc>
+    <g id="Networking/Endpoints/laptop/laptop_16" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <path d="M14,13 L2,13 C1.449,13 1,12.551 1,12 L15,12 C15,12.551 14.551,13 14,13 Z M2,4 C2,3.449 2.449,3 3,3 L13,3 C13.551,3 14,3.449 14,4 L14,11 L2,11 L2,4 Z M15.5,11 L15,11 L15,4 C15,2.895 14.105,2 13,2 L3,2 C1.895,2 1,2.895 1,4 L1,11 L0.5,11 C0.224,11 0,11.224 0,11.5 L0,12 C0,13.105 0.895,14 2,14 L14,14 C15.105,14 16,13.105 16,12 L16,11.5 C16,11.224 15.776,11 15.5,11 Z" id="laptop_16" fill="#00090D"></path>
+    </g>
+</svg>

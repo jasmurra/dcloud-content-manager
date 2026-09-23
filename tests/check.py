@@ -83,6 +83,37 @@ def test_sources_parse() -> None:
             Path(path).unlink(missing_ok=True)
 
 
+def test_jwt_session_user_reads_the_name() -> None:
+    """The header menu shows CEC id / name / email from the access token payload."""
+    import base64
+    import json
+    from browser_auth.dcloud_token import jwt_session_user
+
+    def fake_jwt(payload: dict) -> str:
+        body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        return f"eyJhbGciOiJub25lIn0.{body}.sig"
+
+    user = jwt_session_user(
+        fake_jwt(
+            {
+                "ccoid": "jasmurra",
+                "name": "Jason Murra",
+                "email": "jasmurra@cisco.com",
+            }
+        )
+    )
+    check(
+        "token name is used in the account menu",
+        user == {"id": "jasmurra", "name": "Jason Murra", "email": "jasmurra@cisco.com"},
+        str(user),
+    )
+    given = jwt_session_user(
+        fake_jwt({"preferred_username": "jasmurra", "given_name": "Jason", "family_name": "Murra"})
+    )
+    check("given and family names fill in when name is missing", given["name"] == "Jason Murra", str(given))
+    check("empty token has empty identity", jwt_session_user("") == {"id": "", "name": "", "email": ""})
+
+
 def test_root_id_is_not_the_target() -> None:
     """Target is the previous save. Root is the original base from CAMGR."""
     import app
@@ -226,6 +257,13 @@ def test_zip_contents() -> None:
 
     for rel in pack_for_mac.FILES:
         check(f"packed file exists: {rel}", (ROOT / rel).is_file())
+    check(
+        "Harbor UI is packed for coworker Macs",
+        (ROOT / pack_for_mac.HARBOR_REQUIRED).is_file()
+        and pack_for_mac.TREES == (("static/vendor", "static/vendor"),)
+        and "static/atm.css" in pack_for_mac.FILES,
+    )
+    check("updater skips node_modules", "node_modules" in update_from_github.SKIP_DIR_NAMES)
     for maintainer_only in (
         "pack_for_mac.py",
         "share-for-mac.command",
@@ -964,6 +1002,60 @@ def test_page_markup_is_balanced() -> None:
     parser = Balance()
     parser.feed(INDEX)
     check("index.html tags are balanced", not parser.errors, "; ".join(parser.errors[:3]))
+    check(
+        "the Atmosphere side nav is on the page",
+        'id="app-nav"' in INDEX
+        and "<hbr-shell-nav" in INDEX
+        and 'class="hbr-mode-dark"' in INDEX
+        and "function showAppView(" in INDEX
+        and 'src="/harbor-elements/harbor-elements.esm.js"' in INDEX,
+    )
+    nav = INDEX[INDEX.index("<hbr-shell-nav") : INDEX.index("</hbr-shell-nav>")]
+    check("nav labels stay short", "Job workspace" not in nav and "Saved content" not in nav and "Start fresh" not in nav)
+    check("nav items have Harbor icons", 'slot="prefix"' in nav and 'slot="content"' in nav)
+    check(
+        "Atmosphere header is icon-only with a theme toggle",
+        'id="btn-theme"' in INDEX
+        and 'class="icon-btn"' in INDEX
+        and 'name="gear-six"' in INDEX
+        and "function persistTheme(" in INDEX,
+    )
+    check(
+        "side-menu order is still customizable",
+        'id="nav-order-list"' in INDEX
+        and "function persistNavOrder(" in INDEX
+        and "settings.navOrder" in INDEX,
+    )
+    check(
+        "Harbor nav collapse goes to icons only",
+        "function persistNavCollapsed(" in INDEX
+        and "nav.titleless" in INDEX
+        and "hbr-collapse-click" in INDEX,
+    )
+    check(
+        "collapsed nav is an icon rail",
+        "--nav-item-titleless-width: 40px" in INDEX
+        and "hbr-shell-nav[titleless]::part(collapse-button)" in INDEX,
+    )
+    check(
+        "Control Hub chrome kills Harbor’s blue selected nav and uses pill buttons",
+        'id="control-hub-chrome"' in INDEX
+        and "--interact-bg-default: rgba(255, 255, 255, 0.08)" in INDEX
+        and "border-radius: 999px" in INDEX
+        and "item.selected = on" in INDEX
+        and "item.active = false" in INDEX,
+    )
+    check(
+        "header account menu shows the signed-in dCloud name",
+        'id="account-dropdown"' in INDEX
+        and "function initAccountMenu(" in INDEX
+        and "def jwt_session_user(" in (ROOT / "browser_auth" / "dcloud_token.py").read_text(encoding="utf-8")
+        and '"sessionUser": jwt_session_user(' in (ROOT / "app.py").read_text(encoding="utf-8"),
+    )
+    check(
+        "Harbor assets are served from /harbor-elements/",
+        'app.mount("/harbor-elements"' in (ROOT / "app.py").read_text(encoding="utf-8"),
+    )
     check(
         "nothing is left open at the end",
         not parser.stack,
@@ -1766,6 +1858,12 @@ def test_demo_id_fields_can_be_cleared() -> None:
     check("Clear all IDs is on the schedule form", 'id="btn-clear-all-demo-ids"' in INDEX)
     check("Clear all reuses the existing clearer", "clearDemoIdFields()" in INDEX)
     check("one box can be cleared without the rest", "function clearOneDemoId(" in INDEX)
+    check(
+        "Clear / Verify stay text links, not action buttons",
+        "button.clear-demo-id" in INDEX
+        and ".dc-field .clear-demo-id" in INDEX
+        and "button.linkish" in INDEX,
+    )
 
 
 def test_cancel_wording_for_scheduled_cards() -> None:
@@ -2530,9 +2628,10 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and 'const isChecked = checked.has(key) ? " checked" : "";' in page,
     )
     check(
-        "top chrome buttons are smaller than primary actions",
-        ".header-actions button {" in page
-        and "min-width: 10rem;" in page
+        "top chrome buttons are icon-only and smaller than primary actions",
+        ".header-actions .icon-btn {" in page
+        and 'class="icon-btn"' in page
+        and "min-width: 10rem;" not in page
         and "min-width: 12.5rem;" not in page
         and ".layout-toolbar button {" in page
         and "padding: 0.28rem 0.65rem;" in page,

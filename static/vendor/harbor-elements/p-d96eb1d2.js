@@ -1,0 +1,2 @@
+const n=()=>{if(typeof window==="undefined"||typeof window.navigator==="undefined"){return undefined}let n=window.navigator.languages&&window.navigator.languages.length>0?window.navigator.languages[0]:null;n=n||window.navigator.language||window.navigator.browserLanguage||window.navigator.userLanguage;if(typeof n==="undefined"){return undefined}if(n.indexOf("-")!==-1){n=n.split("-")[0]}if(n.indexOf("_")!==-1){n=n.split("_")[0]}return n};export{n as b};
+//# sourceMappingURL=p-d96eb1d2.js.map

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="hbr-mode-dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -18,9 +18,19 @@
       --err: #f87171;
     }
     * { box-sizing: border-box; }
+    html:not(.hbr-mode-dark) {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --border: #d0d7e0;
+      --text: #1b2533;
+      --muted: #5c6b80;
+      --ok: #1a7f4b;
+      --warn: #b45309;
+      --err: #b91c1c;
+    }
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
@@ -38,34 +48,135 @@
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      flex-wrap: wrap;
-      gap: 0.4rem;
+      flex-wrap: nowrap;
+      gap: 0.15rem;
       margin-left: auto;
     }
-    .header-actions button {
-      padding: 0.28rem 0.65rem;
-      font-size: 0.8rem;
-      font-weight: 500;
-      line-height: 1.25;
-    }
-    .app-version {
-      color: var(--muted);
-      font-size: 0.85rem;
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .dcloud-auth-button {
-      /* Same padding and font as the other header buttons. The min-width holds the
-         row steady when the label swaps to the longer "Signed in" state. */
+    .header-actions .icon-btn {
+      width: 2rem;
+      height: 2rem;
+      min-width: 2rem;
+      padding: 0;
+      border-radius: 6px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 10rem;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      box-shadow: none;
+      line-height: 1;
+    }
+    .header-actions .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+    }
+    .account-menu { position: relative; }
+    .account-trigger {
+      width: 2.15rem;
+      height: 2.15rem;
+      min-width: 2.15rem;
+      min-height: 0;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #3a4554;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .account-trigger:hover,
+    .account-trigger.authorized {
+      border-color: var(--accent);
+      color: #fff;
+      background: #3a4554;
+    }
+    .account-trigger .account-avatar { pointer-events: none; }
+    .account-dropdown {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: 17.5rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      padding: 0.85rem 0.75rem 0.55rem;
+      z-index: 1600;
+    }
+    .account-dropdown.hidden { display: none; }
+    .account-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 0.2rem;
+      padding: 0.35rem 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.4rem;
+    }
+    .account-avatar-lg {
+      width: 3.1rem;
+      height: 3.1rem;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #4a5564;
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 0.35rem;
+    }
+    .account-name { font-weight: 600; font-size: 0.95rem; }
+    .account-meta { margin: 0; }
+    .account-dropdown .account-action {
+      width: 100%;
+      justify-content: flex-start;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-weight: 500;
+      min-height: 2.1rem;
+      border-radius: 6px;
+      padding: 0 0.65rem;
+    }
+    .account-dropdown .account-action:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+    html:not(.hbr-mode-dark) .account-dropdown .account-action:hover {
+      background: rgba(15, 20, 25, 0.06);
+    }
+    .account-dropdown .account-action.danger-text { color: var(--err); }
+    html:not(.hbr-mode-dark) .header-actions .icon-btn:hover {
+      background: rgba(15, 20, 25, 0.08);
+    }
+    .header-actions .icon-btn:not(:disabled):active {
+      transform: none;
+      box-shadow: none;
+    }
+    .header-actions .icon-btn hbr-icon {
+      font-size: 1.15rem;
+    }
+    .app-version,
+    .header-status {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .header-status[hidden] { display: none; }
+    .dcloud-auth-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
     }
     .dcloud-auth-button.authorized {
-      background: var(--ok);
-      border-color: var(--ok);
-      color: #07130d;
+      background: transparent;
+      border: none;
+      color: var(--ok);
     }
     .sub { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.95rem; }
     .panel {
@@ -179,8 +290,9 @@
     }
     .saved-actions { white-space: nowrap; width: 1%; min-width: 6.5rem; }
     .saved-actions button {
-      padding: 0.22rem 0.5rem;
-      font-size: 0.75rem;
+      min-height: 1.75rem;
+      padding: 0 0.55rem;
+      font-size: 0.8rem;
     }
     .saved-id-root-cell {
       white-space: nowrap;
@@ -201,9 +313,32 @@
       background: #0b1018;
       border: 1px solid var(--border);
       color: var(--text);
-      border-radius: 6px;
+      border-radius: 4px;
       padding: 0.6rem 0.7rem;
       font: inherit;
+    }
+    html:not(.hbr-mode-dark) input,
+    html:not(.hbr-mode-dark) select,
+    html:not(.hbr-mode-dark) textarea,
+    html:not(.hbr-mode-dark) .dt-trigger,
+    html:not(.hbr-mode-dark) .camgr-dest-vpod,
+    html:not(.hbr-mode-dark) #log {
+      background: #fff;
+    }
+    html:not(.hbr-mode-dark) .dt-trigger:not(:disabled):active {
+      background: #eef1f5;
+    }
+    html:not(.hbr-mode-dark) .card {
+      background: #fff;
+    }
+    html:not(.hbr-mode-dark) details.dc-group,
+    html:not(.hbr-mode-dark) .vm-source-toggle {
+      background: #eef1f5;
+    }
+    html:not(.hbr-mode-dark) button.secondary,
+    html:not(.hbr-mode-dark) a.secondary {
+      background: #fff;
+      border-color: #b7c2d0;
     }
     .cai-dest-done {
       opacity: 0.55;
@@ -282,53 +417,84 @@
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 0.75rem;
     }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.85rem; align-items: center; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.85rem; align-items: center; }
     button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      min-height: 2.375rem;
+      padding: 0 1.05rem;
+      border: 1px solid transparent;
+      border-radius: 999px;
       background: var(--accent);
       color: #fff;
-      border: none;
-      border-radius: 6px;
-      padding: 0.6rem 1rem;
       font: inherit;
+      font-size: 0.875rem;
       font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
       cursor: pointer;
-      transition: transform 0.07s ease, background-color 0.1s ease, box-shadow 0.07s ease, border-color 0.1s ease;
-      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+      vertical-align: middle;
+      box-shadow: none;
+      transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
     }
+    button:not(:disabled):hover { background: #0388b8; }
     button:not(:disabled):active {
-      transform: translateY(1px);
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.28);
-      background: #0388b8;
+      transform: none;
+      box-shadow: none;
+      background: #02719a;
     }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.is-busy:not(:disabled) { opacity: 0.85; cursor: wait; }
     .found-session-attached { opacity: 0.62; }
     .found-session-attached .found-session:disabled { cursor: not-allowed; }
-    button:disabled:active { transform: none; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28); }
+    button:disabled:active { transform: none; box-shadow: none; }
     button.secondary,
     a.secondary {
       background: transparent;
-      border: 1px solid var(--border);
+      border-color: rgba(255, 255, 255, 0.38);
       color: var(--text);
       box-shadow: none;
     }
     a.secondary {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
+      min-height: 2.375rem;
+      padding: 0 1.05rem;
       text-decoration: none;
-      border-radius: 6px;
-      padding: 0.6rem 1rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
       font: inherit;
+      font-size: 0.875rem;
       font-weight: 600;
+      line-height: 1;
       cursor: pointer;
+    }
+    button.secondary:not(:disabled):hover,
+    a.secondary:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.62);
     }
     button.secondary:not(:disabled):active,
     a.secondary:active {
-      background: rgba(139, 156, 179, 0.14);
-      border-color: #3d4f66;
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.72);
     }
-    button.danger { background: #b91c1c; }
-    button.danger:not(:disabled):active { background: #991b1b; }
+    html:not(.hbr-mode-dark) button.secondary,
+    html:not(.hbr-mode-dark) a.secondary {
+      background: #fff;
+      border-color: #9aa6b4;
+    }
+    html:not(.hbr-mode-dark) button.secondary:not(:disabled):hover,
+    html:not(.hbr-mode-dark) a.secondary:hover {
+      background: #f4f6f8;
+      border-color: #6b7785;
+    }
+    button.danger { background: #b91c1c; border-color: #b91c1c; }
+    button.danger:not(:disabled):hover { background: #991b1b; border-color: #991b1b; }
+    button.danger:not(:disabled):active { background: #7f1d1d; }
     .help-toggle {
       font-size: 0.76rem;
       font-weight: 500;
@@ -399,7 +565,25 @@
     }
     button.connected:not(:disabled):active { background: rgba(61, 214, 140, 0.28); }
     button.end { background: transparent; border: 1px solid #7f1d1d; color: #fca5a5; box-shadow: none; }
-    button.end:not(:disabled):active { background: rgba(127, 29, 29, 0.22); }
+    button.end:not(:disabled):hover { background: rgba(127, 29, 29, 0.18); }
+    button.end:not(:disabled):active { background: rgba(127, 29, 29, 0.28); }
+    button.icon-btn,
+    button.account-trigger,
+    button.banner-dismiss,
+    button.card-x,
+    button.card-refresh,
+    button.dt-trigger,
+    button.dt-nav-btn,
+    button.dt-day,
+    button.dt-now,
+    button.help-toggle,
+    button.auth-panel-close,
+    button.linkish,
+    button.clear-demo-id,
+    .section-order-controls button,
+    .dc-order-item button {
+      min-height: 0;
+    }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td {
       border-bottom: 1px solid var(--border);
@@ -758,19 +942,27 @@
     .vm-menu > summary {
       list-style: none;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.25rem;
       background: transparent;
-      border: 1px solid var(--border);
+      border: 1px solid rgba(255, 255, 255, 0.38);
       color: var(--text);
-      border-radius: 6px;
-      padding: 0.28rem 0.55rem;
-      font-size: 0.78rem;
+      border-radius: 999px;
+      padding: 0 0.9rem;
+      font-size: 0.875rem;
       font-weight: 600;
-      transition: transform 0.07s ease, background-color 0.1s ease, box-shadow 0.07s ease;
+      line-height: 1;
+    }
+    .vm-menu > summary:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.62);
     }
     .vm-menu > summary:active {
-      transform: translateY(1px);
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.22);
-      background: rgba(139, 156, 179, 0.1);
+      transform: none;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.1);
     }
     .vm-menu > summary::-webkit-details-marker { display: none; }
     .vm-menu-list {
@@ -827,6 +1019,7 @@
       align-items: center;
       justify-content: center;
       padding: 1.25rem;
+      overflow: auto;
     }
     .modal-backdrop {
       position: absolute;
@@ -856,6 +1049,10 @@
     }
     .modal-card .actions {
       margin-top: 1.1rem;
+      gap: 0.45rem;
+    }
+    .modal-card .actions button {
+      min-width: 5rem;
     }
     .action-modal-card {
       border-color: rgba(251, 191, 36, 0.55);
@@ -945,8 +1142,19 @@
       padding-left: 1.2rem;
     }
     .changelog-text li { margin: 0.2rem 0; }
-    .settings-card { width: min(100%, 520px); }
-    .settings-card h2 { display: flex; align-items: center; gap: 0.45rem; }
+    .settings-card {
+      width: min(100%, 520px);
+      max-height: calc(100vh - 2.5rem);
+      overflow: auto;
+      border-color: var(--border);
+    }
+    #settings-modal {
+      align-items: flex-start;
+    }
+    #settings-modal .settings-card {
+      margin: 0 auto;
+    }
+    .settings-card h2 { display: flex; align-items: center; gap: 0.45rem; color: var(--text); }
     .dc-order-list {
       display: grid;
       gap: 0.4rem;
@@ -957,7 +1165,7 @@
       grid-template-columns: auto 1fr auto auto;
       gap: 0.45rem;
       align-items: center;
-      padding: 0.55rem 0.65rem;
+      padding: 0.4rem 0.55rem;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.025);
@@ -1040,9 +1248,12 @@
     }
     .dc-field-links {
       display: flex;
+      align-items: baseline;
       gap: 0.75rem;
       margin-top: 0.15rem;
+      min-height: 0;
       font-size: 0.78rem;
+      line-height: 1.3;
     }
     .dc-field .verify-demos,
     .dc-field .clear-demo-id,
@@ -1050,17 +1261,38 @@
       display: inline;
       margin: 0;
       padding: 0;
+      min-height: 0;
+      min-width: 0;
+      height: auto;
+      line-height: inherit;
+      font-weight: 400;
+      gap: 0;
       border: 0;
+      border-radius: 0;
       background: none;
+      box-shadow: none;
       color: var(--accent);
       font: inherit;
       font-size: 0.78rem;
       cursor: pointer;
       text-decoration: none;
+      vertical-align: baseline;
+      transform: none;
     }
     .dc-field .verify-demos:hover,
     .dc-field .clear-demo-id:hover,
-    .linkish:hover { text-decoration: underline; }
+    .dc-field .clear-demo-id:not(:disabled):hover,
+    .dc-field .clear-demo-id:not(:disabled):active,
+    .linkish:hover,
+    .linkish:not(:disabled):hover,
+    .linkish:not(:disabled):active {
+      text-decoration: underline;
+      background: none;
+      border: 0;
+      color: var(--accent);
+      transform: none;
+      box-shadow: none;
+    }
     .demo-id.stale-id { border-color: var(--err, #c0392b); box-shadow: 0 0 0 1px var(--err, #c0392b); }
     .advanced { margin-top: 0.75rem; }
     details.advanced summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
@@ -1138,8 +1370,9 @@
     .list-toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.45rem;
+      gap: 0.4rem;
       margin: 0.65rem 0 0.35rem;
+      align-items: center;
     }
     .list-toolbar.hidden { display: none; }
     .list-filter {
@@ -1283,6 +1516,7 @@
       color: var(--text);
       font-weight: 400;
       padding: 0.55rem 0.65rem;
+      border-radius: 4px;
       box-shadow: none;
     }
     .dt-trigger:hover, .dt-trigger.open { border-color: var(--accent); }
@@ -1715,20 +1949,324 @@
       box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
       pointer-events: none;
     }
+    html:not(.hbr-mode-dark) .hover-tip {
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+    }
+
+    html, body.app-body { height: 100%; }
+    body.app-body {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    .app-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: nowrap;
+      padding: 0.28rem 0.85rem;
+      min-height: 2.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      flex-shrink: 0;
+    }
+    .app-topbar h1 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+    .app-shell {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      overflow: auto;
+      padding: 1rem 1.25rem 3rem;
+    }
+    .app-main.wrap {
+      max-width: none;
+      margin: 0;
+      padding: 1rem 1.25rem 3rem;
+    }
+    .app-view { display: none; }
+    .app-view.is-active { display: block; }
+    .app-view > details.panel-collapse > summary.panel-collapse-summary { display: none; }
+    .app-view > details.panel-collapse {
+      margin-bottom: 0;
+      border: none;
+      background: transparent;
+      padding: 0;
+    }
+    .app-view > details.panel-collapse > .panel-collapse-body {
+      padding: 0;
+      border-top: none;
+    }
+    .view-title {
+      margin: 0 0 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .layout-toolbar { display: none; }
+    hbr-shell-nav {
+      flex-shrink: 0;
+      align-self: stretch;
+    }
+    hbr-nav-item {
+      --nav-item-border-radius: 12px;
+      --border-radius: 12px;
+      --nav-item-active-bg: transparent;
+      --nav-item-active-box-shadow: none;
+      --nav-item-active-extra-box-shadow: none;
+    }
+    hbr-nav-item::part(base) {
+      border-radius: 12px;
+    }
+    hbr-nav-item[active]::part(base),
+    hbr-nav-item[selected]::part(base) {
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    html:not(.hbr-mode-dark) hbr-nav-item[active]::part(base),
+    html:not(.hbr-mode-dark) hbr-nav-item[selected]::part(base) {
+      background: rgba(15, 20, 25, 0.08);
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless])::part(collapsible-icon) {
+      padding: 0 0 8px;
+      justify-content: flex-start;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless])::part(collapse-button) {
+      border-radius: 12px;
+      margin-left: 0;
+      padding: 8px;
+    }
+    hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item[active]::part(pointer),
+    hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item[selected]::part(pointer) {
+      display: block;
+      width: 3px;
+      background: #fff;
+      border-radius: 0 2px 2px 0;
+    }
+    html:not(.hbr-mode-dark) hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item[active]::part(pointer),
+    html:not(.hbr-mode-dark) hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item[selected]::part(pointer) {
+      background: #1b2533;
+    }
+    hbr-shell-nav[collapsed],
+    hbr-shell-nav[titleless] {
+      --hbr-spacing-md: 0px;
+      --nav-item-titleless-width: 40px;
+      width: 56px;
+      min-width: 56px;
+    }
+    hbr-shell-nav[collapsed]::part(base),
+    hbr-shell-nav[titleless]::part(base) {
+      width: 56px;
+      min-width: 56px;
+    }
+    hbr-shell-nav[collapsed]::part(nav-container),
+    hbr-shell-nav[titleless]::part(nav-container) {
+      padding: 8px 8px 12px;
+    }
+    hbr-shell-nav[collapsed]::part(collapsible-icon),
+    hbr-shell-nav[titleless]::part(collapsible-icon) {
+      padding: 0 0 8px;
+      max-width: none;
+      justify-content: center;
+    }
+    hbr-shell-nav[collapsed]::part(collapse-button),
+    hbr-shell-nav[titleless]::part(collapse-button) {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto;
+      justify-content: center;
+      border-radius: 12px;
+      padding: 0;
+    }
+    hbr-shell-nav[collapsed]::part(nav-items),
+    hbr-shell-nav[titleless]::part(nav-items) {
+      align-items: center;
+      margin-left: 0;
+      width: 40px;
+    }
+    hbr-shell-nav[collapsed] hbr-nav-item::part(pointer),
+    hbr-shell-nav[titleless] hbr-nav-item::part(pointer) {
+      display: none;
+    }
+    hbr-shell-nav[collapsed] hbr-nav-item::part(base),
+    hbr-shell-nav[titleless] hbr-nav-item::part(base) {
+      width: 40px;
+      height: 40px;
+      min-height: 40px;
+      padding: 0;
+      margin: 0 auto;
+      justify-content: center;
+      border-radius: 12px;
+    }
   </style>
+  <link rel="stylesheet" href="/vendor/atmosphere-fonts/index.css" />
+  <link rel="stylesheet" href="/vendor/atmosphere-theme/atmosphere.base-16.css" />
+  <link rel="stylesheet" href="/harbor-elements/harbor-elements.css" />
+  <link rel="stylesheet" href="/harbor-elements/styles/themes/magnetic.css" />
+  <link rel="stylesheet" href="/harbor-elements/styles/tokens/magnetic.css" />
+  <link rel="stylesheet" href="/harbor-elements/styles/themes/magnetic.dark.css" />
+  <link rel="stylesheet" href="/harbor-elements/styles/tokens/magnetic.dark.css" />
+  <link rel="stylesheet" href="/static/atm.css" />
+  <style id="control-hub-chrome">
+    /* Loaded last so Harbor's interact blue and 8px corners do not win. */
+    #app-nav,
+    hbr-shell-nav,
+    hbr-nav-item {
+      --interact-bg-default: rgba(255, 255, 255, 0.08);
+      --interact-bg-hover: rgba(255, 255, 255, 0.12);
+      --interact-bg-weak-default: rgba(255, 255, 255, 0.08);
+      --interact-bg-weak-hover: rgba(255, 255, 255, 0.06);
+      --interact-bg-weak-active: rgba(255, 255, 255, 0.1);
+      --base-bg-weak-active: rgba(255, 255, 255, 0.08);
+      --base-bg-weak-hover: rgba(255, 255, 255, 0.06);
+      --control-bg-weak-default: rgba(255, 255, 255, 0.08);
+      --nav-item-selected-bg: rgba(255, 255, 255, 0.08);
+      --nav-item-hover-bg: rgba(255, 255, 255, 0.06);
+      --nav-item-active-bg: transparent !important;
+      --nav-item-active-box-shadow: none !important;
+      --nav-item-active-extra-box-shadow: none !important;
+      --pointer-bg-color: #fff;
+      --sentiment-color: transparent;
+      --sentiment-bg-color: #fff;
+      --hbr-color-brand: #fff;
+      --hbr-color-brand-icon: #fff;
+      --brand-accent-icon-active: #fff;
+      --brand-accent-icon-default: #c5cdd6;
+      --collapse-btn-color: #c5cdd6;
+      --collapse-btn-hover-color: #fff;
+    }
+    hbr-nav-item[selected],
+    hbr-nav-item[active] {
+      --nav-item-active-bg: transparent !important;
+      --nav-item-active-box-shadow: none !important;
+      --nav-item-active-extra-box-shadow: none !important;
+    }
+    #app-nav::part(base) {
+      background: var(--bg, #0f1419);
+    }
+    hbr-nav-item[active]::part(base),
+    hbr-nav-item[selected]::part(base) {
+      background: rgba(255, 255, 255, 0.08) !important;
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      border-radius: 12px !important;
+    }
+    html:not(.hbr-mode-dark) #app-nav,
+    html:not(.hbr-mode-dark) hbr-nav-item {
+      --interact-bg-default: rgba(15, 20, 25, 0.08);
+      --nav-item-selected-bg: rgba(15, 20, 25, 0.08);
+      --nav-item-active-bg: transparent;
+      --control-bg-weak-default: rgba(15, 20, 25, 0.08);
+      --pointer-bg-color: #1b2533;
+      --sentiment-bg-color: #1b2533;
+    }
+    html:not(.hbr-mode-dark) hbr-nav-item[active]::part(base),
+    html:not(.hbr-mode-dark) hbr-nav-item[selected]::part(base) {
+      background: rgba(15, 20, 25, 0.08) !important;
+      background-color: rgba(15, 20, 25, 0.08) !important;
+    }
+    button:not(.icon-btn):not(.account-trigger):not(.linkish):not(.clear-demo-id):not(.banner-dismiss):not(.dt-trigger):not(.dt-day):not(.dt-nav-btn):not(.dt-now):not(.help-toggle):not(.auth-panel-close):not(.card-x):not(.card-refresh) {
+      border-radius: 999px;
+    }
+    .vm-menu > summary { border-radius: 999px; }
+    input, select, textarea, .dt-trigger { border-radius: 4px; }
+  </style>
+  <script>
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem("dcloud-content-manager-settings-v1") || "{}");
+        if (s.theme === "light") document.documentElement.classList.remove("hbr-mode-dark");
+      } catch (e) {}
+    })();
+  </script>
 </head>
-<body>
-  <div class="wrap">
-    <div class="title-row">
-      <h1>dCloud Content Manager</h1>
-      <div class="header-actions">
-        <span id="app-version" class="app-version">Version 1.0</span>
-        <button type="button" class="secondary" id="btn-whats-new" data-tip="What changed in this version and earlier ones.">What’s new</button>
-        <button type="button" class="secondary" id="btn-check-updates" data-tip="Check GitHub now and install a newer version without manually restarting the app.">Check for updates</button>
-        <button type="button" class="secondary" id="btn-settings" aria-label="Settings" data-tip="Personal settings for this browser, including datacenter display order.">⚙ Settings</button>
-        <button type="button" class="secondary dcloud-auth-button" id="btn-dcloud-authorize" data-tip="Open dCloud login and token controls.">Sign in to dCloud</button>
+<body class="hbr-mode-dark app-body">
+  <script>
+    if (!document.documentElement.classList.contains("hbr-mode-dark")) {
+      document.body.classList.remove("hbr-mode-dark");
+    }
+  </script>
+  <header class="app-topbar">
+    <h1>dCloud Content Manager</h1>
+    <div class="header-actions">
+      <span id="app-version" class="app-version">Version 1.0</span>
+      <span id="header-status" class="header-status" hidden></span>
+      <button type="button" class="icon-btn" id="btn-whats-new" aria-label="What’s new" data-tip="What changed in this version and earlier ones.">
+        <hbr-icon name="info"></hbr-icon>
+      </button>
+      <button type="button" class="icon-btn" id="btn-check-updates" aria-label="Check for updates" data-tip="Check GitHub now and install a newer version without manually restarting the app.">
+        <hbr-icon name="refresh"></hbr-icon>
+      </button>
+      <button type="button" class="icon-btn" id="btn-theme" aria-label="Switch to light theme" data-tip="Light theme">
+        <hbr-icon name="circle-half"></hbr-icon>
+      </button>
+      <button type="button" class="icon-btn" id="btn-settings" aria-label="Settings" data-tip="Personal settings for this browser, including datacenter and menu order.">
+        <hbr-icon name="gear-six"></hbr-icon>
+      </button>
+      <div class="account-menu" id="account-menu">
+        <button type="button" class="account-trigger" id="btn-dcloud-authorize" aria-label="Sign in to dCloud" aria-haspopup="menu" aria-expanded="false" data-tip="Sign in to dCloud so this tool can use your account.">
+          <span class="account-avatar" id="account-avatar">?</span>
+        </button>
+        <div class="account-dropdown hidden" id="account-dropdown" role="menu">
+          <div class="account-card">
+            <span class="account-avatar-lg" id="account-avatar-lg">?</span>
+            <div class="account-name" id="account-name">Not signed in</div>
+            <p class="account-meta hint" id="account-meta">Sign in to dCloud</p>
+          </div>
+          <button type="button" class="account-action" id="account-open-auth">Sign in to dCloud</button>
+          <button type="button" class="account-action" id="account-theme">Light theme</button>
+          <button type="button" class="account-action danger-text hidden" id="account-signout">Sign out</button>
+        </div>
       </div>
     </div>
+  </header>
+  <div class="app-shell">
+    <hbr-shell-nav id="app-nav" collapse-tooltip-label="Collapse navigation" no-responsive>
+      <hbr-nav-item data-view="schedule" selected>
+        <hbr-icon slot="prefix" name="calendar-blank"></hbr-icon>
+        <span slot="content">Schedule</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="saved">
+        <hbr-icon slot="prefix" name="folder"></hbr-icon>
+        <span slot="content">Saved</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="workspace">
+        <hbr-icon slot="prefix" name="nav-jobs"></hbr-icon>
+        <span slot="content">Workspace</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="monitor">
+        <hbr-icon slot="prefix" name="nav-monitor"></hbr-icon>
+        <span slot="content">Monitor</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="hub">
+        <hbr-icon slot="prefix" name="nav-inventory"></hbr-icon>
+        <span slot="content">Hub</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="events">
+        <hbr-icon slot="prefix" name="nav-users"></hbr-icon>
+        <span slot="content">Events</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="search">
+        <hbr-icon slot="prefix" name="magnifying-glass"></hbr-icon>
+        <span slot="content">Search</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="surveys">
+        <hbr-icon slot="prefix" name="nav-feedback"></hbr-icon>
+        <span slot="content">Surveys</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="log">
+        <hbr-icon slot="prefix" name="nav-change-log"></hbr-icon>
+        <span slot="content">Log</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="reset">
+        <hbr-icon slot="prefix" name="trash-simple"></hbr-icon>
+        <span slot="content">Reset</span>
+      </hbr-nav-item>
+    </hbr-shell-nav>
+    <div class="app-main wrap">
     <p class="sub">
       Schedule sessions and manage saved content across datacenters — transfer, integrate, replace VMs,
       clean up, and keep live sessions running from one place.
@@ -1783,13 +2321,19 @@
     <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="modal-backdrop" id="settings-backdrop"></div>
       <div class="modal-card settings-card">
-        <h2 id="settings-title">⚙ Settings</h2>
-        <p class="hint">These settings are saved only in this browser on this Mac.</p>
+        <h2 id="settings-title" tabindex="-1">Settings</h2>
+        <p class="hint">These settings are saved only in this browser on this Mac. Dark theme is the default.</p>
         <h3>Datacenter display order</h3>
         <p class="hint">Drag datacenters or use the arrows. Lists, cards, checkboxes, and dropdown menus use this order.</p>
         <div id="dc-order-list" class="dc-order-list" aria-label="Datacenter display order"></div>
         <div class="actions">
-          <button type="button" class="secondary" id="btn-reset-dc-order">Reset order</button>
+          <button type="button" class="secondary" id="btn-reset-dc-order">Reset site order</button>
+        </div>
+        <h3>Side menu order</h3>
+        <p class="hint">Short names in the left nav. Page titles stay the same. Drag items or use the arrows.</p>
+        <div id="nav-order-list" class="dc-order-list" aria-label="Side menu order"></div>
+        <div class="actions">
+          <button type="button" class="secondary" id="btn-reset-nav-order">Reset menu order</button>
           <button type="button" id="btn-close-settings">Done</button>
         </div>
       </div>
@@ -1959,7 +2503,9 @@
       </div>
     </details>
 
-    <details class="panel panel-collapse" id="panel-step3">
+    <section class="app-view is-active" id="view-schedule" data-view="schedule">
+    <h2 class="view-title">Schedule sessions</h2>
+    <details class="panel panel-collapse" id="panel-step3" open>
       <summary class="panel-collapse-summary">Schedule sessions — demo / content IDs per DC</summary>
       <div class="panel-collapse-body">
       <details class="advanced schedule-load-vms" id="panel-step2">
@@ -2143,8 +2689,11 @@
       </details>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-saved-schedule">
+    <section class="app-view" id="view-saved" data-view="saved">
+    <h2 class="view-title">Manage your own saved content</h2>
+    <details class="panel panel-collapse" id="panel-saved-schedule" open>
       <summary class="panel-collapse-summary">Manage your own saved content across all DCs</summary>
       <div class="panel-collapse-body">
       <p class="hint">
@@ -2251,8 +2800,11 @@
       </details>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-cleanup">
+    <section class="app-view" id="view-surveys" data-view="surveys">
+    <h2 class="view-title">Session feedback surveys</h2>
+    <details class="panel panel-collapse" id="panel-cleanup" open>
       <summary class="panel-collapse-summary">Session feedback surveys</summary>
       <div class="panel-collapse-body">
       <p class="hint">
@@ -2267,8 +2819,11 @@
       </div>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-job-cards">
+    <section class="app-view" id="view-workspace" data-view="workspace">
+    <h2 class="view-title">Job workspace</h2>
+    <details class="panel panel-collapse" id="panel-job-cards" open>
       <summary class="panel-collapse-summary">Job workspace</summary>
       <div class="panel-collapse-body">
       <p class="hint">Sessions you schedule or move here support bulk extend, shutdown, and end.</p>
@@ -2391,8 +2946,11 @@
       </div>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-monitoring">
+    <section class="app-view" id="view-monitor" data-view="monitor">
+    <h2 class="view-title">Session monitoring</h2>
+    <details class="panel panel-collapse" id="panel-monitoring" open>
       <summary class="panel-collapse-summary">Session monitoring</summary>
       <div class="panel-collapse-body">
       <p class="hint">
@@ -2458,8 +3016,11 @@
       <div id="monitor-cards" class="cards" style="margin-top:0.35rem"></div>
       </div>
     </details>
+    </section>
 
-    <details id="saved-ids-panel" class="panel panel-collapse">
+    <section class="app-view" id="view-hub" data-view="hub">
+    <h2 class="view-title">Content Automation Hub</h2>
+    <details id="saved-ids-panel" class="panel panel-collapse" open>
       <summary class="panel-collapse-summary">Content Automation Hub</summary>
       <div class="panel-collapse-body" id="hub-body">
       <div class="task-group-head">
@@ -2751,8 +3312,11 @@
       </details>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-events">
+    <section class="app-view" id="view-events" data-view="events">
+    <h2 class="view-title">Events</h2>
+    <details class="panel panel-collapse" id="panel-events" open>
       <summary class="panel-collapse-summary">Events</summary>
       <div class="panel-collapse-body">
         <p class="hint">
@@ -2832,8 +3396,11 @@
         <div id="events-results"></div>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-unified-search">
+    <section class="app-view" id="view-search" data-view="search">
+    <h2 class="view-title">Search dCloud</h2>
+    <details class="panel panel-collapse" id="panel-unified-search" open>
       <summary class="panel-collapse-summary">Search dCloud</summary>
       <div class="panel-collapse-body">
         <p class="hint">
@@ -2896,8 +3463,11 @@
         <div id="unified-catalog-results" class="unified-search-results"></div>
       </div>
     </details>
+    </section>
 
-    <details class="panel panel-collapse" id="panel-log">
+    <section class="app-view" id="view-log" data-view="log">
+    <h2 class="view-title">Log</h2>
+    <details class="panel panel-collapse" id="panel-log" open>
       <summary class="panel-collapse-summary">Log</summary>
       <div class="panel-collapse-body">
       <p class="hint">Scroll this box to see older lines. It stays put unless you are already at the bottom.</p>
@@ -2907,7 +3477,10 @@
       </div>
       </div>
     </details>
+    </section>
 
+    <section class="app-view" id="view-reset" data-view="reset">
+    <h2 class="view-title">Start fresh</h2>
     <div class="panel" id="panel-start-fresh">
       <p class="step-label">Start fresh</p>
       <p class="hint" style="margin:0 0 0.75rem">
@@ -2918,11 +3491,15 @@
         <button type="button" class="secondary" id="btn-start-fresh" data-tip="Asks what to clear, then resets those parts of the page and the matching files on this machine. Does not end or save anything in dCloud.">Start fresh</button>
       </div>
     </div>
+    </section>
+    </div>
   </div>
 
+  <script type="module" src="/harbor-elements/harbor-elements.esm.js" data-id="dcloud-content-manager" data-version="1.18.12" data-theme="hbr-theme-magnetic"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const JOB_STORE = "dcloud-content-manager-job-id";
+    const APP_VIEW_STORE = "dcloud-app-view";
     const LEGACY_JOB_STORES = ["dcloud-session-manager-job-id", "dcloud-vuln-job-id"];
     function loadStoredJobId() {
       const current = sessionStorage.getItem(JOB_STORE);
@@ -3335,18 +3912,99 @@
       $("btn-dcloud-authorize")?.focus();
     }
 
-    function setDcloudAuthorizationState(authorized, label = "") {
+    let lastSessionUser = { id: "", name: "", email: "" };
+
+    function setDcloudAuthorizationState(authorized, label = "", user = null) {
       const button = $("btn-dcloud-authorize");
       if (!button) return;
       button.classList.toggle("authorized", Boolean(authorized));
-      button.textContent = authorized ? "✓ Signed in to dCloud" : "Sign in to dCloud";
       button.setAttribute("aria-pressed", authorized ? "true" : "false");
+      button.setAttribute("aria-label", authorized ? "dCloud account menu" : "Sign in to dCloud");
       button.setAttribute(
         "data-tip",
         label || (authorized
-          ? "You are signed in to dCloud. Click to view login and token controls."
+          ? "You are signed in to dCloud. Click for account options."
           : "Sign in to dCloud so this tool can use your account."),
       );
+      if (user && typeof user === "object") setAccountUser(user, Boolean(authorized));
+      else if (!authorized) setAccountUser({}, false);
+      else setAccountUser(lastSessionUser, true);
+    }
+
+    function accountInitials(name, userId, email) {
+      const text = String(name || userId || (email || "").split("@")[0] || "").trim();
+      if (!text) return "?";
+      const parts = text.replace(/[._-]+/g, " ").split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return text.slice(0, 2).toUpperCase();
+    }
+
+    function setAccountUser(user, authorized) {
+      lastSessionUser = user && typeof user === "object"
+        ? { id: String(user.id || "").trim(), name: String(user.name || "").trim(), email: String(user.email || "").trim() }
+        : { id: "", name: "", email: "" };
+      const initials = accountInitials(lastSessionUser.name, lastSessionUser.id, lastSessionUser.email);
+      document.querySelectorAll("#account-avatar, #account-avatar-lg").forEach((el) => {
+        el.textContent = initials;
+      });
+      const nameEl = $("account-name");
+      const metaEl = $("account-meta");
+      if (nameEl) {
+        nameEl.textContent = authorized
+          ? (lastSessionUser.name || lastSessionUser.id || "Signed in")
+          : "Not signed in";
+      }
+      if (metaEl) {
+        metaEl.textContent = authorized
+          ? [lastSessionUser.id, lastSessionUser.email].filter(Boolean).join(" · ") || "dCloud"
+          : "Sign in to dCloud";
+      }
+      $("account-signout")?.classList.toggle("hidden", !authorized);
+      const openAuth = $("account-open-auth");
+      if (openAuth) openAuth.textContent = authorized ? "Login and token" : "Sign in to dCloud";
+      const themeBtn = $("account-theme");
+      if (themeBtn) themeBtn.textContent = readTheme() === "dark" ? "Light theme" : "Dark theme";
+    }
+
+    function accountMenuOpen() {
+      return !$("account-dropdown")?.classList.contains("hidden");
+    }
+
+    function closeAccountMenu() {
+      $("account-dropdown")?.classList.add("hidden");
+      $("btn-dcloud-authorize")?.setAttribute("aria-expanded", "false");
+    }
+
+    function toggleAccountMenu() {
+      const menu = $("account-dropdown");
+      if (!menu) return;
+      const open = menu.classList.contains("hidden");
+      menu.classList.toggle("hidden", !open);
+      $("btn-dcloud-authorize")?.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function initAccountMenu() {
+      $("btn-dcloud-authorize")?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        toggleAccountMenu();
+      });
+      $("account-open-auth")?.addEventListener("click", () => {
+        closeAccountMenu();
+        openDcloudAuth();
+      });
+      $("account-theme")?.addEventListener("click", () => {
+        persistTheme(readTheme() === "dark" ? "light" : "dark");
+        setAccountUser(lastSessionUser, $("btn-dcloud-authorize")?.classList.contains("authorized"));
+      });
+      $("account-signout")?.addEventListener("click", () => {
+        closeAccountMenu();
+        clearLoginSession().catch((err) => showError(err.message));
+      });
+      document.addEventListener("click", (ev) => {
+        if (!accountMenuOpen()) return;
+        if (ev.target.closest("#account-menu")) return;
+        closeAccountMenu();
+      });
     }
 
     function changelogHtml(text) {
@@ -3390,6 +4048,13 @@
       }
     }
 
+    function setHeaderStatus(text) {
+      const el = $("header-status");
+      if (!el) return;
+      el.hidden = !text;
+      el.textContent = text || "";
+    }
+
     async function waitForUpdatedApp(version) {
       const button = $("btn-check-updates");
       const deadline = Date.now() + 45000;
@@ -3411,7 +4076,7 @@
       }
       if (button) {
         button.disabled = false;
-        button.textContent = "Update downloaded — restart";
+        setHeaderStatus("Update downloaded — restart");
         button.setAttribute("data-tip", "The update downloaded, but automatic reload timed out. Close and restart start.command.");
       }
     }
@@ -3419,9 +4084,9 @@
     async function checkForAppUpdates() {
       const button = $("btn-check-updates");
       if (!button || button.disabled) return;
-      const original = button.textContent;
+      const originalTip = button.getAttribute("data-tip");
       button.disabled = true;
-      button.textContent = "Checking…";
+      setHeaderStatus("Checking…");
       try {
         const data = await api("/api/update/check", {
           method: "POST",
@@ -3429,20 +4094,21 @@
           quiet: true,
         });
         if (data.updating) {
-          button.textContent = `Updating to ${data.version}…`;
+          setHeaderStatus(`Updating to ${data.version}…`);
           button.setAttribute("data-tip", data.message || "Installing update.");
           waitForUpdatedApp(data.version);
           return;
         }
-        button.textContent = "✓ Up to date";
+        setHeaderStatus("Up to date");
         button.setAttribute("data-tip", data.message || "This is the latest version.");
         setTimeout(() => {
           button.disabled = false;
-          button.textContent = original;
+          setHeaderStatus("");
+          if (originalTip) button.setAttribute("data-tip", originalTip);
         }, 2500);
       } catch (err) {
         button.disabled = false;
-        button.textContent = "Check failed — retry";
+        setHeaderStatus("Check failed");
         button.setAttribute("data-tip", err.message || "Could not check GitHub.");
         showError(err.message);
       }
@@ -8753,7 +9419,7 @@
         (data.sessionLoggedIn && data.accessToken)
         || (manualDcloudTokenValidated && $("dtoken").value.trim()),
       );
-      setDcloudAuthorizationState(authorized, status);
+      setDcloudAuthorizationState(authorized, status, data.sessionUser);
       if (data.version) {
         $("app-version").textContent = `Version ${data.version}`;
       }
@@ -10449,6 +11115,19 @@
 
     const DEFAULT_SITE_ORDER = Object.freeze(["sjc", "rtp", "lon", "sng", "syd"]);
     const SETTINGS_KEY = "dcloud-content-manager-settings-v1";
+    const DEFAULT_NAV_ITEMS = Object.freeze([
+      { id: "schedule", title: "Schedule" },
+      { id: "saved", title: "Saved content" },
+      { id: "workspace", title: "Workspace" },
+      { id: "monitor", title: "Monitor" },
+      { id: "hub", title: "Hub" },
+      { id: "events", title: "Events" },
+      { id: "search", title: "Search" },
+      { id: "surveys", title: "Surveys" },
+      { id: "log", title: "Log" },
+      { id: "reset", title: "Reset" },
+    ]);
+    const DEFAULT_NAV_IDS = Object.freeze(DEFAULT_NAV_ITEMS.map((item) => item.id));
     let SITE_ORDER = readDatacenterOrder();
     const DCLOUD_CATALOG_EOL_URL = "https://dcloud-camgr.cisco.com/#/catalogue";
     const UI_STATE_KEY = "dcloud-content-manager-ui-v1";
@@ -10616,7 +11295,138 @@
       updateUnifiedCacheStatus();
     }
 
+    function readNavOrder() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        const order = Array.isArray(saved.navOrder) ? saved.navOrder : [];
+        const valid = order.filter((id, index) => DEFAULT_NAV_IDS.includes(id) && order.indexOf(id) === index);
+        for (const id of DEFAULT_NAV_IDS) {
+          if (!valid.includes(id)) valid.push(id);
+        }
+        return valid;
+      } catch {
+        return [...DEFAULT_NAV_IDS];
+      }
+    }
+
+    function applyNavOrder() {
+      const nav = $("app-nav");
+      if (!nav) return;
+      readNavOrder().forEach((id) => {
+        const item = nav.querySelector(`hbr-nav-item[data-view="${id}"]`);
+        if (item) nav.appendChild(item);
+      });
+    }
+
+    function persistNavOrder(order) {
+      const next = (Array.isArray(order) ? order : []).filter(
+        (id, index, rows) => DEFAULT_NAV_IDS.includes(id) && rows.indexOf(id) === index,
+      );
+      for (const id of DEFAULT_NAV_IDS) {
+        if (!next.includes(id)) next.push(id);
+      }
+      let settings = {};
+      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
+      settings.navOrder = next;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+      applyNavOrder();
+    }
+
+    function navTitle(id) {
+      return DEFAULT_NAV_ITEMS.find((item) => item.id === id)?.title || id;
+    }
+
+    function renderNavOrderSettings() {
+      const root = $("nav-order-list");
+      if (!root) return;
+      const order = readNavOrder();
+      root.innerHTML = order.map((id, index) => `
+        <div class="dc-order-item" data-view="${id}" draggable="true">
+          <span class="dc-order-grip" aria-hidden="true" title="Drag to move">⠿</span>
+          <strong>${navTitle(id)}</strong>
+          <button type="button" class="secondary dc-order-up" aria-label="Move ${navTitle(id)} up" ${index === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" class="secondary dc-order-down" aria-label="Move ${navTitle(id)} down" ${index === order.length - 1 ? "disabled" : ""}>↓</button>
+        </div>
+      `).join("");
+    }
+
+    function moveNavItem(id, direction) {
+      const order = readNavOrder();
+      const index = order.indexOf(id);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= order.length) return;
+      [order[index], order[next]] = [order[next], order[index]];
+      persistNavOrder(order);
+      renderNavOrderSettings();
+    }
+
+    function readTheme() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        return saved.theme === "light" ? "light" : "dark";
+      } catch {
+        return "dark";
+      }
+    }
+
+    function applyTheme(theme) {
+      const dark = theme !== "light";
+      document.documentElement.classList.toggle("hbr-mode-dark", dark);
+      document.body.classList.toggle("hbr-mode-dark", dark);
+      const btn = $("btn-theme");
+      if (btn) {
+        btn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+        btn.setAttribute("data-tip", dark ? "Light theme" : "Dark theme");
+      }
+      const accountTheme = $("account-theme");
+      if (accountTheme) accountTheme.textContent = dark ? "Light theme" : "Dark theme";
+    }
+
+    function persistTheme(theme) {
+      const next = theme === "light" ? "light" : "dark";
+      let settings = {};
+      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
+      settings.theme = next;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+      applyTheme(next);
+    }
+
+    function initTheme() {
+      applyTheme(readTheme());
+      $("btn-theme")?.addEventListener("click", () => {
+        persistTheme(readTheme() === "dark" ? "light" : "dark");
+      });
+    }
+
+    function readNavCollapsed() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        return Boolean(saved.navCollapsed);
+      } catch {
+        return false;
+      }
+    }
+
+    function setNavCollapsed(collapsed) {
+      const nav = $("app-nav");
+      if (!nav) return;
+      const on = Boolean(collapsed);
+      nav.collapsed = on;
+      nav.titleless = on;
+      nav.setAttribute("collapse-tooltip-label", on ? "Expand navigation" : "Collapse navigation");
+    }
+
+    function persistNavCollapsed(collapsed) {
+      const on = Boolean(collapsed);
+      let settings = {};
+      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
+      settings.navCollapsed = on;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+      setNavCollapsed(on);
+    }
+
     let draggingDatacenter = "";
+    let draggingNavItem = "";
 
     function renderDatacenterOrderSettings() {
       const root = $("dc-order-list");
@@ -10643,8 +11453,9 @@
 
     function openSettings() {
       renderDatacenterOrderSettings();
+      renderNavOrderSettings();
       $("settings-modal")?.classList.remove("hidden");
-      $("btn-close-settings")?.focus();
+      $("settings-title")?.focus();
     }
 
     function closeSettings() {
@@ -10702,6 +11513,52 @@
       $("btn-reset-dc-order")?.addEventListener("click", () => {
         persistDatacenterOrder([...DEFAULT_SITE_ORDER]);
         renderDatacenterOrderSettings();
+      });
+      const navRoot = $("nav-order-list");
+      navRoot?.addEventListener("click", (ev) => {
+        const button = ev.target.closest("button");
+        const row = ev.target.closest(".dc-order-item");
+        if (!button || !row) return;
+        moveNavItem(row.dataset.view, button.classList.contains("dc-order-up") ? -1 : 1);
+      });
+      navRoot?.addEventListener("dragstart", (ev) => {
+        const row = ev.target.closest(".dc-order-item");
+        if (!row) return;
+        draggingNavItem = row.dataset.view || "";
+        row.classList.add("dragging");
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", draggingNavItem);
+      });
+      navRoot?.addEventListener("dragover", (ev) => {
+        const row = ev.target.closest(".dc-order-item");
+        if (!row || !draggingNavItem || row.dataset.view === draggingNavItem) return;
+        ev.preventDefault();
+        navRoot.querySelectorAll(".drop-before, .drop-after").forEach((el) =>
+          el.classList.remove("drop-before", "drop-after")
+        );
+        const rect = row.getBoundingClientRect();
+        row.classList.add(ev.clientY > rect.top + rect.height / 2 ? "drop-after" : "drop-before");
+      });
+      navRoot?.addEventListener("drop", (ev) => {
+        const target = ev.target.closest(".dc-order-item");
+        if (!target || !draggingNavItem || target.dataset.view === draggingNavItem) return;
+        ev.preventDefault();
+        const order = readNavOrder().filter((id) => id !== draggingNavItem);
+        const index = order.indexOf(target.dataset.view);
+        order.splice(target.classList.contains("drop-after") ? index + 1 : index, 0, draggingNavItem);
+        persistNavOrder(order);
+        draggingNavItem = "";
+        renderNavOrderSettings();
+      });
+      navRoot?.addEventListener("dragend", () => {
+        draggingNavItem = "";
+        navRoot.querySelectorAll(".dragging, .drop-before, .drop-after").forEach((el) =>
+          el.classList.remove("dragging", "drop-before", "drop-after")
+        );
+      });
+      $("btn-reset-nav-order")?.addEventListener("click", () => {
+        persistNavOrder([...DEFAULT_NAV_IDS]);
+        renderNavOrderSettings();
       });
     }
 
@@ -10762,7 +11619,10 @@
         if (el.matches(TOP_LEVEL_PANEL_SELECTOR)) continue;
         el.open = Boolean(open);
       }
-      document.querySelectorAll(TOP_LEVEL_PANEL_SELECTOR).forEach((el) => { el.open = false; });
+      document.querySelectorAll(TOP_LEVEL_PANEL_SELECTOR).forEach((el) => {
+        if (el.classList.contains("auth-panel")) return;
+        el.open = true;
+      });
     }
 
     function persistedPanelOpen(id, fallback = true) {
@@ -10794,7 +11654,10 @@
     }
 
     function setAllUiSectionsOpen(open) {
-      document.querySelectorAll(PERSIST_PANEL_SELECTOR).forEach((el) => { el.open = open; });
+      document.querySelectorAll(PERSIST_PANEL_SELECTOR).forEach((el) => {
+        if (el.matches(TOP_LEVEL_PANEL_SELECTOR)) return;
+        el.open = open;
+      });
       document.querySelectorAll(PERSIST_VM_MORE_SELECTOR).forEach((el) => { el.open = open; });
       document.querySelectorAll(PERSIST_DC_GROUP_SELECTOR).forEach((el) => { el.open = open; });
       saveUiStateFromDom();
@@ -10804,6 +11667,51 @@
       document.querySelectorAll(PERSIST_PANEL_SELECTOR).forEach((el) => {
         if (el.id) DEFAULT_PANEL_OPEN.set(el.id, el.open);
       });
+    }
+
+    function showAppView(viewId) {
+      const next = String(viewId || "schedule");
+      document.querySelectorAll(".app-view").forEach((el) => {
+        const on = el.dataset.view === next;
+        el.classList.toggle("is-active", on);
+        if (on) {
+          el.querySelectorAll(":scope > details.panel-collapse").forEach((d) => { d.open = true; });
+        }
+      });
+      document.querySelectorAll("#app-nav hbr-nav-item").forEach((item) => {
+        const on = item.getAttribute("data-view") === next;
+        item.selected = on;
+        item.toggleAttribute("selected", on);
+        item.removeAttribute("active");
+        try { item.active = false; } catch {}
+      });
+      try { sessionStorage.setItem(APP_VIEW_STORE, next); } catch {}
+    }
+
+    function initAppNav() {
+      const nav = $("app-nav");
+      if (!nav) return;
+      applyNavOrder();
+      setNavCollapsed(readNavCollapsed());
+      const onPick = (ev) => {
+        const item = ev.target?.closest?.("hbr-nav-item");
+        const view = item?.getAttribute("data-view");
+        if (view) showAppView(view);
+      };
+      nav.addEventListener("click", onPick);
+      nav.addEventListener("hbrNavItemClick", onPick);
+      let collapsing = false;
+      const toggleCollapsed = () => {
+        if (collapsing) return;
+        collapsing = true;
+        persistNavCollapsed(!nav.collapsed);
+        queueMicrotask(() => { collapsing = false; });
+      };
+      nav.addEventListener("hbr-collapse-click", toggleCollapsed);
+      nav.addEventListener("hbrCollapseClick", toggleCollapsed);
+      let start = "schedule";
+      try { start = sessionStorage.getItem(APP_VIEW_STORE) || start; } catch {}
+      showAppView(start);
     }
 
     function initUiStatePersistence() {
@@ -10830,6 +11738,7 @@
     }
 
     function applySectionOrder(order) {
+      if (document.querySelector(".app-view")) return;
       const anchor = $("panel-start-fresh");
       if (!anchor?.parentElement) return;
       const valid = Array.isArray(order)
@@ -10938,6 +11847,7 @@
     }
 
     function initSectionOrdering() {
+      if (document.querySelector(".app-view")) return;
       applySectionOrder(readUiState().sectionOrder);
       for (const id of DEFAULT_SECTION_ORDER) {
         const panel = $(id);
@@ -14018,6 +14928,9 @@
       if (!target) return;
       const selector = target.startsWith("#") || target.startsWith(".") ? target : null;
       const el = selector ? document.querySelector(selector) : null;
+      const viewEl = el?.closest(".app-view");
+      if (viewEl?.dataset.view) showAppView(viewEl.dataset.view);
+      else if (isHubScrollTarget(target)) showAppView("hub");
       if (isHubScrollTarget(target)) {
         const hub = $("saved-ids-panel");
         hub?.classList.remove("hidden");
@@ -14081,7 +14994,6 @@
     $("btn-check-updates")?.addEventListener("click", () => {
       checkForAppUpdates().catch((err) => showError(err.message));
     });
-    $("btn-dcloud-authorize")?.addEventListener("click", openDcloudAuth);
     $("btn-close-dcloud-auth")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -14095,6 +15007,9 @@
       }
     });
     document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && accountMenuOpen()) {
+        closeAccountMenu();
+      }
       if (ev.key === "Escape" && $("panel-step1")?.classList.contains("auth-panel-open")) {
         closeDcloudAuth();
       }
@@ -14156,7 +15071,8 @@
       hideHoverTip();
       if (!host?.getAttribute("data-tip") || host.disabled) return;
       hoverTipHost = host;
-      hoverTipTimer = setTimeout(() => showHoverTip(host), HOVER_TIP_DELAY_MS);
+      const delay = host.classList.contains("icon-btn") ? 400 : HOVER_TIP_DELAY_MS;
+      hoverTipTimer = setTimeout(() => showHoverTip(host), delay);
     }
 
     document.addEventListener("mouseover", (ev) => {
@@ -14190,9 +15106,12 @@
       }
     }, true);
 
+    initTheme();
+    initAccountMenu();
     initSettings();
     initSectionOrdering();
     initUiStatePersistence();
+    initAppNav();
     initHubHelpToggle();
     clearRestoredIdFields();
     for (const ref of savedEventRefs()) {

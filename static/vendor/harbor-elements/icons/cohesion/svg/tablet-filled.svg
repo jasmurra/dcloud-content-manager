@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16px" height="16px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 60.1 (88133) - https://sketch.com -->
+    <title>Networking/Endpoints/tablet/tablet-filled_16</title>
+    <desc>Created with Sketch.</desc>
+    <g id="Networking/Endpoints/tablet/tablet-filled_16" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <path d="M14,2 C15.104,2 16,2.896 16,4 L16,12 C16,13.104 15.104,14 14,14 L12,14 L12,2 L14,2 Z M13.5,7 C13.2546667,7 13.0504198,7.17698765 13.0080604,7.41016187 L13,7.5 L13,8.5 C13,8.776 13.224,9 13.5,9 C13.7453333,9 13.9495802,8.82301235 13.9919396,8.58983813 L14,8.5 L14,7.5 C14,7.224 13.776,7 13.5,7 Z M11,14 L2,14 C0.896,14 0,13.104 0,12 L0,4 C0,2.896 0.896,2 2,2 L11,2 L11,14 Z" id="tablet-filled_16" fill="#00090D"></path>
+    </g>
+</svg>

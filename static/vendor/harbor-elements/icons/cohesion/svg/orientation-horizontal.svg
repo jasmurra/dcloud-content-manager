@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16px" height="16px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 60.1 (88133) - https://sketch.com -->
+    <title>Navigation / orientation / orientation-horizontal_16</title>
+    <desc>Created with Sketch.</desc>
+    <g id="Navigation-/-orientation-/-orientation-horizontal_16" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <path d="M8,1 C8.55228475,1 9,1.44771525 9,2 L9,7 L14,7 C14.5522847,7 15,7.44771525 15,8 L15,14 C15,14.5522847 14.5522847,15 14,15 L2,15 C1.44771525,15 1,14.5522847 1,14 L1,2 C1,1.44771525 1.44771525,1 2,1 L8,1 Z M8,2 L2,2 L2,7 L8,7 L8,2 Z" id="orientation-horizontal_16" fill="#00090D"></path>
+    </g>
+</svg>

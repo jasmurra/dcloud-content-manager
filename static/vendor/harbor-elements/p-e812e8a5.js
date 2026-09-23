@@ -1,0 +1,2 @@
+import{c as e}from"./p-869d962c.js";const s=(s,f,o)=>{const t=s.slice();f.forEach(((f,c)=>{if(typeof t[c]==="undefined"){t[c]=o.cloneUnlessOtherwiseSpecified(f,o)}else if(o.isMergeableObject(f)){t[c]=e(s[c],f,o)}else if(s.indexOf(f)===-1){t.push(f)}}));return t};export{s as c};
+//# sourceMappingURL=p-e812e8a5.js.map

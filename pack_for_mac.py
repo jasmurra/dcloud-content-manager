@@ -56,7 +56,13 @@ FILES = (
     "tool_browser.py",
     "net_errors.py",
     "static/index.html",
+    "static/atm.css",
 )
+# Harbor / Atmosphere copies from npm. Coworkers cannot hit Cisco Artifactory.
+TREES = (
+    ("static/vendor", "static/vendor"),
+)
+HARBOR_REQUIRED = "static/vendor/harbor-elements/harbor-elements.esm.js"
 AUTH_DIR = ROOT / "browser_auth"
 PARENT_AUTH = ROOT.parent / "browser_auth"
 
@@ -262,6 +268,8 @@ def pack_zip(dest: Path, runtimes: dict[str, Path] | None) -> tuple[int, int]:
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         for name in FILES:
             add_file(zf, ROOT / name, name)
+        for src, dest_prefix in TREES:
+            add_tree(zf, ROOT / src, dest_prefix)
         auth_count = add_auth(zf)
         if runtimes:
             for arch, src_dir in runtimes.items():
@@ -280,6 +288,10 @@ def main() -> None:
     missing = [name for name in FILES if not (ROOT / name).is_file()]
     if missing:
         raise SystemExit("Missing files: " + ", ".join(missing))
+    if not (ROOT / HARBOR_REQUIRED).is_file():
+        raise SystemExit(
+            f"Missing {HARBOR_REQUIRED} — run npm install so Harbor ships in the zip."
+        )
     check_local_imports()
 
     version = read_version()

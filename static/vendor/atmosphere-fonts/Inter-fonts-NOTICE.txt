@@ -1,0 +1,6 @@
+Inter Variable font files in this directory (InterVariable.woff2, InterVariable-Italic.woff2)
+are from the Inter project by Rasmus Andersson.
+
+License: SIL Open Font License 1.1
+Full license: https://github.com/rsms/inter/blob/master/LICENSE.txt
+Project: https://github.com/rsms/inter

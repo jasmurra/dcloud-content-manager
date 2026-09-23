@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+from typing import Any
 
 import requests
 import urllib3
@@ -46,23 +47,51 @@ def dcloud_auth_header(token: str) -> dict[str, str]:
     }
 
 
-def jwt_expires_at(token: str) -> float:
-    """Unix expiry from a JWT access token payload, or 0 if unknown."""
+def jwt_claims(token: str) -> dict[str, Any]:
+    """Decode a JWT payload without verifying the signature."""
     clean = normalize_dcloud_token(token)
     parts = clean.split(".")
     if len(parts) < 2:
-        return 0.0
-    payload = parts[1]
-    payload += "=" * (-len(payload) % 4)
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
     try:
         data = json.loads(base64.urlsafe_b64decode(payload))
     except (ValueError, json.JSONDecodeError):
-        return 0.0
-    exp = data.get("exp")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def jwt_expires_at(token: str) -> float:
+    """Unix expiry from a JWT access token payload, or 0 if unknown."""
+    exp = jwt_claims(token).get("exp")
     try:
         return float(exp)
     except (TypeError, ValueError):
         return 0.0
+
+
+def jwt_session_user(token: str) -> dict[str, str]:
+    """CEC id / name / email from a dCloud access token, for the header menu."""
+    claims = jwt_claims(token)
+    email = str(claims.get("email") or claims.get("email_address") or "").strip()
+    user_id = str(
+        claims.get("ccoid")
+        or claims.get("preferred_username")
+        or claims.get("uid")
+        or ""
+    ).strip()
+    if not user_id and "@" in email:
+        user_id = email.split("@", 1)[0]
+    if not user_id:
+        user_id = str(claims.get("sub") or "").strip()
+    given = str(claims.get("given_name") or "").strip()
+    family = str(claims.get("family_name") or "").strip()
+    name = str(claims.get("name") or "").strip() or " ".join(
+        part for part in (given, family) if part
+    )
+    if not name:
+        name = user_id
+    return {"id": user_id, "name": name, "email": email}
 
 
 def effective_dcloud_token(override: str | None = None) -> str | None:

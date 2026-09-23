@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16px" height="16px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 60.1 (88133) - https://sketch.com -->
+    <title>Tools/clock/clock-filled_16</title>
+    <desc>Created with Sketch.</desc>
+    <g id="Tools/clock/clock-filled_16" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <path d="M8,0 C12.4117333,0 16,3.58826667 16,8 C16,12.4117333 12.4117333,16 8,16 C3.58826667,16 0,12.4117333 0,8 C0,3.58826667 3.58826667,0 8,0 Z M8,4.5 C7.724,4.5 7.5,4.724 7.5,5 L7.5,5 L7.5,8.485 C7.5,8.737 7.598,8.973 7.76,9.135 L7.76,9.135 L9.23,10.8473398 C9.328,10.9553398 9.464,11.0103398 9.599,11.0103398 C9.72,11.0103398 9.84,10.9673398 9.936,10.8793398 C10.14,10.6933398 10.154,10.3763398 9.968,10.1733398 L9.968,10.1733398 L8.5,8.485 L8.5,5 C8.5,4.724 8.276,4.5 8,4.5 Z" id="clock-filled_16" fill="#000000"></path>
+    </g>
+</svg>

@@ -1,0 +1,2 @@
+import{b as n}from"./p-d96eb1d2.js";const o="en";const s=["en","ko","ja","zh"];const t=n();const e=(n,e,c)=>{const r=c||t;return n[r!==undefined&&s.includes(r)?r:o][e]};export{e as i};
+//# sourceMappingURL=p-8122282c.js.map

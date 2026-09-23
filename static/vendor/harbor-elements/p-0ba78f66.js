@@ -1,0 +1,2 @@
+const n=new Map;function e(n){return n!==null&&n!==void 0?n:{keyframes:[],options:{duration:0}}}function r(r,t){n.set(r,e(t))}function t(n){n=n.toString().toLowerCase();if(n.indexOf("ms")>-1){return parseFloat(n)}if(n.indexOf("s")>-1){return parseFloat(n)*1e3}return parseFloat(n)}function o(n){return Promise.all(n.getAnimations().map((n=>new Promise((e=>{const r=requestAnimationFrame(e);n.addEventListener("cancel",(()=>r),{once:true});n.addEventListener("finish",(()=>r),{once:true});n.cancel()})))))}export{o as a,t as p,r as s};
+//# sourceMappingURL=p-0ba78f66.js.map

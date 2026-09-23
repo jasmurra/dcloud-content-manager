@@ -62,6 +62,7 @@ from browser_auth.dcloud_token import (
     DCLOUD_SITES,
     effective_dcloud_token,
     jwt_expires_at,
+    jwt_session_user,
     normalize_dcloud_token,
     validate_dcloud_token,
 )
@@ -243,6 +244,12 @@ RESET_GRACE_SECONDS = 30 * 60
 
 app = FastAPI(title="dCloud Content Manager", version=APP_VERSION)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+_HARBOR_DIR = STATIC_DIR / "vendor" / "harbor-elements"
+_VENDOR_DIR = STATIC_DIR / "vendor"
+if _HARBOR_DIR.is_dir():
+    app.mount("/harbor-elements", StaticFiles(directory=str(_HARBOR_DIR)), name="harbor-elements")
+if _VENDOR_DIR.is_dir():
+    app.mount("/vendor", StaticFiles(directory=str(_VENDOR_DIR)), name="vendor")
 
 
 @app.exception_handler(Exception)
@@ -5062,6 +5069,11 @@ def api_auth_status() -> dict[str, Any]:
         "sessionHasRefresh": has_refresh,
         "sessionExpiresAt": int(expires_at) if expires_at else 0,
         "accessToken": access_token if logged_in else "",
+        "sessionUser": jwt_session_user(access_token) if logged_in and access_token else {
+            "id": "",
+            "name": "",
+            "email": "",
+        },
         "version": _read_app_version(),
         "cai": _cai_public_status(),
         "camgr": _camgr_public_status(),

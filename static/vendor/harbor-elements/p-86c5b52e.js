@@ -1,0 +1,2 @@
+let t;let n;const r=async()=>{if(!n){n=import("./p-e626b0c1.js").then((function(t){return t.p})).then((({default:n})=>{t=n.sanitize;return n.sanitize}))}return n};const e=(t,n)=>t(String(n!==null&&n!==void 0?n:""),{USE_PROFILES:{html:true,svg:true}});const a=async()=>{await r()};const s=async t=>e(await r(),t);const o=n=>{if(!t){throw new Error("sanitizeHtmlSync called before preloadSanitizeHtml")}return e(t,n)};export{o as a,a as p,s};
+//# sourceMappingURL=p-86c5b52e.js.map
