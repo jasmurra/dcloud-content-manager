@@ -1,3 +1,10 @@
+## 1.18.11 — 2026-09-23
+
+- **Closing the red banner keeps it closed** after Find, Refresh, or a page reload. A leftover “No sessions were ended.” from a failed End no longer comes back until End actually fails again
+- **Auto-integrate no longer paints Integration Error chips** when CAI never received the request (signed out or dest DCs not ready). Connect to CAI and Submit integration instead
+- **Connect to CAMGR no longer opens extra Google Chrome tabs.** It uses the tool browser, then an already-open CAMGR tab if one exists
+- **Discover VMs includes VMs in nested vPod folders** (misc, templates, and similar), so ContentDEV transfers see the same VMs CAMGR shows
+
 ## 1.18.10 — 2026-09-22
 
 - **A small notice in the bottom-right confirms when a request is submitted.** Schedule, extend, end/reset, save, share, CAI/CAMGR submits, and similar actions show success or an error for about five seconds (click it to dismiss). Find lists still just show their results — no extra pop-ups there

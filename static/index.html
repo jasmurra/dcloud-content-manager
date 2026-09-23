@@ -3006,7 +3006,24 @@
     let unifiedSavedDataReady = Promise.resolve();
     let caiVmSourceKey = "";
     let lastCaiIntegratedDcs = [];
-    let dismissedErrorMessage = "";
+    const DISMISSED_ERROR_STORE = "dcloud-dismissed-error";
+    function loadDismissedError() {
+      try {
+        return (sessionStorage.getItem(DISMISSED_ERROR_STORE) || "").trim();
+      } catch {
+        return "";
+      }
+    }
+    function rememberDismissedError(msg) {
+      dismissedErrorMessage = String(msg || "").trim();
+      try {
+        if (dismissedErrorMessage) sessionStorage.setItem(DISMISSED_ERROR_STORE, dismissedErrorMessage);
+        else sessionStorage.removeItem(DISMISSED_ERROR_STORE);
+      } catch {
+        /* private mode */
+      }
+    }
+    let dismissedErrorMessage = loadDismissedError();
     let lastLoggedErrorText = "";
     let dismissedAuthMessage = "";
     const DEFAULT_AUTH_PAUSE_MESSAGE =
@@ -3096,7 +3113,7 @@
     }
 
     function dismissErrorBanner() {
-      dismissedErrorMessage = ($("error-banner-text")?.textContent || "").trim();
+      rememberDismissedError(($("error-banner-text")?.textContent || "").trim());
       $("error-banner")?.classList.add("hidden");
       hideActionAlert();
       hideTokenAlert();
@@ -3581,7 +3598,6 @@
       if (!text) {
         el?.classList.add("hidden");
         setErrorBannerText("");
-        dismissedErrorMessage = "";
         lastTokenAlertKey = "";
         lastActionAlertKey = "";
         lastLoggedErrorText = "";
@@ -6713,6 +6729,7 @@
       if (lines.length) setLogText(lines.join("\n"));
       lastLogLen = lines.length;
       if (job?.error) showError(job.error, { bannerOnly: true });
+      else rememberDismissedError("");
       renderSavedIds(job);
       maybeFlushPendingSchedules(job).catch(() => {});
       if (job && jobId && jobNeedsVmRefresh(job) && !pollTimer) {

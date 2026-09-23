@@ -2259,9 +2259,69 @@ def test_tool_owned_browser_avoids_keychain() -> None:
             for name in ("pollLoginStorage", "pollLoginImport", "snapshotChromeToken", "loginPopup")
         ),
     )
+    connect_fn = source[source.index("def _connect_camgr(") : source.index("def _auth_camgr_needed(")]
     check(
         "Connect to CAMGR prefers the tool browser",
-        "capture_camgr_session()" in source[source.index("def _connect_camgr(") : source.index("def _auth_camgr_needed(")],
+        "capture_camgr_session()" in connect_fn,
+    )
+    check(
+        "Connect to CAMGR does not spawn extra Chrome tabs",
+        "connect_camgr_via_chrome_tab" not in connect_fn
+        and "open_if_missing" not in connect_fn,
+    )
+    end_fn = source[source.index("def _end_job(") : source.index("def _extend_job(")]
+    check(
+        "a failed End does not keep the banner after a later End starts",
+        'job["error"] = ""' in end_fn.split("ended = 0", 1)[0],
+    )
+    empty_start = INDEX.index("function showError(")
+    empty_branch = INDEX[empty_start : INDEX.index("if (text === dismissedErrorMessage)", empty_start)]
+    check(
+        "Find/Refresh does not forget that the error banner was closed",
+        "if (!text)" in empty_branch
+        and 'dismissedErrorMessage = ""' not in empty_branch
+        and "rememberDismissedError" in INDEX
+        and "dcloud-dismissed-error" in INDEX,
+    )
+    auto_fn = source[
+        source.index("def _try_auto_integrate_transfer(") : source.index("def _camgr_error_row_is_due(")
+    ]
+    check(
+        "auto-integrate does not mark CAI error when CAI never got the job",
+        'integrate_status="error"' in auto_fn
+        and auto_fn.count('integrate_status="error"') == 1
+        and 'if result.get("loggedIn") is False:' in auto_fn,
+    )
+    import camgr_client
+    from camgr_client import _vpod_number, list_camgr_vpods
+
+    check(
+        "a vPod number is taken from the vPod name, not a nested folder",
+        _vpod_number("vPod-52-pustyugo") == "52"
+        and _vpod_number("52 :: vPod-52-pustyugo") == "52"
+        and _vpod_number("1ready-for-export-to-production") == ""
+        and _vpod_number("misc") == "",
+    )
+    nested_vpod_body = [
+        {"id": "vp52", "folder": True, "name": "vPod-52-pustyugo"},
+        {"id": "misc", "folder": True, "name": "misc", "parent": "vp52"},
+        {"id": "ready", "folder": True, "name": "1ready-for-export-to-production", "parent": "vp52"},
+        {"id": "vm-win", "name": "Win2k12", "parent": "misc", "parentServerId": "vm-1"},
+        {"id": "vm-eve", "name": "EVE", "parent": "misc", "parentServerId": "vm-2"},
+    ]
+    original_get = camgr_client._get_json
+    camgr_client._get_json = lambda *_args, **_kwargs: (nested_vpod_body, 200, "")
+    try:
+        vpods = list_camgr_vpods("cookie", "contentdev.rtp")
+    finally:
+        camgr_client._get_json = original_get
+    names = {vm["name"] for row in vpods for vm in row.get("vms") or []}
+    check(
+        "Discover VMs includes VMs sitting in nested vPod folders",
+        len(vpods) == 1
+        and vpods[0]["value"] == "52"
+        and names == {"Win2k12", "EVE"},
+        f"vpods={vpods!r}",
     )
     camgr_cap = (ROOT / "camgr_browser.py").read_text(encoding="utf-8")
     cai_cap = (ROOT / "cai_client.py").read_text(encoding="utf-8")

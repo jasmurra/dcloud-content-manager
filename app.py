@@ -197,7 +197,6 @@ from camgr_client import (
     submit_camgr_vpod_transfer,
 )
 
-from camgr_tab import connect_camgr_via_chrome_tab
 from camgr_browser import capture_camgr_session
 from net_errors import host_resolves, off_network_message
 from tool_browser import capture_dcloud_tokens, profile_exists as tool_browser_profile_exists
@@ -3797,10 +3796,13 @@ def _connect_camgr(cookie: str = "") -> dict[str, Any]:
             probed = probe_camgr_login(header, allow_tab=False)
     tab_message = ""
     if not probed.get("loggedIn"):
-        tab_header, tab_message = connect_camgr_via_chrome_tab()
-        if tab_header:
-            header = tab_header
-            probed = probe_camgr_login(header)
+        # Pick up a CAMGR tab that is already open. Do not spawn extra Chrome
+        # windows — Connect already opened the tool browser for SSO.
+        probed = probe_camgr_login(header, allow_tab=True)
+        if probed.get("loggedIn"):
+            header = str(probed.get("cookie") or header or "").strip() or header
+        else:
+            tab_message = str(probed.get("message") or "")
     if not probed.get("loggedIn"):
         imported, _import_message = import_camgr_cookies_from_chrome()
         if imported:
@@ -4025,7 +4027,6 @@ def _try_auto_integrate_transfer(job: dict[str, Any] | None, item: dict[str, Any
                 status="waiting",
                 message=str(result.get("message") or "Transfer complete. Waiting for CAI dest DCs."),
                 dests=dests,
-                integrate_status="waiting",
             )
             return {"ok": False, "waiting": True, "message": item["message"]}
         if retryable and timed_out:
@@ -4055,16 +4056,26 @@ def _try_auto_integrate_transfer(job: dict[str, Any] | None, item: dict[str, Any
                         _upsert_cai_integrate(job, row)
                     _upsert_camgr_transfer(job, item)
                     return {"ok": True, "row": row, "message": item["message"]}
+            # CAI never got the request (session gone, dests not ready). Do not
+            # paint Integration Error chips as if CAI itself failed.
             _mark_auto_integrate_state(
                 job,
                 item,
                 status="error",
                 message=str(
                     result.get("message")
-                    or "Timed out waiting for CAI dest DCs. Use Load VMs and Submit integration."
+                    or "Timed out waiting for CAI dest DCs. Connect to CAI, Load VMs, and Submit integration."
                 ),
                 dests=dests,
-                integrate_status="error",
+            )
+            return {"ok": False, "message": item["message"]}
+        if result.get("loggedIn") is False:
+            _mark_auto_integrate_state(
+                job,
+                item,
+                status="error",
+                message=str(result.get("message") or "CAI is not signed in. Click Connect to CAI, then Submit integration."),
+                dests=dests,
             )
             return {"ok": False, "message": item["message"]}
         _mark_auto_integrate_state(
@@ -6244,6 +6255,7 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
     session_pairs = _session_ref_pairs(payload.sessions)
     use_pairs = session_pairs if session_pairs else None
     job["phase"] = "ending"
+    job["error"] = ""
     ended = 0
     attempted = 0
     for dc in job["dcs"]:
@@ -6312,9 +6324,11 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
         job["error"] = "No session IDs to end. Restore the last job or attach running sessions first."
     elif not live:
         job["phase"] = "ended"
+        job["error"] = ""
         progress(f"Ended {ended} session(s) without saving." if ended else "Nothing left to end.")
     elif ended:
         job["phase"] = "ready_to_patch"
+        job["error"] = ""
         progress(f"Ended {ended} session(s). Other DCs are still running.")
     else:
         job["phase"] = "error"
@@ -6524,6 +6538,7 @@ def _extend_job(job: dict[str, Any], payload: ExtendPayload) -> None:
             future.result()
 
     if ok_count:
+        job["error"] = ""
         progress(f"Extended {ok_count} of {len(targets)} session(s).")
     else:
         job["error"] = "No sessions were extended."

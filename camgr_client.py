@@ -16,7 +16,6 @@ from browser_auth.chrome_profiles import chrome_cookie_files, chrome_cookie_snap
 from net_errors import describe_request_error
 from camgr_tab import (
     chrome_tab_request,
-    connect_camgr_via_chrome_tab,
     probe_camgr_via_chrome_tab,
     using_chrome_tab,
 )
@@ -407,9 +406,11 @@ def camgr_cdev_home_dc(guid: str) -> str:
 
 def _vpod_number(name: str) -> str:
     """CAMGR labels a vPod folder "23 :: vPod-23-jasmurra" and transfers to "CDEV.RTP:23"."""
-    match = re.search(r"vpod[\s_-]*(\d+)", str(name or ""), re.IGNORECASE)
-    if not match:
-        match = re.search(r"(\d+)", str(name or ""))
+    text = str(name or "").strip()
+    match = re.search(r"vpod[\s_-]*(\d+)", text, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    match = re.match(r"^(\d+)\s*::", text)
     return match.group(1) if match else ""
 
 
@@ -427,45 +428,91 @@ def _vpod_vm(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_camgr_vpods(cookie_header: str, guid: str) -> list[dict[str, Any]]:
-    """vPod folders a ContentDEV/InfraDEV server offers, with the VMs sitting in each one."""
+    """vPod folders a ContentDEV/InfraDEV server offers, including VMs in nested folders."""
     path = str(guid or "").strip().lower()
     if not path:
         return []
     body, _, err = _get_json(cookie_header, f"{CAMGR_BASE}/{path}/ca/api/vim/vpods")
     if err or not isinstance(body, list):
         return []
-    # VMs arrive either nested under a folder's "devs" or as siblings pointing back via "parent".
-    by_parent: dict[str, list[dict[str, Any]]] = {}
-    for item in body:
-        if not isinstance(item, dict) or item.get("folder"):
-            continue
-        parent = str(item.get("parent") or "").strip()
-        if parent:
-            by_parent.setdefault(parent, []).append(item)
-    vpods: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    folders: list[dict[str, Any]] = []
+    vms_by_parent: dict[str, list[dict[str, Any]]] = {}
+    seen_folder_ids: set[str] = set()
+
+    def add_folder(folder: dict[str, Any]) -> None:
+        folder_id = str(folder.get("id") or "").strip()
+        if folder_id and folder_id in seen_folder_ids:
+            return
+        if folder_id:
+            seen_folder_ids.add(folder_id)
+        folders.append(folder)
+        for nested in folder.get("devs") or []:
+            if not isinstance(nested, dict):
+                continue
+            if nested.get("folder"):
+                if not str(nested.get("parent") or "").strip() and folder_id:
+                    nested = {**nested, "parent": folder_id}
+                add_folder(nested)
+                continue
+            parent = str(nested.get("parent") or folder_id).strip()
+            if parent:
+                vms_by_parent.setdefault(parent, []).append(nested)
+
     for item in body:
         if not isinstance(item, dict):
             continue
-        if not item.get("folder") and str(item.get("parent") or "").strip():
+        if item.get("folder"):
+            add_folder(item)
             continue
+        parent = str(item.get("parent") or "").strip()
+        if parent:
+            vms_by_parent.setdefault(parent, []).append(item)
+    folder_ids = {str(folder.get("id") or "").strip() for folder in folders if str(folder.get("id") or "").strip()}
+    children: dict[str, list[str]] = {}
+    for folder in folders:
+        folder_id = str(folder.get("id") or "").strip()
+        parent = str(folder.get("parent") or "").strip()
+        if folder_id and parent and parent in folder_ids:
+            children.setdefault(parent, []).append(folder_id)
+
+    def folder_vms(folder_id: str, seen_ids: set[str] | None = None) -> list[dict[str, Any]]:
+        seen = seen_ids if seen_ids is not None else set()
+        out: list[dict[str, Any]] = []
+        folder = next((row for row in folders if str(row.get("id") or "") == folder_id), None)
+        raw_vms: list[dict[str, Any]] = []
+        if folder:
+            raw_vms.extend(
+                dev
+                for dev in (folder.get("devs") or [])
+                if isinstance(dev, dict) and not dev.get("folder")
+            )
+        raw_vms.extend(vms_by_parent.get(folder_id, []))
+        for raw in raw_vms:
+            vm = _vpod_vm(raw)
+            if not vm["id"] or vm["id"] in seen:
+                continue
+            seen.add(vm["id"])
+            out.append(vm)
+        for child in children.get(folder_id, []):
+            out.extend(folder_vms(child, seen))
+        return out
+
+    vpods: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in folders:
         name = str(item.get("name") or "").strip()
         folder_id = str(item.get("id") or "").strip()
         number = _vpod_number(name)
+        parent = str(item.get("parent") or "").strip()
+        if parent in folder_ids and not number:
+            continue
+        if not number:
+            continue
         key = (folder_id, number)
         if key in seen:
             continue
         seen.add(key)
-        raw_vms = [dev for dev in (item.get("devs") or []) if isinstance(dev, dict)]
-        raw_vms.extend(by_parent.get(folder_id, []))
-        vms: list[dict[str, Any]] = []
-        vm_seen: set[str] = set()
-        for raw in raw_vms:
-            vm = _vpod_vm(raw)
-            if not vm["id"] or vm["id"] in vm_seen:
-                continue
-            vm_seen.add(vm["id"])
-            vms.append(vm)
+        vms = folder_vms(folder_id)
         if number and name:
             label = f"{number} :: {name}"
         else:
