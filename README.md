@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.0** | Harbor side navigation and Control Hub-style chrome: one task page at a time, outline pill buttons, account menu with your dCloud name |
 | **1.18.12** | Session cards no longer scrape WebRDP or `/servers/vm-*` on refresh; WebRDP is fetched only on click |
 | **1.18.11** | Dismissed End error banners stay gone; auto-integrate does not fake CAI errors; Connect to CAMGR skips extra Chrome tabs; Discover VMs walks nested vPod folders |
 | **1.18.10** | A short bottom-right notice confirms schedule, extend, and other submitted requests |

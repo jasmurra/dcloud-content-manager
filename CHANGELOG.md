@@ -1,10 +1,9 @@
-## Unreleased — atmosphere-ui
+## 2.0.0 — 2026-09-23
 
-- **Cisco app shell (this branch):** Harbor side navigation, dark theme, and one task page at a time instead of every section stacked on one long page. `main` is unchanged until this merges
-- **Shell polish:** tighter buttons, short icon nav labels, slim icon header (settings, theme, updates, sign-in), light/dark toggle with dark as the default, and side-menu order in Settings. Datacenter order is unchanged
-- **Control Hub-style chrome:** selected nav is a gray rounded pill (not Harbor’s interact blue) with a left accent. Action buttons are outline pills like Control Hub’s Reset access / Reset MFA; dropdowns stay squarer (4px). The header avatar menu shows the dCloud signed-in name from the token. Collapsed nav is a 56px icon rail so the hamburger lines up with the icons
-- **Schedule Clear / Verify** stay text links under each demo ID; they no longer pick up the larger action-button height
-- **Nav collapse is icon-only**, and action buttons (toolbars, sign-in, confirms, danger/end) share one Harbor-sized style. Harbor/Atmosphere files ship in `static/vendor` (the coworker zip includes them; Cisco npm is only for rebuilding). Tailwind is installed with the Atmosphere preset but not used for these controls yet
+- **New app shell:** Harbor side navigation, dark theme by default, and one task page at a time instead of every section stacked on one long page
+- **Control Hub-style chrome:** selected nav is a gray rounded pill with a left accent (not Harbor’s interact blue). Action buttons are outline pills; dropdowns stay squarer. The header avatar menu shows the dCloud signed-in name. Collapsed nav is an icon rail aligned with the icons
+- **Shell extras:** short nav labels, slim icon header (settings, theme, updates, sign-in), light/dark toggle, and side-menu order in Settings. Datacenter order is unchanged. Schedule Clear / Verify stay text links
+- Harbor/Atmosphere files ship in the coworker zip (`static/vendor`); Cisco npm is only for rebuilding the look
 
 ## 1.18.12 — 2026-09-23
 
