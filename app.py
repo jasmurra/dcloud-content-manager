@@ -69,6 +69,8 @@ from dcloud_client import (
     admin_records_cached_at,
     attach_vm_access_links,
     apply_tbv3_power_states,
+    fetch_webrdp_credentials,
+    webrdp_connect_url,
     catalog_search,
     check_public_session_status,
     delete_saved_content,
@@ -1155,6 +1157,12 @@ class VmActionPayload(TokenPayload):
     mor: str = ""
     uid: str = ""
     action: str = "guestShutdown"
+
+
+class WebrdpPayload(TokenPayload):
+    site: str
+    session_id: str
+    uid: str = ""
 
 
 SESSION_EXPIRED_HINT = (
@@ -7556,6 +7564,29 @@ def api_vm_action(job_id: str, body: VmActionPayload) -> dict[str, Any]:
             daemon=True,
         ).start()
     return {"ok": bool(result.get("ok")), "result": result, "job": _public_job(job)}
+
+
+@app.post("/api/webrdp")
+def api_webrdp(body: WebrdpPayload) -> dict[str, Any]:
+    """Fetch WebRDP credentials only when the user clicks WebRDP on a VM."""
+    site = (body.site or "").strip().lower()
+    session_id = str(body.session_id or "").strip()
+    uid = str(body.uid or "").strip()
+    if site not in SITES:
+        raise HTTPException(400, "Datacenter must be SJC, RTP, LON, SNG, or SYD.")
+    if not session_id or not uid:
+        raise HTTPException(400, "WebRDP needs a session ID and a VM uid.")
+    token = _resolve_token(body)
+    creds = fetch_webrdp_credentials(token, site, session_id)
+    if not creds:
+        raise HTTPException(
+            400,
+            "WebRDP is not available for this session yet. Try again after the session is active.",
+        )
+    return {
+        "ok": True,
+        "url": webrdp_connect_url(site, session_id, uid, creds),
+    }
 
 
 @app.post("/api/jobs/{job_id}/guest-shutdown-all")

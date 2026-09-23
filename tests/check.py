@@ -2601,6 +2601,31 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
     )
 
 
+def test_webrdp_is_on_demand() -> None:
+    """Refreshing a session card must not scrape webrdp or /servers/vm-*."""
+    client = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    attach = client[client.index("def attach_vm_access_links(") : client.index("def parse_site_and_id(")]
+    runtime = client[client.index("def fetch_vm_runtime_details(") : client.index("def apply_tbv3_power_states(")]
+    check(
+        "VM refresh does not GET webrdp credentials",
+        "fetch_webrdp_credentials" not in attach and 'item["webRdp"] = True' in attach,
+    )
+    check(
+        "VM refresh does not GET /servers/{mor}",
+        "_fetch_session_server" not in runtime,
+    )
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check(
+        "WebRDP is fetched when the user clicks it",
+        'class="btn-vm-webrdp"' in page
+        and "function openWebrdp(" in page
+        and 'api("/api/webrdp"' in page
+        and "@app.post(\"/api/webrdp\")" in source
+        and "fetch_webrdp_credentials(token, site, session_id)" in source[source.index("def api_webrdp(") :],
+    )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

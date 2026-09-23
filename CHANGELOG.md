@@ -1,3 +1,7 @@
+## 1.18.12 — 2026-09-23
+
+- **Session cards no longer probe WebRDP or `/servers/vm-*` on every refresh.** Those calls were flooding dCloud logs with 404s and a webrdp 400 while a session sat in the job workspace. Power still comes from tbv3. WebRDP is fetched only when you click it
+
 ## 1.18.11 — 2026-09-23
 
 - **Closing the red banner keeps it closed** after Find, Refresh, or a page reload. A leftover “No sessions were ended.” from a failed End no longer comes back until End actually fails again

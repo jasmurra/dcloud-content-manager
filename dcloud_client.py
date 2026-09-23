@@ -210,7 +210,12 @@ def webrdp_connect_url(site: str, session_id: str, vm_uid: str, credentials: str
 
 
 def fetch_webrdp_credentials(token: str, site: str, session_id: str) -> str:
-    """Session-level WebRDP cookie/credentials — same GET the bot /sd command uses."""
+    """Session-level WebRDP cookie — call only when the user opens WebRDP.
+
+    The old bot /sd command used this GET. Hitting it on every VM refresh
+    showed up in dCloud logs as scraping, including 400s on sessions that
+    are not ready yet.
+    """
     url = f"{site_base(site)}/api/sessions/{session_id}/servers/{session_id}/webrdp"
     try:
         response = _request("GET", url, token, timeout=30)
@@ -238,19 +243,20 @@ def attach_vm_access_links(
     session_id: str,
     vms: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    creds = fetch_webrdp_credentials(token, site, session_id)
+    """Console/RDP hrefs for the card. WebRDP credentials are fetched on click."""
+    del token  # kept so callers do not have to change; webrdp is on-demand
     enriched: list[dict[str, Any]] = []
     for vm in vms:
         item = dict(vm)
         uid = str(item.get("uid") or "")
         item.pop("rdpUrl", None)
         item.pop("webRdpUrl", None)
+        item.pop("webRdp", None)
         if uid:
             item["consoleUrl"] = vm_console_url(site, session_id, uid)
             if _flag_true(item.get("rdpEnabled")):
                 item["rdpUrl"] = server_rdp_url(site, session_id, uid)
-                if creds:
-                    item["webRdpUrl"] = webrdp_connect_url(site, session_id, uid, creds)
+                item["webRdp"] = True
         enriched.append(item)
     return enriched
 
@@ -743,6 +749,7 @@ def _fetch_session_server(
     session_id: str,
     ident: str,
 ) -> tuple[dict[str, Any] | None, str | None]:
+    """Per-server GET. ident must be dCloud's numeric server uid, never a vm-* MOR."""
     server_id = (ident or "").strip()
     if not server_id:
         return None, None
@@ -766,7 +773,13 @@ def fetch_vm_runtime_details(
     mor: str,
     topology_uid: str,
 ) -> tuple[dict[str, str], str | None]:
-    """Live power/guest state from tbv3 vm-status; OS from per-server GET when present."""
+    """Live power/guest state from tbv3 vm-status.
+
+    Do not GET /sessions/{id}/servers/{mor}. The topology MOR looks like
+    vm-273985, and dCloud has no mapping for that path — it 404s once per VM
+    on every card refresh.
+    """
+    del site  # server-detail GET removed; power comes from tbv3
     fields: dict[str, str] = {}
     status, err = fetch_tbv3_vm_status(token, session_id, mor, topology_uid)
     if err:
@@ -782,21 +795,7 @@ def fetch_vm_runtime_details(
         tools = str(state.get("guestToolsState") or "")
         if tools:
             fields["guestToolsState"] = tools
-    server, server_err = _fetch_session_server(token, site, session_id, mor)
-    if is_auth_error(server_err):
-        return fields, server_err
-    if server:
-        nested = server.get("vmwareState") if isinstance(server.get("vmwareState"), dict) else {}
-        if not fields.get("powerState"):
-            power = str(
-                server.get("powerState")
-                or server.get("power_state")
-                or nested.get("powerState")
-                or ""
-            )
-            if power:
-                fields["powerState"] = power
-        os_text = _vm_os_text(server)
+        os_text = _vm_os_text(status)
         if os_text:
             fields["os"] = os_text
     return fields, None
@@ -826,8 +825,8 @@ def apply_tbv3_power_states(
                 item[key] = value
         return item, err
 
-    # Each VM requires runtime and server-detail calls. Running those serially
-    # made a 12-VM card wait on roughly 24 round trips.
+    # Each VM needs a tbv3 vm-status call. Running those serially made a
+    # 12-VM card wait on a dozen round trips.
     updated: list[dict[str, Any]] = [dict(vm) for vm in vms]
     auth_error: str | None = None
     with ThreadPoolExecutor(max_workers=min(8, max(1, len(vms)))) as pool:

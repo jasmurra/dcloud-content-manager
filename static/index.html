@@ -5780,9 +5780,6 @@
     function renderVmRow(dc, cardKey, vm, groupKey) {
       const links = [];
       const rdpOff = vm.rdpEnabled === false || vm.rdpEnabled === "false";
-      if (!rdpOff && vm.webRdpUrl) links.push(`<a href="${vm.webRdpUrl}" target="_blank" rel="noopener noreferrer">WebRDP</a>`);
-      else if (!rdpOff && vm.rdpUrl) links.push(`<a href="${vm.rdpUrl}" target="_blank" rel="noopener noreferrer">RDP</a>`);
-      if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM console</a>`);
       const canAct = Boolean(dc.sessionId)
         && !["ended", "saved"].includes(dc.phase)
         && !vm.shutdownPending
@@ -5793,6 +5790,14 @@
       // Long display names get clipped by CSS — hover shows the full name plus the VM name.
       const tip = short && short !== label ? `${label} · ${short}` : label;
       const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+      if (!rdpOff && vm.webRdpUrl) {
+        links.push(`<a href="${vm.webRdpUrl}" target="_blank" rel="noopener noreferrer">WebRDP</a>`);
+      } else if (!rdpOff && vm.webRdp) {
+        links.push(`<button type="button" class="btn-vm-webrdp" ${vmData} data-tip="Opens WebRDP for this VM. dCloud is contacted only when you click.">WebRDP</button>`);
+      } else if (!rdpOff && vm.rdpUrl) {
+        links.push(`<a href="${vm.rdpUrl}" target="_blank" rel="noopener noreferrer">RDP</a>`);
+      }
+      if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM console</a>`);
       const selectedBadge = vm.selected ? `<span class="badge ok vm-selected">selected</span>` : "";
       const powerHint = groupKey ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
       return `
@@ -10118,6 +10123,36 @@
       }
     }
 
+    async function openWebrdp(btn) {
+      if (!ensureTokenReady("opening WebRDP")) return;
+      const uid = btn.dataset.uid || "";
+      const sessionId = btn.dataset.session || "";
+      const site = (btn.dataset.site || "").toLowerCase();
+      if (!uid || !sessionId || !site) {
+        showError("WebRDP needs a running session and a VM id.");
+        return;
+      }
+      closeVmMenuFrom(btn);
+      btn.disabled = true;
+      try {
+        const data = await api("/api/webrdp", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site,
+            session_id: sessionId,
+            uid,
+          }),
+        });
+        if (data.url) window.open(data.url, "_blank", "noopener,noreferrer");
+        else showError("WebRDP did not return a link.");
+      } catch (err) {
+        notifyRequestError(err);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     async function runVmAction(btn, action, label) {
       if (!jobId) { showError("Restore or attach sessions first."); return; }
       if (!ensureTokenReady(`${label.toLowerCase()} VM`)) return;
@@ -12994,6 +13029,13 @@
       if (adjustBtn) {
         ev.preventDefault();
         adjustScheduleFromCard(adjustBtn);
+        return;
+      }
+      const webrdpBtn = ev.target.closest(".btn-vm-webrdp");
+      if (webrdpBtn) {
+        ev.preventDefault();
+        if (webrdpBtn.disabled) return;
+        openWebrdp(webrdpBtn).catch((err) => showError(err.message));
         return;
       }
       const onBtn = ev.target.closest(".btn-vm-on");
