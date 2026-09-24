@@ -1749,6 +1749,18 @@ def test_staggered_session_copies_cards() -> None:
     start = INDEX.find('id="sched-start"')
     check("delay and copies sit next to duration", -1 < days < delay < copies < start)
     check(
+        "short fields stay compact instead of stretching across the row",
+        "minmax(160px, 1fr)" not in INDEX
+        and "input[type=\"number\"]" in INDEX
+        and "width: 5.5rem" in INDEX
+        and "width: max-content" in INDEX
+        and "min-width: 9.75rem" in INDEX,
+    )
+    check(
+        "date triggers use the same control height as other inputs",
+        "min-height: 2.35rem" in INDEX,
+    )
+    check(
         "saved-content management is its own card",
         'id="panel-saved-schedule"' in INDEX
         and "Manage your own saved content across all DCs" in INDEX,
