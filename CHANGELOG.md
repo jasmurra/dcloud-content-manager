@@ -1,6 +1,6 @@
 ## 2.0.3 — 2026-09-24
 
-- **Share checked** on Find saved content, Find my sessions, and job workspace cards. Pick the people once; they are added to every selected item across DCs, and anyone already shared stays shared
+- **Share checked** on Find saved content, Find my sessions, and job workspace cards. Check as many sessions as you want, including several in the same DC. Pick the people once; they are added to every selected item, and anyone already shared stays shared. A full success is a toast; if any item fails, a popup lists which ones
 - **Check for updates** no longer pops Action needed when GitHub is unreachable. It retries, falls back to raw.githubusercontent.com, and the copy you already have keeps running
 - **Connect to CAMGR** can install Playwright/Chromium on the first click after a GitHub update, instead of asking for a restart
 - **Failed to fetch** after the Mac slept is retried quietly. It is not treated as a dCloud sign-in expiry

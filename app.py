@@ -9495,12 +9495,23 @@ def api_share_bulk_add(body: ShareBulkAddPayload) -> dict[str, Any]:
 
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=min(len(items), 5)) as pool:
-        futures = [pool.submit(_share_one, row) for row in items]
-        for future in as_completed(futures):
+        future_map = {pool.submit(_share_one, row): row for row in items}
+        for future in as_completed(future_map):
+            site, kind, session_id, content_id = future_map[future]
             try:
                 results.append(future.result())
             except Exception as exc:
-                results.append({"ok": False, "message": str(exc)})
+                results.append(
+                    {
+                        "ok": False,
+                        "site": site,
+                        "kind": kind,
+                        "sessionId": session_id,
+                        "contentId": content_id,
+                        "sharedWith": [],
+                        "message": str(exc),
+                    }
+                )
     added = sum(1 for row in results if row.get("ok"))
     failed = len(results) - added
     job_out: dict[str, Any] | None = None
@@ -9520,8 +9531,6 @@ def api_share_bulk_add(body: ShareBulkAddPayload) -> dict[str, Any]:
             )
         _persist_job(job)
         job_out = _public_job(job)
-    if not added:
-        raise HTTPException(400, results[0].get("message") or "Share update failed.")
     return {
         "ok": failed == 0,
         "added": added,

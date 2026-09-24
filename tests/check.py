@@ -535,6 +535,20 @@ def test_bulk_share_adds_people_without_replacing() -> None:
         ),
     )
     check("one save can add people to every checked item", "/api/share/bulk-add" in source)
+    check(
+        "two sessions in the same DC stay distinct",
+        'key = (site, kind, session_id, content_id)' in source,
+    )
+    check(
+        "a failed share names the session in a popup",
+        "Sharing incomplete" in page
+        and "function shareResultLabel(" in page
+        and "function reportBulkShareOutcome(" in page,
+    )
+    check(
+        "all-success bulk share is a toast",
+        'showToast(added === 1 ? "Shared 1 item."' in page,
+    )
     merged = dcloud_client.merge_share_users(
         [{"userId": "alice@cisco.com", "fullName": "Alice"}],
         [{"userId": "bob@cisco.com", "fullName": "Bob"}, {"userId": "alice@cisco.com", "fullName": "Alice A"}],

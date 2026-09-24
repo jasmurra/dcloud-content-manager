@@ -14159,6 +14159,38 @@
       }, 280);
     }
 
+    function shareResultLabel(row) {
+      const site = String(row?.site || "").toUpperCase();
+      const id = row?.kind === "content"
+        ? String(row.contentId || row.content_id || "")
+        : String(row.sessionId || row.session_id || "");
+      return [site, id].filter(Boolean).join(" ");
+    }
+
+    function reportBulkShareOutcome(data) {
+      const results = data?.results || [];
+      const failed = results.filter((row) => !row.ok);
+      const added = Number(data?.added || 0);
+      if (!failed.length) {
+        showToast(added === 1 ? "Shared 1 item." : `Shared ${added} items.`);
+        return;
+      }
+      const lines = failed.map((row) => {
+        const label = shareResultLabel(row) || "item";
+        const reason = String(row.message || "unknown error").trim();
+        noteLog(`${label}: share failed — ${reason}`);
+        return reason ? `${label} — ${reason}` : label;
+      });
+      showActionAlert(
+        `Shared ${added}, ${failed.length} failed:\n\n${lines.map((line) => `• ${line}`).join("\n")}`,
+        { title: "Sharing incomplete" },
+      );
+      showToast(
+        `Shared ${added}, ${failed.length} failed.`,
+        { kind: added ? "warn" : "err" },
+      );
+    }
+
     async function saveShareModal() {
       if (!shareModalState) return;
       if (!ensureTokenReady("updating sharing")) return;
@@ -14177,6 +14209,7 @@
           }
           const data = await api("/api/share/bulk-add", {
             method: "POST",
+            quiet: true,
             body: JSON.stringify({
               ...tokenPayload(),
               job_id: jobId || "",
@@ -14190,22 +14223,12 @@
             }),
           });
           if (data.job) renderJob(data.job, { forceCards: true });
-          const failed = Number(data.failed || 0);
           const added = Number(data.added || 0);
+          const failed = Number(data.failed || 0);
           noteLog(`Shared ${added} item(s)${failed ? `, ${failed} failed` : ""}.`);
-          if (failed) {
-            const firstFail = (data.results || []).find((row) => !row.ok);
-            if (status) {
-              status.textContent = firstFail?.message
-                ? `Shared ${added}, ${failed} failed: ${firstFail.message}`
-                : `Shared ${added}, ${failed} failed.`;
-            }
-            showToast(`Shared ${added}, ${failed} failed.`, { kind: "warn" });
-            return;
-          }
           closeShareModal();
           showError("");
-          showToast(`Shared ${added} item(s).`);
+          reportBulkShareOutcome(data);
           return;
         }
         const data = await api("/api/share/update", {
