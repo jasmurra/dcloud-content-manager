@@ -1207,6 +1207,11 @@ def test_task_groups_collapse() -> None:
         check(f"{group} has a summary header", head < INDEX.index(title))
 
     check(
+        "Content Transfer Tasks sit above Content Integration Tasks",
+        INDEX.index('id="camgr-task-group"') < INDEX.index('id="cai-task-group"'),
+    )
+
+    check(
         "collapse-all and the saved layout include them",
         '"details.task-group",' in INDEX,
     )
@@ -2464,6 +2469,7 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "scan_dcloud_refresh_from_chrome" not in source,
     )
     page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    browser = (ROOT / "tool_browser.py").read_text(encoding="utf-8")
     check(
         "the Import from browser buttons are gone",
         'id="btn-import"' not in page and 'id="token-alert-import"' not in page,
@@ -2475,11 +2481,24 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "import-from-browser" not in page,
     )
     check(
+        "Log in also connects CAI and CAMGR without extra Connect clicks",
+        "connectHubAfterLogin" in page
+        and "_warm_hub_sessions" in browser
+        and "take_hub_cookies" in source
+        and "_apply_login_hub_cookies" in source
+        and "Signs in to dCloud, CAI, and CAMGR together" in page,
+    )
+    finish = browser[browser.index("def finish(") : browser.index("def finish(") + 700]
+    check(
+        "silent dCloud refresh does not wander into CAI and CAMGR",
+        "if headed:" in finish
+        and "_store_hub_cookies(_warm_hub_sessions" in finish,
+    )
+    check(
         "page load shows the saved session without starting a browser",
         "warmAuthFromToolBrowser" in page
         and "loginToDcloud" not in page[page.index("async function warmAuthFromToolBrowser") : page.index("async function refreshAuth")],
     )
-    browser = (ROOT / "tool_browser.py").read_text(encoding="utf-8")
     check(
         "dCloud sign-in starts at the SSO authorize URL, not the marketing home",
         "build_dcloud_login_url" in browser

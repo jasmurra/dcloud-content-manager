@@ -24,6 +24,15 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(BROWSERS_DIR))
 
 _launch_lock = threading.Lock()
 _playwright_ready = False
+_hub_cookies_lock = threading.Lock()
+_hub_cookies: dict[str, str] = {}
+
+# Same hosts the Connect buttons visit, so one Log in window can leave CAI and
+# CAMGR signed in without extra clicks.
+HUB_SITES = (
+    ("cai", "https://dcloud-cai.cisco.com/", ("dcloud-cai.cisco.com",)),
+    ("camgr", "https://dcloud-camgr.cisco.com/#/cas", ("dcloud-camgr.cisco.com",)),
+)
 
 # Hosts that mean "a person has to type something": Cisco's Okta tenant and Duo.
 IDP_HOSTS = ("id.cisco.com", "login.okta.com", "duosecurity.com", "cloudsso.cisco.com")
@@ -121,6 +130,47 @@ def ensure_playwright() -> str | None:
         return f"Could not download Chromium for sign-in ({exc})."
     _playwright_ready = True
     return None
+
+
+def _store_hub_cookies(cookies: dict[str, str]) -> None:
+    with _hub_cookies_lock:
+        _hub_cookies.clear()
+        _hub_cookies.update({key: value for key, value in cookies.items() if value})
+
+
+def take_hub_cookies() -> dict[str, str]:
+    """Return CAI/CAMGR cookies captured during the last headed dCloud login."""
+    with _hub_cookies_lock:
+        cookies = dict(_hub_cookies)
+        _hub_cookies.clear()
+        return cookies
+
+
+def _warm_hub_sessions(page: Any, context: Any) -> dict[str, str]:
+    """After Cisco SSO, visit CAI and CAMGR in the same window so those sessions exist."""
+    found: dict[str, str] = {}
+    for key, url, hosts in HUB_SITES:
+        if not context.pages:
+            break
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+        except Exception:
+            continue
+        deadline = time.time() + 18
+        header = ""
+        while time.time() < deadline:
+            if not context.pages:
+                break
+            header = _cookie_header(context.cookies(), hosts)
+            if header and not _is_idp_page(page):
+                found[key] = header
+                break
+            time.sleep(0.8)
+        if key not in found:
+            header = header or _cookie_header(context.cookies(), hosts)
+            if header:
+                found[key] = header
+    return found
 
 
 def _cookie_header(raw: list[dict[str, Any]], hosts: tuple[str, ...]) -> str:
@@ -246,6 +296,17 @@ def capture_dcloud_tokens(
                 page.goto(login_url, wait_until="domcontentloaded", timeout=60_000)
                 last_err = "Waiting for dCloud sign-in in the tool browser."
                 started = time.time()
+
+                def finish(access: str, refresh: str, found_site: str) -> tuple[str, str, str, str]:
+                    # One Log in click also lands CAI and CAMGR cookies in this
+                    # profile. Silent refresh skips the extra hops.
+                    if headed:
+                        try:
+                            _store_hub_cookies(_warm_hub_sessions(page, context))
+                        except Exception:
+                            pass
+                    return access, refresh, found_site, "Signed in with the tool browser."
+
                 while time.time() < deadline:
                     if headed and not context.pages:
                         return "", "", site_code, "The sign-in window was closed before login finished."
@@ -262,13 +323,13 @@ def capture_dcloud_tokens(
                             continue
                         access, refresh, _expires, err = exchange_dcloud_access_code(site_code, code)
                         if access:
-                            return access, refresh, site_code, "Signed in with the tool browser."
+                            return finish(access, refresh, site_code)
                         last_err = err or last_err
                     seen.clear()
                     # The app may also have exchanged the code itself by now.
                     access, refresh, found_site = _read_dcloud_storage(page, site_code)
                     if access:
-                        return access, refresh, found_site, "Signed in with the tool browser."
+                        return finish(access, refresh, found_site)
                     time.sleep(0.6)
                 return "", "", site_code, last_err
             finally:

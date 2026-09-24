@@ -204,7 +204,11 @@ from camgr_client import (
 
 from camgr_browser import capture_camgr_session
 from net_errors import host_resolves, off_network_message
-from tool_browser import capture_dcloud_tokens, profile_exists as tool_browser_profile_exists
+from tool_browser import (
+    capture_dcloud_tokens,
+    profile_exists as tool_browser_profile_exists,
+    take_hub_cookies,
+)
 
 load_dotenv()
 
@@ -5282,12 +5286,16 @@ async def api_dcloud_browser_login(
             )
         if token:
             _apply_user_session(token, refresh, site_out or site_code, "browser")
+            if allow_window:
+                _apply_login_hub_cookies()
         return {
             "ok": bool(token),
             "token": token,
             "message": message,
             "hasRefresh": bool(refresh),
             "site": site_out or site_code,
+            "cai": _cai_public_status(),
+            "camgr": _camgr_public_status(),
         }
     except Exception as exc:
         raise HTTPException(400, f"Could not sign in to dCloud: {exc}") from exc
@@ -8313,6 +8321,32 @@ def _apply_share_to_job_dc(
                 dc["sharedWith"] = shared_with
         elif sid and str(dc.get("sessionId") or "").strip() == sid:
             dc["sharedWith"] = shared_with
+
+
+def _apply_login_hub_cookies() -> None:
+    """Use CAI/CAMGR cookies left in the tool browser by Log in to dCloud."""
+    hub = take_hub_cookies()
+    cai = str(hub.get("cai") or "").strip()
+    if cai:
+        try:
+            probed = probe_cai_login(cai)
+            if probed.get("loggedIn"):
+                _mark_cai_reachable(probed.get("message") or "CAI session is active.", cai)
+        except Exception:
+            pass
+    camgr = str(hub.get("camgr") or "").strip()
+    if camgr:
+        try:
+            probed = probe_camgr_login(camgr, allow_tab=False)
+            if probed.get("loggedIn"):
+                header = str(probed.get("cookie") or camgr).strip() or camgr
+                _set_camgr_cookie(
+                    header,
+                    probed.get("message") or "CAMGR session is active.",
+                    str(probed.get("user") or ""),
+                )
+        except Exception:
+            pass
 
 
 def _connect_cai(cookie: str = "") -> dict[str, Any]:

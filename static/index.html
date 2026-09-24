@@ -2590,13 +2590,13 @@
       <div class="panel-collapse-body">
       <p class="hint">
         Sessions run under <strong>your</strong> dCloud login.
-        <strong>Log in</strong> uses a tool-owned Chromium window for Cisco SSO (Duo included) —
-        the same window CAMGR and CAI use, so one sign-in covers all three and renewals
-        happen there instead of through Chrome Keychain prompts. If that profile is already
-        signed in, the window finishes as soon as it opens.
+        <strong>Log in</strong> uses a tool-owned Chromium window for Cisco SSO (Duo included).
+        That one sign-in also connects CAI and CAMGR, so you should not need their Connect
+        buttons unless a session later drops. If that profile is already signed in, the
+        window finishes as soon as it opens.
       </p>
       <div class="actions" style="margin-top:0.4rem">
-        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. If that profile is already signed in, it finishes right away.">Log in to dCloud</button>
+        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. Signs in to dCloud, CAI, and CAMGR together. If that profile is already signed in, it finishes right away.">Log in to dCloud</button>
         <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate token</button>
         <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear login session</button>
       </div>
@@ -3238,126 +3238,6 @@
         CAMGR status comes from <strong>your</strong> jobs in Content Transfer and fills in once you are
         connected to CAMGR. Other people's transfers are not added.
       </p>
-      <details class="task-group cai" id="cai-task-group" open>
-      <summary class="task-group-head">
-        <span class="task-group-title">Content Integration Tasks</span>
-        <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
-      </summary>
-      <div class="task-group-body">
-      <div class="actions" style="margin-top:0">
-        <button type="button" id="btn-cai-connect" data-tip="Opens CAI in the tool browser for Cisco SSO/Duo if needed. Later refreshes reuse that login — no Chrome Keychain.">Connect to CAI</button>
-        <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
-        <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
-        <p class="hint load-target" id="cai-load-target"></p>
-      </div>
-      <p id="cai-status" class="hint" style="margin-top:0.35rem">CAI: on the Cisco network, click Connect to CAI.</p>
-      <p class="hint chip-toolbar-label hidden" id="cai-vm-label"></p>
-      <p class="hint">
-        Check a box in the saved content list above for what you want to integrate, then click
-        <strong>Load VMs</strong>. Several rows of the same demo can be checked together; two different demos cannot.
-      </p>
-      <p class="hint help-text">
-        Target ID is the demo this save came from (filled when this tool saved the session). Root ID is the original base; copy it into Target if you want CAI to replace VMs there instead.
-      </p>
-      <div id="cai-vm-list" class="cai-vm-list"></div>
-      <p class="step-label hidden" id="cai-integrate-label" style="margin-top:0.85rem">CAI Integrate destinations</p>
-      <p class="hint help-text hidden" id="cai-integrate-hint">
-        These checkboxes are for <strong>Submit integration</strong> only (CAI creates a separate task per dest DC, like rtp ⇒ sjc).
-        Load VMs after a CAMGR transfer to show dests. Dest DCs that CAI already integrated are disabled.
-        They are not used for VM replacement.
-      </p>
-      <div id="cai-integrate-list" class="camgr-dest-list" data-dc-order></div>
-      <div class="actions">
-        <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM replacement</button>
-        <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for dest DCs that are not already integrated. Needs a CAMGR transfer first. Already-integrated dests cannot be selected.">Submit integration</button>
-      </div>
-      <hr class="task-divider" />
-      <p class="step-label" style="margin-top:0">Integrate Template from Content Dev or a demo</p>
-      <p class="hint">
-        Pick where the VM sits now, then enter its exact name. The folder and the VM name are both
-        case sensitive — CAI returns Error if either is off. Show help explains the whole flow.
-      </p>
-      <p class="hint help-text">
-        A template is built from one VM that already sits in a datacenter, so the source folder and the VM
-        name have to match exactly — <strong>CAI folder names are case sensitive</strong>, and a wrong case
-        comes back as Error. This form builds the folder for you.
-      </p>
-      <ol class="hint help-text template-steps">
-        <li><strong>Content Dev:</strong> transfer the VM out of the vPod first (section below). It lands in
-          <code>CDEV.RTP/vPod-##</code> and can only be templated in that same DC.</li>
-        <li><strong>Other DCs:</strong> wait for the VM to show up in dCloud, add it to a blank demo, save that
-          demo, then transfer the demo to the other sites like any other content.</li>
-        <li>CAMGR emails the folder for that transfer — the uppercase site you sent from plus the new demo ID,
-          such as <code>RTP/1348363</code>. Come back with that folder and check every site.</li>
-      </ol>
-      <div class="dev-transfer-row">
-        <label class="dev-transfer-field">
-          <span>Template source</span>
-          <select id="cai-template-mode">
-            <option value="dev">Content Dev vPod</option>
-            <option value="demo">Demo you transferred</option>
-          </select>
-        </label>
-        <label class="dev-transfer-field" id="cai-template-dev-dc-field">
-          <span>Content Dev DC</span>
-          <select id="cai-template-dev-dc" data-dc-order autocomplete="off"></select>
-        </label>
-        <label class="dev-transfer-field" id="cai-template-dev-vpod-field">
-          <span>vPod number</span>
-          <input id="cai-template-dev-vpod" type="text" inputmode="numeric" autocomplete="off" placeholder="23" />
-        </label>
-        <label class="dev-transfer-field hidden" id="cai-template-demo-site-field">
-          <span>Transferred from</span>
-          <select id="cai-template-demo-site" data-dc-order autocomplete="off">
-            <option value="rtp">RTP</option>
-            <option value="sjc">SJC</option>
-            <option value="lon">LON</option>
-            <option value="apj">APJ</option>
-            <option value="syd">SYD</option>
-          </select>
-        </label>
-        <label class="dev-transfer-field hidden" id="cai-template-demo-id-field">
-          <span>Demo ID</span>
-          <input id="cai-template-demo-id" type="text" inputmode="numeric" autocomplete="off" placeholder="1348363" />
-        </label>
-        <label class="dev-transfer-field">
-          <span>VM name (exact)</span>
-          <input id="cai-template-vm" type="text" autocomplete="off" placeholder="truenas-v13" />
-        </label>
-      </div>
-      <p class="hint">Folder sent to CAI: <code id="cai-template-path-preview">CDEV.RTP/vPod-…</code></p>
-      <p class="hint chip-toolbar-label" style="margin-top:0.65rem">Template destinations</p>
-      <div id="cai-template-dests" class="camgr-dest-list" data-dc-order>
-        <label><input type="checkbox" class="cai-template-dest" value="rtp" /> RTP</label>
-        <label><input type="checkbox" class="cai-template-dest" value="sjc" /> SJC</label>
-        <label><input type="checkbox" class="cai-template-dest" value="lon" /> LON</label>
-        <label><input type="checkbox" class="cai-template-dest" value="apj" /> APJ</label>
-        <label><input type="checkbox" class="cai-template-dest" value="syd" /> SYD</label>
-      </div>
-      <div class="actions">
-        <button type="button" class="secondary" id="btn-cai-template-check-all">Check all</button>
-        <button type="button" class="secondary" id="btn-cai-template-uncheck-all">Uncheck all</button>
-        <button type="button" id="btn-cai-template-submit" disabled data-tip="Creates a CAI template task per checked site from the exact VM name in this folder.">Submit template</button>
-      </div>
-      <div id="cai-template-tasks-toolbar" class="list-toolbar chip-toolbar hidden">
-        <p class="hint chip-toolbar-label">Template requests</p>
-        <button type="button" class="secondary" id="btn-cai-template-refresh" data-tip="Re-reads the CAI task list and updates each template request below.">Refresh</button>
-        <button type="button" class="secondary" id="btn-cai-template-clear" data-tip="Clears this template list in the tool only. Does not cancel anything in CAI.">Clear list</button>
-      </div>
-      <table id="cai-template-tasks-table" class="hidden" style="margin-top:0.5rem">
-        <thead>
-          <tr>
-            <th>Source folder</th>
-            <th>VM</th>
-            <th>Submitted</th>
-            <th>Destinations</th>
-          </tr>
-        </thead>
-        <tbody id="cai-template-tasks-body"></tbody>
-      </table>
-      </div>
-      </details>
-
       <details class="task-group camgr" id="camgr-task-group" open>
       <summary class="task-group-head">
         <span class="task-group-title">Content Transfer Tasks</span>
@@ -3429,6 +3309,126 @@
       <div class="actions">
         <button type="button" id="btn-camgr-dev-transfer" disabled data-tip="Submits a CAMGR transfer from this vPod back to its own datacenter. Greyed out until you discover VMs and check at least one.">Submit dev transfer</button>
       </div>
+      </div>
+      </details>
+
+      <details class="task-group cai" id="cai-task-group" open>
+      <summary class="task-group-head">
+        <span class="task-group-title">Content Integration Tasks</span>
+        <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
+      </summary>
+      <div class="task-group-body">
+      <div class="actions" style="margin-top:0">
+        <button type="button" id="btn-cai-connect" data-tip="Opens CAI in the tool browser for Cisco SSO/Duo if needed. Later refreshes reuse that login — no Chrome Keychain.">Connect to CAI</button>
+        <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
+        <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
+        <p class="hint load-target" id="cai-load-target"></p>
+      </div>
+      <p id="cai-status" class="hint" style="margin-top:0.35rem">CAI: on the Cisco network, click Connect to CAI.</p>
+      <p class="hint chip-toolbar-label hidden" id="cai-vm-label"></p>
+      <p class="hint">
+        Check a box in the saved content list above for what you want to integrate, then click
+        <strong>Load VMs</strong>. Several rows of the same demo can be checked together; two different demos cannot.
+      </p>
+      <p class="hint help-text">
+        Target ID is the demo this save came from (filled when this tool saved the session). Root ID is the original base; copy it into Target if you want CAI to replace VMs there instead.
+      </p>
+      <div id="cai-vm-list" class="cai-vm-list"></div>
+      <p class="step-label hidden" id="cai-integrate-label" style="margin-top:0.85rem">CAI Integrate destinations</p>
+      <p class="hint help-text hidden" id="cai-integrate-hint">
+        These checkboxes are for <strong>Submit integration</strong> only (CAI creates a separate task per dest DC, like rtp ⇒ sjc).
+        Load VMs after a CAMGR transfer to show dests. Dest DCs that CAI already integrated are disabled.
+        They are not used for VM replacement.
+      </p>
+      <div id="cai-integrate-list" class="camgr-dest-list" data-dc-order></div>
+      <div class="actions">
+        <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM replacement</button>
+        <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for dest DCs that are not already integrated. Needs a CAMGR transfer first. Already-integrated dests cannot be selected.">Submit integration</button>
+      </div>
+      <hr class="task-divider" />
+      <p class="step-label" style="margin-top:0">Integrate Template from Content Dev or a demo</p>
+      <p class="hint">
+        Pick where the VM sits now, then enter its exact name. The folder and the VM name are both
+        case sensitive — CAI returns Error if either is off. Show help explains the whole flow.
+      </p>
+      <p class="hint help-text">
+        A template is built from one VM that already sits in a datacenter, so the source folder and the VM
+        name have to match exactly — <strong>CAI folder names are case sensitive</strong>, and a wrong case
+        comes back as Error. This form builds the folder for you.
+      </p>
+      <ol class="hint help-text template-steps">
+        <li><strong>Content Dev:</strong> transfer the VM out of the vPod first (section above). It lands in
+          <code>CDEV.RTP/vPod-##</code> and can only be templated in that same DC.</li>
+        <li><strong>Other DCs:</strong> wait for the VM to show up in dCloud, add it to a blank demo, save that
+          demo, then transfer the demo to the other sites like any other content.</li>
+        <li>CAMGR emails the folder for that transfer — the uppercase site you sent from plus the new demo ID,
+          such as <code>RTP/1348363</code>. Come back with that folder and check every site.</li>
+      </ol>
+      <div class="dev-transfer-row">
+        <label class="dev-transfer-field">
+          <span>Template source</span>
+          <select id="cai-template-mode">
+            <option value="dev">Content Dev vPod</option>
+            <option value="demo">Demo you transferred</option>
+          </select>
+        </label>
+        <label class="dev-transfer-field" id="cai-template-dev-dc-field">
+          <span>Content Dev DC</span>
+          <select id="cai-template-dev-dc" data-dc-order autocomplete="off"></select>
+        </label>
+        <label class="dev-transfer-field" id="cai-template-dev-vpod-field">
+          <span>vPod number</span>
+          <input id="cai-template-dev-vpod" type="text" inputmode="numeric" autocomplete="off" placeholder="23" />
+        </label>
+        <label class="dev-transfer-field hidden" id="cai-template-demo-site-field">
+          <span>Transferred from</span>
+          <select id="cai-template-demo-site" data-dc-order autocomplete="off">
+            <option value="rtp">RTP</option>
+            <option value="sjc">SJC</option>
+            <option value="lon">LON</option>
+            <option value="apj">APJ</option>
+            <option value="syd">SYD</option>
+          </select>
+        </label>
+        <label class="dev-transfer-field hidden" id="cai-template-demo-id-field">
+          <span>Demo ID</span>
+          <input id="cai-template-demo-id" type="text" inputmode="numeric" autocomplete="off" placeholder="1348363" />
+        </label>
+        <label class="dev-transfer-field">
+          <span>VM name (exact)</span>
+          <input id="cai-template-vm" type="text" autocomplete="off" placeholder="truenas-v13" />
+        </label>
+      </div>
+      <p class="hint">Folder sent to CAI: <code id="cai-template-path-preview">CDEV.RTP/vPod-…</code></p>
+      <p class="hint chip-toolbar-label" style="margin-top:0.65rem">Template destinations</p>
+      <div id="cai-template-dests" class="camgr-dest-list" data-dc-order>
+        <label><input type="checkbox" class="cai-template-dest" value="rtp" /> RTP</label>
+        <label><input type="checkbox" class="cai-template-dest" value="sjc" /> SJC</label>
+        <label><input type="checkbox" class="cai-template-dest" value="lon" /> LON</label>
+        <label><input type="checkbox" class="cai-template-dest" value="apj" /> APJ</label>
+        <label><input type="checkbox" class="cai-template-dest" value="syd" /> SYD</label>
+      </div>
+      <div class="actions">
+        <button type="button" class="secondary" id="btn-cai-template-check-all">Check all</button>
+        <button type="button" class="secondary" id="btn-cai-template-uncheck-all">Uncheck all</button>
+        <button type="button" id="btn-cai-template-submit" disabled data-tip="Creates a CAI template task per checked site from the exact VM name in this folder.">Submit template</button>
+      </div>
+      <div id="cai-template-tasks-toolbar" class="list-toolbar chip-toolbar hidden">
+        <p class="hint chip-toolbar-label">Template requests</p>
+        <button type="button" class="secondary" id="btn-cai-template-refresh" data-tip="Re-reads the CAI task list and updates each template request below.">Refresh</button>
+        <button type="button" class="secondary" id="btn-cai-template-clear" data-tip="Clears this template list in the tool only. Does not cancel anything in CAI.">Clear list</button>
+      </div>
+      <table id="cai-template-tasks-table" class="hidden" style="margin-top:0.5rem">
+        <thead>
+          <tr>
+            <th>Source folder</th>
+            <th>VM</th>
+            <th>Submitted</th>
+            <th>Destinations</th>
+          </tr>
+        </thead>
+        <tbody id="cai-template-tasks-body"></tbody>
+      </table>
       </div>
       </details>
       </div>
@@ -7889,7 +7889,7 @@
         return { text: "Two different demos are checked in Saved content above — leave only one.", warn: true };
       }
       if (rows.some((row) => Boolean(camgrCdevHomeDc(row.site)))) {
-        return { text: "ContentDEV is checked above — use Transfer VMs from Content Dev below instead.", warn: true };
+        return { text: "ContentDEV is checked — use Transfer VMs from Content Dev instead.", warn: true };
       }
       const first = rows[0];
       const name = String(first.name || "").trim();
@@ -9654,6 +9654,19 @@
         "Login session cleared in this tool.";
     }
 
+    // Log in to dCloud already warmed CAI/CAMGR in the same window. If either
+    // is still signed out (VPN, extra SSO hop), Connect runs without another click.
+    async function connectHubAfterLogin() {
+      const caiBtn = $("btn-cai-connect");
+      const caiAlready = Boolean(caiBtn && /connected/i.test(caiBtn.textContent || ""));
+      if (!caiAlready || !camgrLoggedIn) {
+        $("auth-status").textContent = "Connecting CAI and CAMGR with the same sign-in…";
+      }
+      if (!caiAlready) await connectCai().catch(() => {});
+      if (!camgrLoggedIn) await connectCamgr().catch(() => {});
+      else await importCamgrJobs({ quiet: true }).catch(() => {});
+    }
+
     // Sign-in happens in the tool's own Chromium, the same profile CAMGR and CAI
     // use, so one Cisco SSO login covers all three and there is no popup to babysit
     // and no Chrome Local Storage to scan.
@@ -9665,7 +9678,7 @@
         const site = ($("src-site") && $("src-site").value) || "rtp";
         if (allowWindow) {
           $("auth-status").textContent =
-            "Opening the tool browser — if you are already signed in there, this finishes right away…";
+            "Opening the tool browser — signing in to dCloud, CAI, and CAMGR…";
         }
         const data = await api(
           `/api/auth/dcloud-browser-login?site=${encodeURIComponent(site)}`
@@ -9673,8 +9686,11 @@
           { method: "POST", body: "{}" },
         );
         if (applyImportedToken(data)) {
+          if (data.cai) updateCaiStatus(data.cai);
+          if (data.camgr) updateCamgrStatus(data.camgr);
           $("auth-status").textContent = data.message || "Logged in.";
           await refreshAuth();
+          if (allowWindow) await connectHubAfterLogin();
           return true;
         }
         if (allowWindow) {
