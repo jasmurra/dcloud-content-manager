@@ -269,9 +269,38 @@ def _github_json(url: str) -> dict[str, object]:
             "User-Agent": "dcloud-content-manager-updater",
         },
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        body = json.loads(response.read().decode("utf-8", errors="replace"))
-    return body if isinstance(body, dict) else {}
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                body = json.loads(response.read().decode("utf-8", errors="replace"))
+            return body if isinstance(body, dict) else {}
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(0.6 * (attempt + 1))
+    if last_exc:
+        raise last_exc
+    return {}
+
+
+def _fetch_version_via_raw(slug: str, branch: str) -> str:
+    """Fallback when api.github.com is blocked or briefly down."""
+    url = (
+        f"https://raw.githubusercontent.com/{slug}/"
+        f"{urllib.parse.quote(branch, safe='')}/VERSION?_={time.time_ns()}"
+    )
+    request = urllib.request.Request(
+        url,
+        headers={"Cache-Control": "no-cache", "User-Agent": "dcloud-content-manager-updater"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            text = response.read().decode("utf-8", errors="replace")
+    except (OSError, urllib.error.URLError):
+        return ""
+    line = text.strip().splitlines()[0].strip() if text.strip() else ""
+    return line
 
 
 def fetch_public_release(repo: str, branch: str) -> tuple[str, str]:
@@ -287,7 +316,7 @@ def fetch_public_release(repo: str, branch: str) -> tuple[str, str]:
         commit = branch_data.get("commit")
         sha = str(commit.get("sha") or "") if isinstance(commit, dict) else ""
         if not sha:
-            return "", ""
+            return _fetch_version_via_raw(slug, branch), ""
         version_data = _github_json(
             f"https://api.github.com/repos/{slug}/contents/VERSION"
             f"?ref={urllib.parse.quote(sha, safe='')}&_={time.time_ns()}"
@@ -296,7 +325,7 @@ def fetch_public_release(repo: str, branch: str) -> tuple[str, str]:
         version = base64.b64decode(encoded).decode("utf-8", errors="replace").strip().splitlines()[0].strip()
         return version, sha
     except (OSError, ValueError, urllib.error.URLError, IndexError):
-        return "", ""
+        return _fetch_version_via_raw(slug, branch), ""
 
 
 def fetch_public_version(repo: str, branch: str) -> str:

@@ -2515,7 +2515,9 @@
       <div class="modal-card share-modal-card">
         <h2 id="share-modal-title">Manage sharing</h2>
         <p id="share-modal-subtitle" class="hint" style="margin-top:0"></p>
-        <p class="step-label" style="margin:0.75rem 0 0.35rem">Shared with</p>
+        <p id="share-modal-hint" class="hint hidden" style="margin-top:0.35rem"></p>
+        <ul id="share-target-list" class="share-user-list hidden"></ul>
+        <p class="step-label" id="share-modal-list-label" style="margin:0.75rem 0 0.35rem">Shared with</p>
         <ul id="share-current-list" class="share-user-list"></ul>
         <p id="share-current-empty" class="hint hidden">Not shared with anyone yet.</p>
         <label for="share-user-search" style="margin-top:0.5rem">Add user</label>
@@ -2780,6 +2782,7 @@
             <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck all</button>
             <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
             <button type="button" class="secondary" id="btn-copy-saved-to-schedule" disabled data-tip="Copies the checked content ID in each DC into Schedule sessions, then loads that demo’s VMs so you can pick which ones power on. Use this for an exported session. Stay here to schedule without Load VMs.">Copy to Schedule sessions</button>
+            <button type="button" class="secondary" id="btn-share-schedule-saved" disabled data-tip="Opens one share dialog for every checked saved copy. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share checked</button>
             <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete checked</button>
           </div>
           <div class="list-toolbar">
@@ -2941,6 +2944,7 @@
               <div id="found-workspace-sessions" style="margin-top:0.35rem"></div>
               <div class="actions" style="margin-top:0.65rem">
                 <button type="button" class="secondary" id="btn-attach-workspace-sessions" disabled>Add checked to job workspace</button>
+                <button type="button" class="secondary" id="btn-share-workspace-sessions" disabled data-tip="Opens one share dialog for every checked live session. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share checked</button>
               </div>
               <p id="attach-workspace-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
             </div>
@@ -3000,6 +3004,7 @@
           </div>
           <div style="align-self:flex-end">
             <button type="button" class="secondary" id="btn-extend-checked" data-tip="Adds the days and hours to each checked session's current end. If that window is booked, you are asked whether to take the farthest time that is still free.">Extend checked</button>
+            <button type="button" class="secondary" id="btn-share-checked-cards" disabled data-tip="Opens one share dialog for every checked live session card. The people you add are applied to all of them. Existing sharing is kept.">Share checked</button>
           </div>
         </div>
         <p class="hint" style="margin:0 0 0.75rem">Each session is pushed this far past its own end. Five days is one click. If resources are booked, the tool finds the farthest time that still fits and asks before applying it. Set days and hours to 0 to use the until time as an exact stop for every checked session.</p>
@@ -3074,6 +3079,7 @@
           <div id="found-sessions" style="margin-top:0.35rem"></div>
           <div class="actions" style="margin-top:0.65rem">
             <button type="button" class="secondary" id="btn-attach-sessions" disabled data-tip="Adds checked sessions as monitoring cards (no bulk end/save). Move to job workspace later if needed.">Add to monitoring</button>
+            <button type="button" class="secondary" id="btn-share-found-sessions" disabled data-tip="Opens one share dialog for every checked live session. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share checked</button>
           </div>
           <p id="attach-sessions-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
         </div>
@@ -4174,6 +4180,17 @@
           waitForUpdatedApp(data.version);
           return;
         }
+        if (data.reachable === false) {
+          setHeaderStatus("GitHub unreachable");
+          button.setAttribute("data-tip", data.message || "GitHub was unreachable.");
+          showToast(data.message || "GitHub was unreachable. This copy still runs.", { kind: "warn" });
+          setTimeout(() => {
+            button.disabled = false;
+            setHeaderStatus("");
+            if (originalTip) button.setAttribute("data-tip", originalTip);
+          }, 4000);
+          return;
+        }
         setHeaderStatus("Up to date");
         button.setAttribute("data-tip", data.message || "This is the latest version.");
         setTimeout(() => {
@@ -4185,7 +4202,7 @@
         button.disabled = false;
         setHeaderStatus("Check failed");
         button.setAttribute("data-tip", err.message || "Could not check GitHub.");
-        showError(err.message);
+        showToast(err.message || "Could not check GitHub.", { kind: "warn" });
       }
     }
 
@@ -6055,13 +6072,53 @@
       }
     }
 
+    const LOCAL_APP_DOWN =
+      "The local app didn't answer. Leave start.command running. If the Mac was asleep, wait a few seconds and refresh this page.";
+
+    function isLocalAppDownError(err) {
+      const t = String(err?.message || err || "").toLowerCase();
+      return Boolean(
+        err?.offline
+        || t.includes("failed to fetch")
+        || t.includes("networkerror")
+        || t.includes("load failed")
+        || t.includes("the local app didn't answer"),
+      );
+    }
+
+    async function fetchLocal(path, init) {
+      const request = {
+        ...init,
+        headers: { "Content-Type": "application/json", ...(init.headers || {}) },
+      };
+      let lastErr;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await fetch(path, request);
+        } catch (err) {
+          lastErr = err;
+          await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+        }
+      }
+      const wrapped = new Error(LOCAL_APP_DOWN);
+      wrapped.status = 0;
+      wrapped.offline = true;
+      wrapped.cause = lastErr;
+      throw wrapped;
+    }
+
     async function api(path, opts = {}) {
       // quiet: caller handles the failure itself, so skip the pop-up.
       const { quiet = false, ...init } = opts;
-      const res = await fetch(path, {
-        headers: { "Content-Type": "application/json" },
-        ...init,
-      });
+      let res;
+      try {
+        res = await fetchLocal(path, init);
+      } catch (err) {
+        if (!quiet && isLocalAppDownError(err)) {
+          showError(LOCAL_APP_DOWN, { bannerOnly: true });
+        }
+        throw err;
+      }
       let data = {};
       try { data = await res.json(); } catch {}
       if (!res.ok) {
@@ -7012,6 +7069,13 @@
 
     function setCardChecks(checked) {
       document.querySelectorAll(".card-select").forEach((el) => { el.checked = checked; });
+      syncShareCheckedCardsButton();
+    }
+
+    function syncShareCheckedCardsButton() {
+      const btn = $("btn-share-checked-cards");
+      if (!btn) return;
+      btn.disabled = checkedShareTargetsFromCards().length === 0;
     }
 
     function closeVmMenuFrom(el) {
@@ -7469,6 +7533,7 @@
             $("job-cards-label")?.classList.toggle("hidden", visibleJob.length === 0);
             if (!$("sched-extend").value) suggestExtendDate(job);
             saveUiStateFromDom();
+            syncShareCheckedCardsButton();
           }
         }
       }
@@ -8904,7 +8969,7 @@
     async function connectCamgr() {
       $("btn-camgr-connect").disabled = true;
       const status = $("camgr-status");
-      if (status) status.textContent = "Using your open CAMGR tab…";
+        if (status) status.textContent = "Opening the tool browser…";
       try {
         // quiet: the reason belongs under the button, not in a pop-up.
         const data = await api("/api/camgr/connect", { method: "POST", body: "{}", quiet: true });
@@ -9388,13 +9453,21 @@
     }
 
     let authKeepAliveTimer = null;
+    let authKeepAliveWatching = false;
     const AUTH_KEEPALIVE_MS = 4 * 60 * 1000;
 
     function startAuthKeepAlive() {
       if (authKeepAliveTimer) clearInterval(authKeepAliveTimer);
       authKeepAliveTimer = setInterval(() => {
-        refreshAuth().catch(() => {});
+        refreshAuth({ quiet: true }).catch(() => {});
       }, AUTH_KEEPALIVE_MS);
+      if (!authKeepAliveWatching) {
+        authKeepAliveWatching = true;
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) return;
+          refreshAuth({ quiet: true }).catch(() => {});
+        });
+      }
       startHubKeepAlive();
     }
 
@@ -9481,8 +9554,8 @@
       }
     }
 
-    async function refreshAuth() {
-      const data = await api("/api/auth/status");
+    async function refreshAuth({ quiet = false } = {}) {
+      const data = await api("/api/auth/status", { quiet });
       let status;
 
       if (data.sessionLoggedIn) {
@@ -10243,6 +10316,7 @@
             setJobId(null);
             return;
           }
+          if (isLocalAppDownError(err)) return;
           showError(err.message, { bannerOnly: true });
         }
       }, 2000);
@@ -12359,10 +12433,12 @@
     }
 
     function syncAttachSessionsButton() {
+      const checked = document.querySelectorAll(".found-session:checked:not(:disabled)").length;
+      const shareBtn = $("btn-share-found-sessions");
+      if (shareBtn) shareBtn.disabled = checked === 0;
       const btn = $("btn-attach-sessions");
       if (!btn) return;
       if (attachSessionsBusy) return;
-      const checked = document.querySelectorAll(".found-session:checked:not(:disabled)").length;
       btn.disabled = checked === 0;
     }
 
@@ -12398,7 +12474,7 @@
             <tbody>
               ${siteRows.map((row) => `
                 <tr>
-                  <td><input type="checkbox" class="found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" /></td>
+                  <td><input type="checkbox" class="found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" data-name="${escapeHtml(row.name || "")}" /></td>
                   <td class="mono">${escapeHtml(row.sessionId)}</td>
                   <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
                   <td>${escapeHtml(row.status)}</td>
@@ -12555,11 +12631,13 @@
 
     function syncDeleteSavedButton() {
       const managedBtn = $("btn-delete-schedule-saved");
+      const checkedBoxes = [...document.querySelectorAll(".schedule-saved-content:checked")];
       if (managedBtn) {
-        const checked = [...document.querySelectorAll(".schedule-saved-content:checked")]
-          .filter((box) => box.dataset.deletable !== "false").length;
+        const checked = checkedBoxes.filter((box) => box.dataset.deletable !== "false").length;
         managedBtn.disabled = checked === 0;
       }
+      const shareBtn = $("btn-share-schedule-saved");
+      if (shareBtn) shareBtn.disabled = checkedBoxes.length === 0;
       syncAddSavedButtons();
     }
 
@@ -13431,6 +13509,8 @@
       }
       const button = $("btn-attach-workspace-sessions");
       if (button && !button.classList.contains("is-busy")) button.disabled = checked === 0;
+      const shareBtn = $("btn-share-workspace-sessions");
+      if (shareBtn) shareBtn.disabled = checked === 0;
     }
 
     function setWorkspaceFoundChecks(checked) {
@@ -13454,7 +13534,7 @@
             <tbody>${siteRows.map((row) => {
               const attached = onCards.has(sessionKey(row.site, row.sessionId));
               return `<tr class="${attached ? "found-session-attached" : ""}">
-                <td><input type="checkbox" class="workspace-found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" ${attached ? 'disabled title="Already on a card"' : ""} /></td>
+                <td><input type="checkbox" class="workspace-found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" data-name="${escapeHtml(row.name || "")}" ${attached ? 'disabled title="Already on a card"' : ""} /></td>
                 <td class="mono">${escapeHtml(row.sessionId)}</td>
                 <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
                 <td>${escapeHtml(row.status)}</td>
@@ -13796,6 +13876,60 @@
     let shareModalState = null;
     let shareSearchTimer = null;
 
+    function shareTargetKey(target) {
+      const site = String(target?.site || "").toLowerCase();
+      const kind = target?.kind === "content" ? "content" : "session";
+      const id = kind === "content" ? String(target?.contentId || "") : String(target?.sessionId || "");
+      return `${site}:${kind}:${id}`;
+    }
+
+    function checkedSavedShareTargets() {
+      return [...document.querySelectorAll(".schedule-saved-content:checked")]
+        .filter((box) => !rowIsFilteredOut(box))
+        .map((box) => ({
+          site: String(box.dataset.site || "").toLowerCase(),
+          kind: "content",
+          sessionId: "",
+          contentId: String(box.dataset.contentId || "").trim(),
+          label: String(box.dataset.name || box.dataset.contentId || "").trim(),
+        }))
+        .filter((row) => row.site && row.contentId);
+    }
+
+    function checkedFoundSessionTargets(itemClass) {
+      return visibleBoxes(`.${itemClass}:checked:not(:disabled)`).map((box) => ({
+        site: String(box.dataset.site || "").toLowerCase(),
+        kind: "session",
+        sessionId: String(box.dataset.session || "").trim(),
+        contentId: "",
+        label: String(box.dataset.name || box.dataset.session || "").trim(),
+      })).filter((row) => row.site && row.sessionId);
+    }
+
+    function checkedShareTargetsFromCards() {
+      const seen = new Set();
+      const targets = [];
+      for (const box of document.querySelectorAll("#cards .card-select:checked")) {
+        const site = String(box.dataset.site || "").toLowerCase();
+        const sessionId = String(box.dataset.session || "").trim();
+        const dc = findDcCard(site, sessionId);
+        const kind = shareKindForDc(dc);
+        if (!kind) continue;
+        const target = {
+          site,
+          kind,
+          sessionId: kind === "session" ? sessionId : "",
+          contentId: kind === "content" ? String(dc?.savedId || "").trim() : "",
+          label: String(dc?.name || sessionId || dc?.savedId || "").trim(),
+        };
+        const key = shareTargetKey(target);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        targets.push(target);
+      }
+      return targets;
+    }
+
     function closeShareModal() {
       $("share-modal")?.classList.add("hidden");
       shareModalState = null;
@@ -13831,7 +13965,7 @@
       const pickable = (users || []).filter((row) => row.userId && !currentIds.has(row.userId));
       if (!pickable.length) {
         list.innerHTML = users?.length
-          ? `<li class="hint" style="cursor:default">Already shared with matching user(s).</li>`
+          ? `<li class="hint" style="cursor:default">Already ${shareModalState?.bulk ? "selected" : "shared with"} matching user(s).</li>`
           : "";
         list.classList.toggle("hidden", !list.innerHTML);
         return;
@@ -13841,6 +13975,44 @@
           <span>${escapeHtml(row.fullName || row.userId)}${row.email ? ` · ${escapeHtml(row.email)}` : ""}</span>
         </li>
       `).join("");
+      list.classList.remove("hidden");
+    }
+
+    function shareSearchSites() {
+      if (shareModalState?.targets?.length) {
+        return [...new Set(shareModalState.targets.map((row) => row.site).filter(Boolean))];
+      }
+      return shareModalState?.site ? [shareModalState.site] : [];
+    }
+
+    function renderShareTargets(targets) {
+      const list = $("share-target-list");
+      const hint = $("share-modal-hint");
+      const label = $("share-modal-list-label");
+      const empty = $("share-current-empty");
+      if (label) label.textContent = targets?.length ? "People to add" : "Shared with";
+      if (empty) {
+        empty.textContent = targets?.length
+          ? "No one selected yet. Search below to add people to every checked item."
+          : "Not shared with anyone yet.";
+      }
+      if (hint) {
+        hint.textContent = targets?.length
+          ? "These people will be added to every checked item. Anyone already shared stays shared."
+          : "";
+        hint.classList.toggle("hidden", !targets?.length);
+      }
+      if (!list) return;
+      if (!targets?.length) {
+        list.innerHTML = "";
+        list.classList.add("hidden");
+        return;
+      }
+      list.innerHTML = targets.map((row) => {
+        const id = row.kind === "content" ? row.contentId : row.sessionId;
+        const name = row.label && row.label !== id ? ` · ${row.label}` : "";
+        return `<li><span>${escapeHtml((row.site || "").toUpperCase())} · ${escapeHtml(id)}${escapeHtml(name)}</span></li>`;
+      }).join("");
       list.classList.remove("hidden");
     }
 
@@ -13858,6 +14030,8 @@
         kind,
         sessionId,
         contentId,
+        targets: [],
+        bulk: false,
         sharedWith: [],
         label: kind === "content"
           ? (contentName && contentId ? `${contentId} · ${contentName}` : contentId || contentName || "saved content")
@@ -13865,6 +14039,7 @@
       };
       $("share-modal-title").textContent = kind === "content" ? "Share saved content" : "Share live session";
       $("share-modal-subtitle").textContent = `${site.toUpperCase()} · ${shareModalState.label}`;
+      renderShareTargets([]);
       $("share-user-search").value = "";
       renderShareSearchResults([]);
       $("share-modal-status").textContent = "Loading current sharing…";
@@ -13889,6 +14064,51 @@
       }
     }
 
+    function openBulkShareModal(targets) {
+      if (!ensureTokenReady("managing sharing")) return;
+      const rows = (targets || []).filter((row) => row.site && (row.sessionId || row.contentId));
+      if (!rows.length) {
+        showError("Check the sessions or saved content you want to share.");
+        return;
+      }
+      if (rows.length === 1) {
+        const row = rows[0];
+        openShareModal({
+          dataset: {
+            site: row.site,
+            shareKind: row.kind,
+            session: row.sessionId,
+            contentId: row.contentId,
+            name: row.label,
+          },
+        }).catch((err) => showError(err.message));
+        return;
+      }
+      const kinds = new Set(rows.map((row) => row.kind));
+      const noun = kinds.size === 1 && kinds.has("content")
+        ? "saved copies"
+        : (kinds.size === 1 ? "live sessions" : "items");
+      const sites = [...new Set(rows.map((row) => (row.site || "").toUpperCase()).filter(Boolean))];
+      shareModalState = {
+        site: rows[0].site,
+        kind: kinds.size === 1 ? rows[0].kind : "session",
+        sessionId: "",
+        contentId: "",
+        targets: rows,
+        bulk: true,
+        sharedWith: [],
+        label: `${rows.length} ${noun}`,
+      };
+      $("share-modal-title").textContent = `Share ${rows.length} ${noun}`;
+      $("share-modal-subtitle").textContent = sites.join(", ");
+      renderShareTargets(rows);
+      renderShareCurrentList();
+      $("share-user-search").value = "";
+      renderShareSearchResults([]);
+      $("share-modal-status").classList.add("hidden");
+      $("share-modal").classList.remove("hidden");
+    }
+
     async function searchShareUsersNow() {
       if (!shareModalState) return;
       const query = ($("share-user-search")?.value || "").trim();
@@ -13896,22 +14116,35 @@
         renderShareSearchResults([]);
         return;
       }
+      const sites = shareSearchSites();
+      if (!sites.length) return;
       const status = $("share-modal-status");
       if (status) {
         status.textContent = "Searching users…";
         status.classList.remove("hidden");
       }
       try {
-        const data = await api("/api/share/users/search", {
+        const kind = shareModalState.kind || "session";
+        const batches = await Promise.all(sites.map((site) => api("/api/share/users/search", {
           method: "POST",
+          quiet: true,
           body: JSON.stringify({
             ...tokenPayload(),
-            site: shareModalState.site,
-            kind: shareModalState.kind,
+            site,
+            kind,
             query,
           }),
-        });
-        renderShareSearchResults(data.users || []);
+        }).catch(() => ({ users: [] }))));
+        const merged = [];
+        const seen = new Set();
+        for (const data of batches) {
+          for (const row of data.users || []) {
+            if (!row.userId || seen.has(row.userId)) continue;
+            seen.add(row.userId);
+            merged.push(row);
+          }
+        }
+        renderShareSearchResults(merged);
         if (status) status.classList.add("hidden");
       } catch (err) {
         if (status) status.textContent = err.message;
@@ -13933,10 +14166,48 @@
       if (saveBtn) saveBtn.disabled = true;
       const status = $("share-modal-status");
       if (status) {
-        status.textContent = "Saving sharing…";
+        status.textContent = shareModalState.bulk ? "Adding people to every checked item…" : "Saving sharing…";
         status.classList.remove("hidden");
       }
       try {
+        if (shareModalState.bulk) {
+          if (!(shareModalState.sharedWith || []).length) {
+            if (status) status.textContent = "Add at least one person.";
+            return;
+          }
+          const data = await api("/api/share/bulk-add", {
+            method: "POST",
+            body: JSON.stringify({
+              ...tokenPayload(),
+              job_id: jobId || "",
+              users: shareModalState.sharedWith || [],
+              items: (shareModalState.targets || []).map((row) => ({
+                site: row.site,
+                kind: row.kind,
+                session_id: row.sessionId || "",
+                content_id: row.contentId || "",
+              })),
+            }),
+          });
+          if (data.job) renderJob(data.job, { forceCards: true });
+          const failed = Number(data.failed || 0);
+          const added = Number(data.added || 0);
+          noteLog(`Shared ${added} item(s)${failed ? `, ${failed} failed` : ""}.`);
+          if (failed) {
+            const firstFail = (data.results || []).find((row) => !row.ok);
+            if (status) {
+              status.textContent = firstFail?.message
+                ? `Shared ${added}, ${failed} failed: ${firstFail.message}`
+                : `Shared ${added}, ${failed} failed.`;
+            }
+            showToast(`Shared ${added}, ${failed} failed.`, { kind: "warn" });
+            return;
+          }
+          closeShareModal();
+          showError("");
+          showToast(`Shared ${added} item(s).`);
+          return;
+        }
         const data = await api("/api/share/update", {
           method: "POST",
           body: JSON.stringify({
@@ -14415,6 +14686,12 @@
     $("btn-card-check-all").addEventListener("click", () => setCardChecks(true));
     $("btn-card-uncheck-all").addEventListener("click", () => setCardChecks(false));
     $("btn-extend-checked").addEventListener("click", () => extendSessions().catch((err) => showError(err.message)));
+    $("btn-share-checked-cards")?.addEventListener("click", () => {
+      openBulkShareModal(checkedShareTargetsFromCards());
+    });
+    $("cards")?.addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("card-select")) syncShareCheckedCardsButton();
+    });
     $("btn-shutdown").addEventListener("click", () => shutdownSave([]));
     $("btn-end").addEventListener("click", () => endSessions([]));
     $("btn-dismiss").addEventListener("click", () => dismissJob().catch((err) => showError(err.message)));
@@ -14537,6 +14814,9 @@
     $("btn-workspace-expand-sessions").addEventListener("click", () => setDcGroupsOpen("found-workspace-sessions", true));
     $("btn-workspace-collapse-sessions").addEventListener("click", () => setDcGroupsOpen("found-workspace-sessions", false));
     $("btn-attach-workspace-sessions").addEventListener("click", () => attachSelectedWorkspaceSessions().catch((err) => showError(err.message)));
+    $("btn-share-workspace-sessions")?.addEventListener("click", () => {
+      openBulkShareModal(checkedFoundSessionTargets("workspace-found-session"));
+    });
     $("found-workspace-sessions").addEventListener("change", (ev) => {
       if (ev.target.classList.contains("workspace-found-session-dc-head")) {
         const site = ev.target.dataset.site;
@@ -14552,6 +14832,9 @@
     $("btn-refresh-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule", { refresh: true }).catch((err) => showError(err.message)));
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
     $("btn-copy-saved-to-schedule")?.addEventListener("click", () => copyCheckedSavedToSchedule().catch((err) => showError(err.message)));
+    $("btn-share-schedule-saved")?.addEventListener("click", () => {
+      openBulkShareModal(checkedSavedShareTargets());
+    });
     $("btn-schedule-saved").addEventListener("click", () => scheduleSelectedSaved().catch((err) => showError(err.message)));
     $("saved-schedule-export").addEventListener("change", () => syncScheduleSavedButton());
     $("btn-expand-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", true));
@@ -14564,6 +14847,9 @@
     $("btn-uncheck-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(false));
     $("btn-recheck-schedule-saved-ids")?.addEventListener("click", () => recheckSavedIdsOnFoundContent({ forSchedule: true }));
     $("btn-attach-sessions").addEventListener("click", () => attachSelectedSessions().catch((err) => showError(err.message)));
+    $("btn-share-found-sessions")?.addEventListener("click", () => {
+      openBulkShareModal(checkedFoundSessionTargets("found-session"));
+    });
     $("found-sessions").addEventListener("click", (ev) => {
       const addBtn = ev.target.closest(".btn-add-found-session");
       if (!addBtn || addBtn.disabled) return;

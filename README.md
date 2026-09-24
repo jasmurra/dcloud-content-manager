@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.3** | Share checked sessions and saved content in one dialog; Check for updates stays quiet when GitHub is unreachable; Connect to CAMGR can install Playwright without a restart |
 | **2.0.2** | Narrower side nav; version next to the app name; teal square app icon in the tab and header |
 | **2.0.1** | Selected is only for VMs checked in Load VMs on that session; WebRDP uses the VM you clicked; Copy to Schedule sessions fills demo IDs from checked saved content and loads VMs; saved-content last pull stays on screen after refresh; account menu shows first and last name |
 | **2.0.0** | Harbor side navigation and Control Hub-style chrome: one task page at a time, outline pill buttons, account menu with your dCloud name |

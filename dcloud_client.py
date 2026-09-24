@@ -5215,3 +5215,51 @@ def update_content_share(
     if response.status_code >= 400:
         return False, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
     return True, None
+
+
+def merge_share_users(*lists: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Keep existing people and append new ones, one row per userId."""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for rows in lists:
+        for item in rows or []:
+            if not isinstance(item, dict):
+                continue
+            user_id = str(item.get("userId") or "").strip()
+            if not user_id or user_id in seen:
+                continue
+            seen.add(user_id)
+            out.append(
+                {
+                    "userId": user_id,
+                    "fullName": str(item.get("fullName") or "").strip(),
+                }
+            )
+    return out
+
+
+def add_users_to_share(
+    token: str,
+    *,
+    site: str,
+    kind: str,
+    session_id: str = "",
+    content_id: str = "",
+    users: list[dict[str, Any]],
+) -> tuple[list[dict[str, str]], str | None]:
+    """Add people to a live session or saved copy without dropping anyone already shared."""
+    share_kind = "content" if str(kind or "").strip().lower() == "content" else "session"
+    if share_kind == "content":
+        current, err = fetch_content_shared_with(token, site, content_id)
+    else:
+        current, err = fetch_session_shared_with(token, site, session_id)
+    if err:
+        return [], err
+    merged = merge_share_users(current, users)
+    if share_kind == "content":
+        ok, err = update_content_share(token, site, content_id, merged)
+    else:
+        ok, err = update_session_share(token, site, session_id, merged)
+    if not ok:
+        return [], err or "Share update failed."
+    return merged, None

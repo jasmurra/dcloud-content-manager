@@ -517,6 +517,64 @@ def test_live_session_share_search_uses_dsx() -> None:
     )
 
 
+def test_bulk_share_adds_people_without_replacing() -> None:
+    import dcloud_client
+
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check(
+        "Share checked is on saved content and both Find my sessions lists",
+        all(
+            marker in page
+            for marker in (
+                'id="btn-share-schedule-saved"',
+                'id="btn-share-found-sessions"',
+                'id="btn-share-workspace-sessions"',
+                'id="btn-share-checked-cards"',
+            )
+        ),
+    )
+    check("one save can add people to every checked item", "/api/share/bulk-add" in source)
+    merged = dcloud_client.merge_share_users(
+        [{"userId": "alice@cisco.com", "fullName": "Alice"}],
+        [{"userId": "bob@cisco.com", "fullName": "Bob"}, {"userId": "alice@cisco.com", "fullName": "Alice A"}],
+    )
+    check("existing people stay on the list", [row["userId"] for row in merged] == [
+        "alice@cisco.com",
+        "bob@cisco.com",
+    ])
+    check("a later add does not overwrite the first name", merged[0]["fullName"] == "Alice")
+    check(
+        "bulk share keeps anyone already shared",
+        "These people will be added to every checked item" in page
+        and "def add_users_to_share(" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
+    )
+
+
+def test_github_unreachable_does_not_look_like_the_app_broke() -> None:
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    updater = (ROOT / "update_from_github.py").read_text(encoding="utf-8")
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    check(
+        "Check for updates retries GitHub before giving up",
+        "for attempt in range(3):" in updater and "_fetch_version_via_raw(" in updater,
+    )
+    check(
+        "a blocked GitHub API can still read VERSION from raw.githubusercontent.com",
+        "raw.githubusercontent.com" in updater,
+    )
+    fn = source[source.index("def api_update_check(") : source.index("def _session_user_for_status(")]
+    check("GitHub down is not a 503 Action needed dialog", "raise HTTPException(503" not in fn)
+    ui = page[page.index("async function checkForAppUpdates(") : page.index("async function checkForAppUpdates(") + 2200]
+    check(
+        "the page keeps running and says to try again",
+        "reachable === false" in ui
+        and "GitHub unreachable" in ui
+        and "showToast" in ui
+        and "showError(err.message)" not in ui,
+    )
+
+
 def test_owner_line_survives_a_tokenless_render() -> None:
     """last-job.json holds no token, so a restored job used to answer "I cannot
     tell who owns this" for every card — and persist that blank."""
@@ -792,6 +850,13 @@ def test_token_refresh_is_not_raced() -> None:
         "_ensure_user_access_token(progress, force=force)" in source,
     )
     check("the page pings auth every 4 minutes", "4 * 60 * 1000" in INDEX)
+    check("keepalive refreshes auth without a banner", "refreshAuth({ quiet: true })" in INDEX)
+    check("localhost fetches retry after Mac sleep", "for (let attempt = 0; attempt < 3; attempt++)" in INDEX)
+    check(
+        "Failed to fetch is not shown as a token expiry",
+        "The local app didn't answer" in INDEX,
+    )
+    check("job poll ignores a sleeping local app", "isLocalAppDownError(err)" in INDEX)
     # A failed call has to correct the button, not wait for the next poll.
     check("a sign-in failure re-checks auth", "refreshAuth().catch(() => {});" in INDEX)
 
@@ -2497,6 +2562,12 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "def _chromium_on_disk(" in browser
         and "_playwright_ready" in browser
         and "with sync_playwright() as playwright:" not in browser[browser.index("def ensure_playwright(") : browser.index("def _cookie_header(")],
+    )
+    check(
+        "Connect can pip-install Playwright after a GitHub update skipped start.command",
+        "def _install_playwright_package(" in browser
+        and '"playwright>=1.49.0"' in browser
+        and '"-m"' in browser[browser.index("def _install_playwright_package(") : browser.index("def ensure_playwright(")],
     )
 
 

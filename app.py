@@ -141,6 +141,7 @@ from dcloud_client import (
     tbv3_edit_url,
     TBV3_UI,
     unique_states,
+    add_users_to_share,
     update_content_share,
     update_session_name,
     update_session_share,
@@ -1075,6 +1076,19 @@ class ShareUpdatePayload(TokenPayload):
     session_id: str = ""
     content_id: str = ""
     shared_with: list[ShareUser] = Field(default_factory=list)
+    job_id: str = ""
+
+
+class ShareBulkItem(BaseModel):
+    site: str
+    kind: str = "session"
+    session_id: str = ""
+    content_id: str = ""
+
+
+class ShareBulkAddPayload(TokenPayload):
+    items: list[ShareBulkItem] = Field(default_factory=list)
+    users: list[ShareUser] = Field(default_factory=list)
     job_id: str = ""
 
 
@@ -3836,6 +3850,16 @@ def _start_camgr_open() -> dict[str, Any]:
 
 def _connect_camgr(cookie: str = "") -> dict[str, Any]:
     """Use a saved session, the tool browser, then a live CAMGR Chrome tab."""
+    with _camgr_open_lock:
+        _camgr_open["running"] = True
+    try:
+        return _connect_camgr_body(cookie)
+    finally:
+        with _camgr_open_lock:
+            _camgr_open["running"] = False
+
+
+def _connect_camgr_body(cookie: str = "") -> dict[str, Any]:
     if not host_resolves(CAMGR_HOST):
         reason = off_network_message("CAMGR")
         _camgr_mark_unverified(reason)
@@ -5055,10 +5079,19 @@ def api_update_check() -> dict[str, Any]:
             _update_check_lock.release()
             raise HTTPException(400, "GitHub updates are not configured.")
         remote_version = fetch_public_version(repo, branch)
+        current = _read_app_version()
         if not remote_version:
             _update_check_lock.release()
-            raise HTTPException(503, "Could not reach GitHub. Try again later.")
-        current = _read_app_version()
+            return {
+                "ok": True,
+                "updating": False,
+                "reachable": False,
+                "version": current,
+                "message": (
+                    f"GitHub was unreachable, so this copy was not checked. "
+                    f"You are still on Version {current}. Try Check for updates again in a minute."
+                ),
+            }
         if not is_newer(remote_version, current):
             _update_check_lock.release()
             record_anonymous_usage(version=current, config=config)
@@ -9411,6 +9444,91 @@ def api_share_update(body: ShareUpdatePayload) -> dict[str, Any]:
         _persist_job(job)
         job_out = _public_job(job)
     return {"ok": True, "sharedWith": shared_with, "kind": kind, "job": job_out}
+
+
+@app.post("/api/share/bulk-add")
+def api_share_bulk_add(body: ShareBulkAddPayload) -> dict[str, Any]:
+    token = _resolve_token(body)
+    users = [row.model_dump() for row in body.users if str(row.userId or "").strip()]
+    if not users:
+        raise HTTPException(400, "Add at least one person.")
+    items: list[tuple[str, str, str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in body.items:
+        site = (item.site or "").strip().lower()
+        kind = "content" if str(item.kind or "").strip().lower() == "content" else "session"
+        session_id = str(item.session_id or "").strip()
+        content_id = str(item.content_id or "").strip()
+        if site not in SITES:
+            continue
+        if kind == "content" and not content_id:
+            continue
+        if kind == "session" and not session_id:
+            continue
+        key = (site, kind, session_id, content_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(key)
+    if not items:
+        raise HTTPException(400, "Check at least one session or saved content item.")
+
+    def _share_one(row: tuple[str, str, str, str]) -> dict[str, Any]:
+        site, kind, session_id, content_id = row
+        shared, err = add_users_to_share(
+            token,
+            site=site,
+            kind=kind,
+            session_id=session_id,
+            content_id=content_id,
+            users=users,
+        )
+        return {
+            "ok": err is None,
+            "site": site,
+            "kind": kind,
+            "sessionId": session_id,
+            "contentId": content_id,
+            "sharedWith": shared,
+            "message": err or "",
+        }
+
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(len(items), 5)) as pool:
+        futures = [pool.submit(_share_one, row) for row in items]
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as exc:
+                results.append({"ok": False, "message": str(exc)})
+    added = sum(1 for row in results if row.get("ok"))
+    failed = len(results) - added
+    job_out: dict[str, Any] | None = None
+    job_id = str(body.job_id or "").strip()
+    if job_id:
+        job = _job(job_id)
+        for row in results:
+            if not row.get("ok"):
+                continue
+            _apply_share_to_job_dc(
+                job,
+                site=str(row.get("site") or ""),
+                kind=str(row.get("kind") or "session"),
+                session_id=str(row.get("sessionId") or ""),
+                content_id=str(row.get("contentId") or ""),
+                shared_with=list(row.get("sharedWith") or []),
+            )
+        _persist_job(job)
+        job_out = _public_job(job)
+    if not added:
+        raise HTTPException(400, results[0].get("message") or "Share update failed.")
+    return {
+        "ok": failed == 0,
+        "added": added,
+        "failed": failed,
+        "results": results,
+        "job": job_out,
+    }
 
 
 @app.post("/api/contents/mine")

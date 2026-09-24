@@ -57,6 +57,32 @@ def _chromium_on_disk() -> bool:
     return False
 
 
+def _install_playwright_package() -> str | None:
+    """Install the Playwright Python package into this app's venv."""
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "-q",
+                "playwright>=1.49.0",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return (
+            "Playwright is not installed yet. Quit and double-click start.command "
+            f"so it can download Chromium (one time). ({exc})"
+        )
+    return None
+
+
 def ensure_playwright() -> str | None:
     """Install Playwright's Chromium once if needed. Returns an error or None."""
     global _playwright_ready
@@ -65,10 +91,18 @@ def ensure_playwright() -> str | None:
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
     except ImportError:
-        return (
-            "Playwright is not installed yet. Quit and double-click start.command "
-            "so it can download Chromium (one time)."
-        )
+        # Check for updates copies new code without pip. Connect should finish
+        # that install instead of asking for a restart and extra clicks.
+        err = _install_playwright_package()
+        if err:
+            return err
+        try:
+            from playwright.sync_api import sync_playwright  # noqa: F401
+        except ImportError:
+            return (
+                "Playwright is not installed yet. Quit and double-click start.command "
+                "so it can download Chromium (one time)."
+            )
     # Do not start the Playwright driver just to ask where Chromium is — that
     # adds several seconds before the sign-in window can open.
     if _chromium_on_disk():
