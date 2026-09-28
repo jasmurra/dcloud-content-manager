@@ -1,3 +1,9 @@
+## 2.0.6 — 2026-09-28
+
+- **Log in to dCloud keeps the sign-in window up through Duo.** It stays open until that login can be used, instead of closing first
+- **CAMGR reuses that sign-in.** It still runs its own Duo check, and that Log in button is pressed for you. Duo may open “you can close this window” tabs in your main browser; those can be closed
+- **The header shows the real version** as soon as the page opens
+
 ## 2.0.5 — 2026-09-28
 
 - **Job workspace bulk actions only run on checked cards.** Extend Checked, Guest Shutdown & Save, and End Sessions stay grey until at least one card is checked. An empty selection does not end, reset, or save every session
