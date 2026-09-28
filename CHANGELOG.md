@@ -1,3 +1,8 @@
+## 2.0.5 — 2026-09-28
+
+- **Job workspace bulk actions only run on checked cards.** Extend Checked, Guest Shutdown & Save, and End Sessions stay grey until at least one card is checked. An empty selection does not end, reset, or save every session
+- **A batch of 10 or more lists every item a second time** before anything is sent to dCloud. Saved-content delete and event end/reset do the same. Check All is how you select every visible card on purpose
+
 ## 2.0.4 — 2026-09-28
 
 - **My Content** holds your active sessions and your saved content in one place. Find either list, or both. The buttons stay grey and a line under them shows the pull is running, then a toast confirms the result. Those lists download every time — they are not held for the Search wait
