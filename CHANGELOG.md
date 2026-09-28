@@ -1,3 +1,10 @@
+## 2.0.4 — 2026-09-28
+
+- **My Content** holds your active sessions and your saved content in one place. Find either list, or both. The buttons stay grey and a line under them shows the pull is running, then a toast confirms the result. Those lists download every time — they are not held for the Search wait
+- **Search keeps a full Content or Sessions download for 5 minutes.** Another Load in that window uses the copy already here, and the note under the buttons says so. Each list’s age sits inside its section. A toast confirms when a load finishes. Refresh Loaded Data downloads a new copy before the 5 minutes are up
+- **End session** reports that the session ended, including when dCloud sends back an empty message
+- Buttons and headings use a capital letter on each main word
+
 ## 2.0.3 — 2026-09-24
 
 - **Share checked** on Find saved content, Find my sessions, and job workspace cards. Check as many sessions as you want, including several in the same DC. Pick the people once; they are added to every selected item, and anyone already shared stays shared. A full success is a toast; if any item fails, a popup lists which ones

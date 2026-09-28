@@ -324,6 +324,11 @@
     input[type="number"] {
       width: 5.5rem;
     }
+    /* Duration, delay, and session count share one width that covers the longest label. */
+    .metric-row input[type="number"] {
+      width: 8.25rem;
+      min-width: 8.25rem;
+    }
     .row .demo-id,
     .row #src-session,
     .row #workspace-manual-id,
@@ -480,8 +485,9 @@
       background: #02719a;
     }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.is-busy:disabled { cursor: wait; }
     button.is-busy:not(:disabled) { opacity: 0.85; cursor: wait; }
-    .found-session-attached { opacity: 0.62; }
+    .found-session-attached td { color: var(--text); }
     .found-session-attached .found-session:disabled { cursor: not-allowed; }
     button:disabled:active { transform: none; box-shadow: none; }
     button.secondary,
@@ -1007,7 +1013,7 @@
       position: absolute;
       right: 0;
       top: calc(100% + 4px);
-      z-index: 20;
+      z-index: 80;
       min-width: 168px;
       background: #16202e;
       border: 1px solid var(--border);
@@ -2316,14 +2322,14 @@
       <button type="button" class="icon-btn" id="btn-check-updates" aria-label="Check for updates" data-tip="Check GitHub now and install a newer version without manually restarting the app.">
         <hbr-icon name="refresh"></hbr-icon>
       </button>
-      <button type="button" class="icon-btn" id="btn-theme" aria-label="Switch to light theme" data-tip="Light theme">
+      <button type="button" class="icon-btn" id="btn-theme" aria-label="Switch to light theme" data-tip="Light Theme">
         <hbr-icon name="circle-half"></hbr-icon>
       </button>
       <button type="button" class="icon-btn" id="btn-settings" aria-label="Settings" data-tip="Personal settings for this browser, including datacenter and menu order.">
         <hbr-icon name="gear-six"></hbr-icon>
       </button>
       <div class="account-menu" id="account-menu">
-        <button type="button" class="account-trigger" id="btn-dcloud-authorize" aria-label="Sign in to dCloud" aria-haspopup="menu" aria-expanded="false" data-tip="Sign in to dCloud so this tool can use your account.">
+        <button type="button" class="account-trigger" id="btn-dcloud-authorize" aria-label="Sign In to dCloud" aria-haspopup="menu" aria-expanded="false" data-tip="Sign in to dCloud so this tool can use your account.">
           <span class="account-avatar" id="account-avatar">?</span>
         </button>
         <div class="account-dropdown hidden" id="account-dropdown" role="menu">
@@ -2332,9 +2338,9 @@
             <div class="account-name" id="account-name">Not signed in</div>
             <p class="account-meta hint" id="account-meta">Sign in to dCloud</p>
           </div>
-          <button type="button" class="account-action" id="account-open-auth">Sign in to dCloud</button>
-          <button type="button" class="account-action" id="account-theme">Light theme</button>
-          <button type="button" class="account-action danger-text hidden" id="account-signout">Sign out</button>
+          <button type="button" class="account-action" id="account-open-auth">Sign In to dCloud</button>
+          <button type="button" class="account-action" id="account-theme">Light Theme</button>
+          <button type="button" class="account-action danger-text hidden" id="account-signout">Sign Out</button>
         </div>
       </div>
     </div>
@@ -2346,8 +2352,8 @@
         <span slot="content">Schedule</span>
       </hbr-nav-item>
       <hbr-nav-item data-view="saved">
-        <hbr-icon slot="prefix" name="folder"></hbr-icon>
-        <span slot="content">Saved</span>
+        <hbr-icon slot="prefix" name="squares-four"></hbr-icon>
+        <span slot="content">My Content</span>
       </hbr-nav-item>
       <hbr-nav-item data-view="workspace">
         <hbr-icon slot="prefix" name="nav-jobs"></hbr-icon>
@@ -2384,9 +2390,9 @@
     </hbr-shell-nav>
     <div class="app-main wrap">
     <div class="layout-toolbar">
-      <button type="button" class="secondary" id="btn-collapse-all-ui" data-tip="Collapse every section, session card VM list, and DC group on this page. Sections always start collapsed when the page loads.">Collapse all</button>
-      <button type="button" class="secondary" id="btn-expand-all-ui" data-tip="Expand every collapsible section on this page. Sections collapse again on the next page load.">Expand all</button>
-      <button type="button" class="secondary" id="btn-reset-section-order" data-tip="Put the main sections back in their original order.">Reset section order</button>
+      <button type="button" class="secondary" id="btn-collapse-all-ui" data-tip="Collapse every section, session card VM list, and DC group on this page. Sections always start collapsed when the page loads.">Collapse All</button>
+      <button type="button" class="secondary" id="btn-expand-all-ui" data-tip="Expand every collapsible section on this page. Sections collapse again on the next page load.">Expand All</button>
+      <button type="button" class="secondary" id="btn-reset-section-order" data-tip="Put the main sections back in their original order.">Reset Section Order</button>
     </div>
 
     <div id="error-banner" class="banner-dismissible err-box hidden">
@@ -2397,11 +2403,11 @@
     <div id="token-alert" class="modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="token-alert-title">
       <div class="modal-backdrop" id="token-alert-backdrop"></div>
       <div class="modal-card">
-        <h2 id="token-alert-title">dCloud token needed</h2>
+        <h2 id="token-alert-title">dCloud Token Needed</h2>
         <p id="token-alert-body"></p>
         <div class="actions">
-          <button type="button" id="token-alert-login">Log in to dCloud</button>
-          <button type="button" class="secondary" id="token-alert-goto">Open dCloud sign-in</button>
+          <button type="button" id="token-alert-login">Log In to dCloud</button>
+          <button type="button" class="secondary" id="token-alert-goto">Open dCloud Sign-In</button>
           <button type="button" class="secondary" id="token-alert-dismiss">Dismiss</button>
         </div>
       </div>
@@ -2410,11 +2416,11 @@
     <div id="action-alert" class="modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="action-alert-title">
       <div class="modal-backdrop" id="action-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
-        <h2 id="action-alert-title">Action needed</h2>
+        <h2 id="action-alert-title">Action Needed</h2>
         <p id="action-alert-body"></p>
         <div class="actions">
           <button type="button" id="action-alert-ok">OK</button>
-          <button type="button" class="secondary hidden" id="action-alert-goto">Go there</button>
+          <button type="button" class="secondary hidden" id="action-alert-goto">Go There</button>
         </div>
       </div>
     </div>
@@ -2435,17 +2441,17 @@
       <div class="modal-card settings-card">
         <h2 id="settings-title" tabindex="-1">Settings</h2>
         <p class="hint">These settings are saved only in this browser on this Mac. Dark theme is the default.</p>
-        <h3>Datacenter display order</h3>
+        <h3>Datacenter Display Order</h3>
         <p class="hint">Drag datacenters or use the arrows. Lists, cards, checkboxes, and dropdown menus use this order.</p>
-        <div id="dc-order-list" class="dc-order-list" aria-label="Datacenter display order"></div>
+        <div id="dc-order-list" class="dc-order-list" aria-label="Datacenter Display Order"></div>
         <div class="actions">
-          <button type="button" class="secondary" id="btn-reset-dc-order">Reset site order</button>
+          <button type="button" class="secondary" id="btn-reset-dc-order">Reset Site Order</button>
         </div>
-        <h3>Side menu order</h3>
+        <h3>Side Menu Order</h3>
         <p class="hint">Short names in the left nav. Page titles stay the same. Drag items or use the arrows.</p>
-        <div id="nav-order-list" class="dc-order-list" aria-label="Side menu order"></div>
+        <div id="nav-order-list" class="dc-order-list" aria-label="Side Menu Order"></div>
         <div class="actions">
-          <button type="button" class="secondary" id="btn-reset-nav-order">Reset menu order</button>
+          <button type="button" class="secondary" id="btn-reset-nav-order">Reset Menu Order</button>
           <button type="button" id="btn-close-settings">Done</button>
         </div>
       </div>
@@ -2454,7 +2460,7 @@
     <div id="session-edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="session-edit-title">
       <div class="modal-backdrop" id="session-edit-backdrop"></div>
       <div class="modal-card action-modal-card">
-        <h2 id="session-edit-title">Edit session</h2>
+        <h2 id="session-edit-title">Edit Session</h2>
         <dl class="details-kv" style="margin:0 0 0.6rem">
           <dt>Demo ID</dt><dd id="session-edit-demo">—</dd>
           <dt>Parent Demo</dt><dd id="session-edit-parent">—</dd>
@@ -2495,11 +2501,11 @@
     <div id="shutdown-wait-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shutdown-wait-alert-title">
       <div class="modal-backdrop" id="shutdown-wait-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
-        <h2 id="shutdown-wait-alert-title">VMs still shutting down</h2>
+        <h2 id="shutdown-wait-alert-title">VMs Still Shutting Down</h2>
         <p id="shutdown-wait-alert-body"></p>
         <div class="actions">
-          <button type="button" id="shutdown-wait-keep">Keep waiting</button>
-          <button type="button" class="danger" id="shutdown-wait-power">Power off remaining VMs</button>
+          <button type="button" id="shutdown-wait-keep">Keep Waiting</button>
+          <button type="button" class="danger" id="shutdown-wait-power">Power Off Remaining VMs</button>
         </div>
       </div>
     </div>
@@ -2507,7 +2513,7 @@
     <div id="prompt-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-alert-title">
       <div class="modal-backdrop" id="prompt-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
-        <h2 id="prompt-alert-title">Save as</h2>
+        <h2 id="prompt-alert-title">Save As</h2>
         <p id="prompt-alert-body"></p>
         <div class="prompt-field">
           <label id="prompt-alert-input-label" for="prompt-alert-input">Name</label>
@@ -2531,14 +2537,14 @@
     <div id="fresh-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="fresh-modal-title">
       <div class="modal-backdrop" id="fresh-modal-backdrop"></div>
       <div class="modal-card action-modal-card">
-        <h2 id="fresh-modal-title">Start fresh</h2>
+        <h2 id="fresh-modal-title">Start Fresh</h2>
         <!-- One line on purpose: .modal-card p keeps whitespace, so wrapping shows up. -->
         <p>Local reset — this tab and the files this tool keeps on your machine. Nothing in dCloud is ended or saved. Uncheck anything you want to keep.</p>
         <div id="fresh-modal-list" class="fresh-scope-list"></div>
         <div class="actions">
-          <button type="button" id="fresh-modal-ok">Start fresh</button>
-          <button type="button" class="secondary" id="fresh-modal-all">Check all</button>
-          <button type="button" class="secondary" id="fresh-modal-none">Uncheck all</button>
+          <button type="button" id="fresh-modal-ok">Start Fresh</button>
+          <button type="button" class="secondary" id="fresh-modal-all">Check All</button>
+          <button type="button" class="secondary" id="fresh-modal-none">Uncheck All</button>
           <button type="button" class="secondary" id="fresh-modal-cancel">Cancel</button>
         </div>
       </div>
@@ -2547,13 +2553,13 @@
     <div id="schedule-conflict-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="schedule-conflict-title">
       <div class="modal-backdrop" id="schedule-conflict-backdrop"></div>
       <div class="modal-card schedule-conflict-card">
-        <h2 id="schedule-conflict-title">Scheduling conflict</h2>
+        <h2 id="schedule-conflict-title">Scheduling Conflict</h2>
         <p id="schedule-conflict-body" class="hint" style="margin-top:0"></p>
         <p class="slot-line"><strong>Requested:</strong> <span id="schedule-conflict-requested"></span></p>
         <p class="slot-line" id="schedule-conflict-next-wrap"><strong>Next available:</strong> <span id="schedule-conflict-next"></span></p>
         <div class="actions">
-          <button type="button" id="schedule-conflict-use-next">Schedule next slot</button>
-          <button type="button" class="secondary" id="schedule-conflict-skip">Skip this datacenter</button>
+          <button type="button" id="schedule-conflict-use-next">Schedule Next Slot</button>
+          <button type="button" class="secondary" id="schedule-conflict-skip">Skip This Datacenter</button>
           <button type="button" class="secondary" id="schedule-conflict-cancel">Cancel</button>
         </div>
       </div>
@@ -2562,20 +2568,20 @@
     <div id="share-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
       <div class="modal-backdrop" id="share-modal-backdrop"></div>
       <div class="modal-card share-modal-card">
-        <h2 id="share-modal-title">Manage sharing</h2>
+        <h2 id="share-modal-title">Manage Sharing</h2>
         <p id="share-modal-subtitle" class="hint" style="margin-top:0"></p>
         <p id="share-modal-hint" class="hint hidden" style="margin-top:0.35rem"></p>
         <ul id="share-target-list" class="share-user-list hidden"></ul>
-        <p class="step-label" id="share-modal-list-label" style="margin:0.75rem 0 0.35rem">Shared with</p>
+        <p class="step-label" id="share-modal-list-label" style="margin:0.75rem 0 0.35rem">Shared With</p>
         <ul id="share-current-list" class="share-user-list"></ul>
         <p id="share-current-empty" class="hint hidden">Not shared with anyone yet.</p>
-        <label for="share-user-search" style="margin-top:0.5rem">Add user</label>
+        <label for="share-user-search" style="margin-top:0.5rem">Add User</label>
         <input id="share-user-search" type="text" placeholder="CCEC username or email" autocomplete="off" spellcheck="false" />
         <p class="hint" style="margin-top:0.35rem">Same search as dCloud: DSX users first (partners and demo accounts). Live sessions then try all cisco.com users if DSX has no match.</p>
         <ul id="share-search-results" class="share-user-list share-search-results hidden"></ul>
         <p id="share-modal-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
         <div class="actions">
-          <button type="button" id="share-modal-save">Save sharing</button>
+          <button type="button" id="share-modal-save">Save Sharing</button>
           <button type="button" class="secondary" id="share-modal-cancel">Cancel</button>
         </div>
       </div>
@@ -2596,13 +2602,13 @@
         window finishes as soon as it opens.
       </p>
       <div class="actions" style="margin-top:0.4rem">
-        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. Signs in to dCloud, CAI, and CAMGR together. If that profile is already signed in, it finishes right away.">Log in to dCloud</button>
-        <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate token</button>
-        <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear login session</button>
+        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. Signs in to dCloud, CAI, and CAMGR together. If that profile is already signed in, it finishes right away.">Log In to dCloud</button>
+        <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate Token</button>
+        <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear Login Session</button>
       </div>
       <div class="row" style="margin-top:0.85rem">
         <div>
-          <label for="token-source">Token source</label>
+          <label for="token-source">Token Source</label>
           <select id="token-source">
             <option value="browser" selected>Browser / SSO login (auto-refresh)</option>
             <option value="paste">Paste my token</option>
@@ -2610,7 +2616,7 @@
           <p id="auth-status" class="hint"></p>
         </div>
         <div>
-          <label for="dtoken">dCloud API token</label>
+          <label for="dtoken">dCloud API Token</label>
           <input id="dtoken" type="text" placeholder="Log in — token appears here for copy/paste" autocomplete="off" spellcheck="false" />
         </div>
       </div>
@@ -2618,12 +2624,12 @@
     </details>
 
     <section class="app-view is-active" id="view-schedule" data-view="schedule">
-    <h2 class="view-title">Schedule sessions</h2>
+    <h2 class="view-title">Schedule Sessions</h2>
     <details class="panel panel-collapse" id="panel-step3" open>
-      <summary class="panel-collapse-summary">Schedule sessions — demo / content IDs per DC</summary>
+      <summary class="panel-collapse-summary">Schedule Sessions — Demo / Content IDs per DC</summary>
       <div class="panel-collapse-body">
       <details class="advanced schedule-load-vms" id="panel-step2">
-      <summary>Load VMs (optional — pick which VMs power on)</summary>
+      <summary>Load VMs (Optional — Pick Which VMs Power On)</summary>
       <p class="hint" id="step2-hint">Optional. Load VMs and check the ones you want powered on after an exported session starts. Skip this for a normal session — those power everything themselves.</p>
       <div class="vm-source-toggle" role="radiogroup" aria-label="VM source">
         <label class="check-line">
@@ -2647,7 +2653,7 @@
           </select>
         </div>
         <div>
-          <label for="src-session" id="src-id-label">Active session ID</label>
+          <label for="src-session" id="src-id-label">Active Session ID</label>
           <input id="src-session" type="text" placeholder="123456" autocomplete="off" />
         </div>
       </div>
@@ -2668,8 +2674,8 @@
           <thead>
             <tr>
               <th></th>
-              <th>VM display name</th>
-              <th>VM name</th>
+              <th>VM Display Name</th>
+              <th>VM Name</th>
             </tr>
           </thead>
           <tbody id="vm-body"></tbody>
@@ -2682,7 +2688,7 @@
       </p>
       <p id="lookup-status" class="hint"></p>
       <div class="dc-id-toolbar">
-        <button type="button" class="linkish" id="btn-clear-all-demo-ids">Clear all IDs</button>
+        <button type="button" class="linkish" id="btn-clear-all-demo-ids">Clear All IDs</button>
       </div>
       <div class="row" id="schedule-dc-fields" data-dc-order>
         <div class="dc-field"><label for="id-sjc">SJC</label><input id="id-sjc" data-dc="sjc" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sjc"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-sjc.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
@@ -2691,17 +2697,17 @@
         <div class="dc-field"><label for="id-sng">SNG</label><input id="id-sng" data-dc="sng" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-sng"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-sng.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
         <div class="dc-field"><label for="id-syd">SYD</label><input id="id-syd" data-dc="syd" class="demo-id" type="text" autocomplete="off" /><p class="hint" id="hint-syd"></p><span class="dc-field-links"><button type="button" class="clear-demo-id">Clear</button><a class="verify-demos" href="https://dcloud2-syd.cisco.com/admin/demos" target="_blank" rel="noopener noreferrer">Verify</a></span></div>
       </div>
-      <div class="row" style="margin-top:0.85rem">
+      <div class="row metric-row" style="margin-top:0.85rem">
         <div>
-          <label for="days">Duration (days)</label>
+          <label for="days">Duration (Days)</label>
           <input id="days" type="number" min="1" value="1" autocomplete="off" />
         </div>
         <div>
-          <label for="sched-delay">Delay (minutes)</label>
+          <label for="sched-delay">Delay (Minutes)</label>
           <input id="sched-delay" type="number" min="0" step="1" value="0" autocomplete="off" data-tip="Gap between sessions. The first starts at the start time below and each one after it waits this much longer — whether they are different demo IDs scheduled together or extra copies of the same ones. One session scheduled on its own just starts this many minutes later (Now + 60 starts in an hour)." />
         </div>
         <div>
-          <label for="sched-copies">Number of sessions</label>
+          <label for="sched-copies">Number of Sessions</label>
           <input id="sched-copies" type="number" min="1" max="20" step="1" value="1" autocomplete="off" data-tip="How many sessions to create from the demo IDs above. 3 with a 15 minute delay schedules one now, one 15 minutes later, and one 30 minutes later. With no delay, copies of the same demo are still spaced 4 minutes apart, because dCloud holds back same-demo sessions that start together." />
         </div>
         <!-- How long the tool watches for Active before it stops polling. dCloud keeps
@@ -2711,7 +2717,7 @@
       <p class="hint" id="sched-copy-hint"></p>
       <div class="row" style="margin-top:0.85rem">
         <div>
-          <label for="start-date-btn">Start date</label>
+          <label for="start-date-btn">Start Date</label>
           <input id="sched-start" type="hidden" value="" />
           <button type="button" class="dt-trigger" id="start-date-btn" aria-haspopup="dialog" aria-expanded="false">
             <span class="dt-label" id="start-date-label"></span>
@@ -2722,7 +2728,7 @@
           </button>
         </div>
         <div>
-          <label for="start-hour">Start time</label>
+          <label for="start-hour">Start Time</label>
           <div class="dt-time-row">
             <select id="start-hour" aria-label="Start hour"></select>
             <span>:</span>
@@ -2733,7 +2739,7 @@
       </div>
       <div class="row" style="margin-top:0.85rem">
         <div>
-          <label for="stop-date-btn">Stop date</label>
+          <label for="stop-date-btn">Stop Date</label>
           <input id="sched-stop" type="hidden" value="" />
           <button type="button" class="dt-trigger" id="stop-date-btn" aria-haspopup="dialog" aria-expanded="false">
             <span class="dt-label" id="stop-date-label"></span>
@@ -2744,7 +2750,7 @@
           </button>
         </div>
         <div>
-          <label for="stop-hour">Stop time</label>
+          <label for="stop-hour">Stop Time</label>
           <div class="dt-time-row">
             <select id="stop-hour" aria-label="Stop hour"></select>
             <span>:</span>
@@ -2755,9 +2761,9 @@
       <p class="hint">
         Start and stop fill from now for the duration above — pick a date for a later window.
         <strong>Delay</strong> staggers each session from now (not a stale start).
-        <strong>Number of sessions</strong> repeats those IDs on the same stagger; same-demo copies stay at least 4 minutes apart.
+        <strong>Number of Sessions</strong> repeats those IDs on the same stagger; same-demo copies stay at least 4 minutes apart.
         <strong>Use next available slot</strong> moves a busy DC automatically, otherwise you get a conflict prompt.
-        To schedule saved content instead of typing IDs, use <strong>Manage your own saved content</strong> below.
+        To schedule saved content instead of typing IDs, use <strong>My Content</strong>.
       </p>
       <div id="dt-popup" class="dt-popup hidden" role="dialog" aria-label="Choose date">
         <div class="dt-header">
@@ -2782,23 +2788,23 @@
       </label>
       <p class="hint hidden" id="add-to-job-hint">
         Scheduling adds to the current job and keeps your session cards.
-        Use <strong>Clear job workspace cards</strong> below if you want a fresh workspace (monitoring cards stay).
+        Use <strong>Clear Job Workspace Cards</strong> below if you want a fresh workspace (monitoring cards stay).
       </p>
       <div class="actions">
-        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Exported sessions power on the VMs checked in Load VMs above; a normal session powers everything itself. If a job is already open, new sessions are added to it.">Schedule exported sessions &amp; power on</button>
-        <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with new token</button>
+        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Exported sessions power on the VMs checked in Load VMs above; a normal session powers everything itself. If a job is already open, new sessions are added to it.">Schedule Exported Sessions &amp; Power On</button>
+        <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with New Token</button>
       </div>
       <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
       <details class="advanced" id="panel-recovery">
-        <summary>Refresh recovery — restore last job</summary>
+        <summary>Refresh Recovery — Restore Last Job</summary>
         <p class="hint">
           Recent jobs (last few hours) restore automatically on page load or after restarting the app.
           Use Restore last job for older saved work. To watch running sessions without bulk controls,
-          use <strong>Find my sessions</strong> in Session monitoring below.
+          use <strong>Find My Active Sessions</strong> on My Content.
           A browser refresh or server restart stops wait threads — restore re-checks dCloud and drops saved or ended sessions from the cards.
         </p>
         <div class="actions">
-          <button type="button" class="secondary" id="btn-restore-job" data-tip="Brings back the last saved job even if it is older than the auto-restore window. Re-checks dCloud and drops saved or ended sessions from the cards.">Restore last job</button>
+          <button type="button" class="secondary" id="btn-restore-job" data-tip="Brings back the last saved job even if it is older than the auto-restore window. Re-checks dCloud and drops saved or ended sessions from the cards.">Restore Last Job</button>
         </div>
       </details>
       </div>
@@ -2806,33 +2812,65 @@
     </section>
 
     <section class="app-view" id="view-saved" data-view="saved">
-    <h2 class="view-title">Manage your own saved content</h2>
+    <h2 class="view-title">Manage Your Own Content</h2>
     <details class="panel panel-collapse" id="panel-saved-schedule" open>
-      <summary class="panel-collapse-summary">Manage your own saved content across all DCs</summary>
+      <summary class="panel-collapse-summary">Active Sessions and Saved Content</summary>
       <div class="panel-collapse-body">
       <p class="hint">
-        Find, sort, schedule, share, edit, or delete your saved copies from one list.
-        Duration, delay, start/stop, and the nearby-slot option stay in sync with the demo-ID scheduler above.
+        Find your active sessions and your saved content in one place.
+        On active sessions, Actions covers the same controls as elsewhere — info, edit, save, reset, logs, share, and end — plus add to monitoring or the job workspace.
+        Extend, guest shutdown, and VM power stay on the card after you add the session.
+        On saved copies you can sort, schedule, share, edit, or delete.
+        Duration, delay, start/stop, and the nearby-slot option stay in sync with the demo-ID scheduler.
         <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs on Schedule sessions.
-        Check the same demo in each DC, then <strong>Copy to Schedule sessions</strong> to fill those IDs and load VMs.
-        Stay here to schedule without picking VMs.
+        Check the same demo in each DC, then <strong>Copy to Schedule Sessions</strong> to fill those IDs and load VMs.
       </p>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Lists saved content in each DC so you can check rows and schedule new sessions from them. Uses the last pull if one is saved.">Find saved content</button>
-        <button type="button" class="secondary" id="btn-refresh-schedule-saved" data-tip="Downloads a fresh copy of your saved content from every datacenter.">Refresh</button>
+        <button type="button" class="secondary" id="btn-find-sessions" data-tip="Downloads your currently running dCloud sessions from every datacenter, even when a recent pull is already showing. The button stays grey until the pull finishes.">Find My Active Sessions</button>
+        <button type="button" class="secondary" id="btn-refresh-sessions" data-tip="Downloads a fresh copy of your dashboard sessions from every datacenter.">Refresh Sessions</button>
+        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Downloads your saved content from every datacenter, even when a recent pull is already showing. The button stays grey until the pull finishes.">Find My Saved Content</button>
+        <button type="button" class="secondary" id="btn-refresh-schedule-saved" data-tip="Downloads a fresh copy of your saved content from every datacenter.">Refresh Saved Content</button>
+        <button type="button" id="btn-find-both" data-tip="Downloads your active sessions and your saved content together, even when a recent pull is already showing. The buttons stay grey until both pulls finish.">Find Both</button>
       </div>
-      <details id="found-schedule-saved-panel" class="found-sessions-panel hidden">
-        <summary id="found-schedule-saved-summary">Your saved content</summary>
+      <p class="hint" id="my-content-activity" aria-live="polite"></p>
+      <div class="list-toolbar">
+        <input type="search" class="list-filter" id="filter-my-content" autocomplete="off" placeholder="Filter active sessions and saved content" aria-label="Filter active sessions and saved content" data-tip="Narrows both lists below as you type — active sessions first, then saved content. Each list still has its own filter if you only want to narrow one." />
+      </div>
+      <p class="hint list-filter-status" id="filter-my-content-status" aria-live="polite"></p>
+      <details id="found-sessions-panel" class="found-sessions-panel">
+        <summary id="found-sessions-summary">Your Active Sessions — click Find above to retrieve your sessions.</summary>
         <div class="found-sessions-body">
           <div class="list-toolbar">
-            <button type="button" class="secondary" id="btn-expand-schedule-saved">Expand all DCs</button>
-            <button type="button" class="secondary" id="btn-collapse-schedule-saved">Collapse all DCs</button>
-            <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check all</button>
-            <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck all</button>
-            <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck saved IDs</button>
-            <button type="button" class="secondary" id="btn-copy-saved-to-schedule" disabled data-tip="Copies the checked content ID in each DC into Schedule sessions, then loads that demo’s VMs so you can pick which ones power on. Use this for an exported session. Stay here to schedule without Load VMs.">Copy to Schedule sessions</button>
-            <button type="button" class="secondary" id="btn-share-schedule-saved" disabled data-tip="Opens one share dialog for every checked saved copy. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share checked</button>
-            <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete checked</button>
+            <button type="button" class="secondary" id="btn-check-all-sessions">Check All</button>
+            <button type="button" class="secondary" id="btn-uncheck-all-sessions">Uncheck All</button>
+            <button type="button" class="secondary" id="btn-expand-sessions">Expand All DCs</button>
+            <button type="button" class="secondary" id="btn-collapse-sessions">Collapse All</button>
+          </div>
+          <div class="list-toolbar">
+            <input type="search" class="list-filter" id="filter-found-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
+          </div>
+          <p class="hint list-filter-status" id="filter-found-sessions-status" aria-live="polite"></p>
+          <p class="hint" id="found-sessions-cache-status" aria-live="polite"></p>
+          <div id="found-sessions" style="margin-top:0.35rem"></div>
+          <div class="actions" style="margin-top:0.65rem">
+            <button type="button" class="secondary" id="btn-attach-sessions" disabled data-tip="Adds checked sessions as monitoring cards. Extend, guest shutdown, and VM controls are on the card.">Add Checked to Monitoring</button>
+            <button type="button" class="secondary" id="btn-share-found-sessions" disabled data-tip="Opens one share dialog for every checked live session. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share Checked</button>
+          </div>
+          <p id="attach-sessions-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
+        </div>
+      </details>
+      <details id="found-schedule-saved-panel" class="found-sessions-panel">
+        <summary id="found-schedule-saved-summary">Your Saved Content — click Find above to retrieve your content.</summary>
+        <div class="found-sessions-body">
+          <div class="list-toolbar">
+            <button type="button" class="secondary" id="btn-expand-schedule-saved">Expand All DCs</button>
+            <button type="button" class="secondary" id="btn-collapse-schedule-saved">Collapse All DCs</button>
+            <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check All</button>
+            <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck All</button>
+            <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck Saved IDs</button>
+            <button type="button" class="secondary" id="btn-copy-saved-to-schedule" disabled data-tip="Copies the checked content ID in each DC into Schedule sessions, then loads that demo’s VMs so you can pick which ones power on. Use this for an exported session. Stay here to schedule without Load VMs.">Copy to Schedule Sessions</button>
+            <button type="button" class="secondary" id="btn-share-schedule-saved" disabled data-tip="Opens one share dialog for every checked saved copy. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share Checked</button>
+            <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete Checked</button>
           </div>
           <div class="list-toolbar">
             <input type="search" class="list-filter" id="filter-schedule-saved" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
@@ -2840,25 +2878,25 @@
           <p class="hint list-filter-status" id="filter-schedule-saved-status" aria-live="polite"></p>
           <p class="hint" id="found-schedule-saved-cache-status" aria-live="polite"></p>
           <div id="found-schedule-saved" style="margin-top:0.35rem"></div>
-          <p class="step-label" style="margin-top:1rem">Session schedule</p>
-          <div class="row">
+          <p class="step-label" style="margin-top:1rem">Session Schedule</p>
+          <div class="row metric-row">
             <div>
-              <label for="saved-days">Duration (days)</label>
+              <label for="saved-days">Duration (Days)</label>
               <input id="saved-days" type="number" min="1" value="1" autocomplete="off" />
             </div>
             <div>
-              <label for="saved-sched-delay">Delay (minutes)</label>
+              <label for="saved-sched-delay">Delay (Minutes)</label>
               <input id="saved-sched-delay" type="number" min="0" step="1" value="0" autocomplete="off" />
             </div>
             <div>
-              <label for="saved-sched-copies">Number of sessions</label>
+              <label for="saved-sched-copies">Number of Sessions</label>
               <input id="saved-sched-copies" type="number" min="1" max="20" step="1" value="1" autocomplete="off" />
             </div>
           </div>
           <p class="hint" id="saved-sched-copy-hint"></p>
           <div class="row" style="margin-top:0.85rem">
             <div>
-              <label for="saved-start-date-btn">Start date</label>
+              <label for="saved-start-date-btn">Start Date</label>
               <input id="saved-sched-start" type="hidden" value="" />
               <button type="button" class="dt-trigger" id="saved-start-date-btn" aria-haspopup="dialog" aria-expanded="false">
                 <span class="dt-label" id="saved-start-date-label"></span>
@@ -2869,7 +2907,7 @@
               </button>
             </div>
             <div>
-              <label for="saved-start-hour">Start time</label>
+              <label for="saved-start-hour">Start Time</label>
               <div class="dt-time-row">
                 <select id="saved-start-hour" aria-label="Start hour"></select>
                 <span>:</span>
@@ -2880,7 +2918,7 @@
           </div>
           <div class="row" style="margin-top:0.85rem">
             <div>
-              <label for="saved-stop-date-btn">Stop date</label>
+              <label for="saved-stop-date-btn">Stop Date</label>
               <input id="saved-sched-stop" type="hidden" value="" />
               <button type="button" class="dt-trigger" id="saved-stop-date-btn" aria-haspopup="dialog" aria-expanded="false">
                 <span class="dt-label" id="saved-stop-date-label"></span>
@@ -2891,7 +2929,7 @@
               </button>
             </div>
             <div>
-              <label for="saved-stop-hour">Stop time</label>
+              <label for="saved-stop-hour">Stop Time</label>
               <div class="dt-time-row">
                 <select id="saved-stop-hour" aria-label="Stop hour"></select>
                 <span>:</span>
@@ -2912,7 +2950,7 @@
             <span>Schedule as exported sessions (unchecked = regular sessions)</span>
           </label>
           <div class="actions">
-            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs.">Schedule checked saved content</button>
+            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs.">Schedule Checked Saved Content</button>
           </div>
         </div>
       </details>
@@ -2921,33 +2959,33 @@
     </section>
 
     <section class="app-view" id="view-surveys" data-view="surveys">
-    <h2 class="view-title">Session feedback surveys</h2>
+    <h2 class="view-title">Session Feedback Surveys</h2>
     <details class="panel panel-collapse" id="panel-cleanup" open>
-      <summary class="panel-collapse-summary">Session feedback surveys</summary>
+      <summary class="panel-collapse-summary">Session Feedback Surveys</summary>
       <div class="panel-collapse-body">
       <p class="hint">
         After sessions end, dCloud session feedback surveys can pile up in each DC — decline them here.
-        Saved content scheduling, sharing, editing, and deletion are in
-        <strong>Manage your own saved content across all DCs</strong> above.
+        Saved content and active sessions are on
+        <strong>My Content</strong>.
       </p>
-      <p class="step-label">Session feedback surveys</p>
+      <p class="step-label">Session Feedback Surveys</p>
       <p class="hint">“How was your session?” prompts on the dCloud dashboard after sessions end — not saved lab content.</p>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-decline-all-surveys" data-tip="Finds and declines every pending session feedback survey in SJC, RTP, LON, SNG, and SYD (same as Decline on the dashboard).">Decline all surveys (all DCs)</button>
+        <button type="button" class="secondary" id="btn-decline-all-surveys" data-tip="Finds and declines every pending session feedback survey in SJC, RTP, LON, SNG, and SYD (same as Decline on the dashboard).">Decline All Surveys (All DCs)</button>
       </div>
       </div>
     </details>
     </section>
 
     <section class="app-view" id="view-workspace" data-view="workspace">
-    <h2 class="view-title">Job workspace</h2>
+    <h2 class="view-title">Job Workspace</h2>
     <details class="panel panel-collapse" id="panel-job-cards" open>
-      <summary class="panel-collapse-summary">Job workspace</summary>
+      <summary class="panel-collapse-summary">Job Workspace</summary>
       <div class="panel-collapse-body">
       <p class="hint">Sessions you schedule or move here support bulk extend, shutdown, and end.</p>
       <p id="job-phase" class="hint" style="margin-top:0">No job running.</p>
       <details class="found-sessions-panel">
-        <summary>Add an existing session</summary>
+        <summary>Add an Existing Session</summary>
         <div class="found-sessions-body">
           <p class="hint">
             Enter a session ID directly, or enter a demo/content ID to find its running sessions.
@@ -2965,25 +3003,25 @@
               </select>
             </div>
             <div>
-              <label for="workspace-manual-id">Demo or session ID</label>
+              <label for="workspace-manual-id">Demo or Session ID</label>
               <input id="workspace-manual-id" inputmode="numeric" autocomplete="off" placeholder="e.g. 491482" />
             </div>
             <div style="align-self:flex-end">
-              <button type="button" class="secondary" id="btn-workspace-manual">Add to job workspace</button>
+              <button type="button" class="secondary" id="btn-workspace-manual">Add to Job Workspace</button>
             </div>
           </div>
           <div class="actions">
-            <button type="button" class="secondary" id="btn-find-workspace-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them to the job workspace. Uses the last pull if one is saved.">Find my sessions</button>
+            <button type="button" class="secondary" id="btn-find-workspace-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them to the job workspace. Uses the last pull if one is saved.">Find My Sessions</button>
             <button type="button" class="secondary" id="btn-refresh-workspace-sessions" data-tip="Downloads a fresh copy of your dashboard sessions from every datacenter.">Refresh</button>
           </div>
           <details id="found-workspace-sessions-panel" class="found-sessions-panel hidden">
-            <summary id="found-workspace-sessions-summary">Your active dCloud sessions</summary>
+            <summary id="found-workspace-sessions-summary">Your Active dCloud Sessions</summary>
             <div class="found-sessions-body">
               <div class="list-toolbar">
-                <button type="button" class="secondary" id="btn-workspace-check-all">Check all</button>
-                <button type="button" class="secondary" id="btn-workspace-uncheck-all">Uncheck all</button>
-                <button type="button" class="secondary" id="btn-workspace-expand-sessions">Expand all DCs</button>
-                <button type="button" class="secondary" id="btn-workspace-collapse-sessions">Collapse all DCs</button>
+                <button type="button" class="secondary" id="btn-workspace-check-all">Check All</button>
+                <button type="button" class="secondary" id="btn-workspace-uncheck-all">Uncheck All</button>
+                <button type="button" class="secondary" id="btn-workspace-expand-sessions">Expand All DCs</button>
+                <button type="button" class="secondary" id="btn-workspace-collapse-sessions">Collapse All DCs</button>
               </div>
               <div class="list-toolbar">
                 <input type="search" class="list-filter" id="filter-workspace-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
@@ -2992,8 +3030,8 @@
               <p class="hint" id="found-workspace-sessions-cache-status" aria-live="polite"></p>
               <div id="found-workspace-sessions" style="margin-top:0.35rem"></div>
               <div class="actions" style="margin-top:0.65rem">
-                <button type="button" class="secondary" id="btn-attach-workspace-sessions" disabled>Add checked to job workspace</button>
-                <button type="button" class="secondary" id="btn-share-workspace-sessions" disabled data-tip="Opens one share dialog for every checked live session. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share checked</button>
+                <button type="button" class="secondary" id="btn-attach-workspace-sessions" disabled>Add Checked to Job Workspace</button>
+                <button type="button" class="secondary" id="btn-share-workspace-sessions" disabled data-tip="Opens one share dialog for every checked live session. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share Checked</button>
               </div>
               <p id="attach-workspace-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
             </div>
@@ -3007,12 +3045,12 @@
         <button type="button" class="banner-dismiss" id="auth-pause-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
       </div>
       <div id="job-card-view-actions" class="list-toolbar hidden" style="margin-top:0.75rem">
-        <button type="button" class="secondary" id="btn-card-check-all" data-tip="Select every visible job workspace card.">Check all</button>
-        <button type="button" class="secondary" id="btn-card-uncheck-all" data-tip="Clear card selection.">Uncheck all</button>
-        <button type="button" class="secondary" id="btn-expand-job-dcs">Expand all DCs</button>
-        <button type="button" class="secondary" id="btn-collapse-job-dcs">Collapse all DCs</button>
-        <button type="button" class="secondary" id="btn-expand-job-cards">Expand all cards</button>
-        <button type="button" class="secondary" id="btn-collapse-job-cards">Collapse all cards</button>
+        <button type="button" class="secondary" id="btn-card-check-all" data-tip="Select every visible job workspace card.">Check All</button>
+        <button type="button" class="secondary" id="btn-card-uncheck-all" data-tip="Clear card selection.">Uncheck All</button>
+        <button type="button" class="secondary" id="btn-expand-job-dcs">Expand All DCs</button>
+        <button type="button" class="secondary" id="btn-collapse-job-dcs">Collapse All DCs</button>
+        <button type="button" class="secondary" id="btn-expand-job-cards">Expand All Cards</button>
+        <button type="button" class="secondary" id="btn-collapse-job-cards">Collapse All Cards</button>
       </div>
       <p id="job-cards-label" class="monitor-section-label hidden">Job workspace cards</p>
       <p id="cards-note" class="hint hidden" style="margin:0.75rem 0 0"></p>
@@ -3024,7 +3062,7 @@
         </p>
         <div class="row" style="margin-bottom:0.75rem">
           <div>
-            <label for="extend-days">Extend by</label>
+            <label for="extend-days">Extend By</label>
             <div class="dt-time-row">
               <input id="extend-days" type="number" min="0" max="30" step="1" value="1" autocomplete="off" aria-label="Extend days" />
               <span>days</span>
@@ -3044,7 +3082,7 @@
             </button>
           </div>
           <div>
-            <label for="extend-hour">End time</label>
+            <label for="extend-hour">End Time</label>
             <div class="dt-time-row">
               <select id="extend-hour" aria-label="Extend end hour"></select>
               <span>:</span>
@@ -3052,16 +3090,16 @@
             </div>
           </div>
           <div style="align-self:flex-end">
-            <button type="button" class="secondary" id="btn-extend-checked" data-tip="Adds the days and hours to each checked session's current end. If that window is booked, you are asked whether to take the farthest time that is still free.">Extend checked</button>
-            <button type="button" class="secondary" id="btn-share-checked-cards" disabled data-tip="Opens one share dialog for every checked live session card. The people you add are applied to all of them. Existing sharing is kept.">Share checked</button>
+            <button type="button" class="secondary" id="btn-extend-checked" data-tip="Adds the days and hours to each checked session's current end. If that window is booked, you are asked whether to take the farthest time that is still free.">Extend Checked</button>
+            <button type="button" class="secondary" id="btn-share-checked-cards" disabled data-tip="Opens one share dialog for every checked live session card. The people you add are applied to all of them. Existing sharing is kept.">Share Checked</button>
           </div>
         </div>
         <p class="hint" style="margin:0 0 0.75rem">Each session is pushed this far past its own end. Five days is one click. If resources are booked, the tool finds the farthest time that still fits and asks before applying it. Set days and hours to 0 to use the until time as an exact stop for every checked session.</p>
         <div class="actions">
-        <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh all session statuses</button>
-        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down checked ready cards, waits for their VMs to power off, then saves. Uses all remaining ready cards if none are checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest shutdown &amp; save</button>
-        <button type="button" class="end" id="btn-end" data-tip="Ends checked sessions without saving, or all visible cards if none checked.">End sessions (no save)</button>
-        <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear job workspace cards</button>
+        <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh All Session Statuses</button>
+        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down checked ready cards, waits for their VMs to power off, then saves. Uses all remaining ready cards if none are checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest Shutdown &amp; Save</button>
+        <button type="button" class="end" id="btn-end" data-tip="Ends checked sessions without saving, or all visible cards if none checked.">End Sessions (No Save)</button>
+        <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear Job Workspace Cards</button>
         </div>
       </div>
       </div>
@@ -3069,14 +3107,14 @@
     </section>
 
     <section class="app-view" id="view-monitor" data-view="monitor">
-    <h2 class="view-title">Session monitoring</h2>
+    <h2 class="view-title">Session Monitoring</h2>
     <details class="panel panel-collapse" id="panel-monitoring" open>
-      <summary class="panel-collapse-summary">Session monitoring</summary>
+      <summary class="panel-collapse-summary">Session Monitoring</summary>
       <div class="panel-collapse-body">
       <p class="hint">
         Watch running sessions across all DCs without bulk shutdown or end actions.
-        Use <strong>Find my sessions</strong> to pull in dashboards from every datacenter.
-        Move a card to the job workspace when you want bulk save/end controls.
+        Find them on <strong>My Content</strong>, then add the ones you want to watch.
+        You can also enter an ID below. Move a card to the job workspace when you want bulk save/end controls.
       </p>
       <p class="step-label">Monitor by ID</p>
       <p class="hint">
@@ -3095,44 +3133,20 @@
           </select>
         </div>
         <div>
-          <label for="monitor-manual-id">Demo or session ID</label>
+          <label for="monitor-manual-id">Demo or Session ID</label>
           <input id="monitor-manual-id" inputmode="numeric" autocomplete="off" placeholder="e.g. 1389840" />
         </div>
         <div style="align-self:flex-end">
-          <button type="button" class="secondary" id="btn-monitor-manual">Add to monitoring</button>
+          <button type="button" class="secondary" id="btn-monitor-manual">Add to Monitoring</button>
         </div>
       </div>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-find-sessions" data-tip="Lists your currently running dCloud sessions grouped by datacenter so you can add them for monitoring. Uses the last pull if one is saved.">Find my sessions</button>
-        <button type="button" class="secondary" id="btn-refresh-sessions" data-tip="Downloads a fresh copy of your dashboard sessions from every datacenter.">Refresh</button>
-        <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Polls dCloud for every monitoring card below.">Refresh monitoring cards</button>
-        <button type="button" class="secondary hidden" id="btn-expand-monitor-dcs">Expand all DCs</button>
-        <button type="button" class="secondary hidden" id="btn-collapse-monitor-dcs">Collapse all DCs</button>
-        <button type="button" class="secondary hidden" id="btn-expand-monitor-cards">Expand all cards</button>
-        <button type="button" class="secondary hidden" id="btn-collapse-monitor-cards">Collapse all cards</button>
+        <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Polls dCloud for every monitoring card below.">Refresh Monitoring Cards</button>
+        <button type="button" class="secondary hidden" id="btn-expand-monitor-dcs">Expand All DCs</button>
+        <button type="button" class="secondary hidden" id="btn-collapse-monitor-dcs">Collapse All DCs</button>
+        <button type="button" class="secondary hidden" id="btn-expand-monitor-cards">Expand All Cards</button>
+        <button type="button" class="secondary hidden" id="btn-collapse-monitor-cards">Collapse All Cards</button>
       </div>
-      <details id="found-sessions-panel" class="found-sessions-panel hidden">
-        <summary id="found-sessions-summary">Your active dCloud sessions</summary>
-        <div class="found-sessions-body">
-          <div class="list-toolbar">
-            <button type="button" class="secondary" id="btn-check-all-sessions">Check all</button>
-            <button type="button" class="secondary" id="btn-uncheck-all-sessions">Uncheck all</button>
-            <button type="button" class="secondary" id="btn-expand-sessions">Expand all DCs</button>
-            <button type="button" class="secondary" id="btn-collapse-sessions">Collapse all</button>
-          </div>
-          <div class="list-toolbar">
-            <input type="search" class="list-filter" id="filter-found-sessions" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter your active sessions" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
-          </div>
-          <p class="hint list-filter-status" id="filter-found-sessions-status" aria-live="polite"></p>
-          <p class="hint" id="found-sessions-cache-status" aria-live="polite"></p>
-          <div id="found-sessions" style="margin-top:0.35rem"></div>
-          <div class="actions" style="margin-top:0.65rem">
-            <button type="button" class="secondary" id="btn-attach-sessions" disabled data-tip="Adds checked sessions as monitoring cards (no bulk end/save). Move to job workspace later if needed.">Add to monitoring</button>
-            <button type="button" class="secondary" id="btn-share-found-sessions" disabled data-tip="Opens one share dialog for every checked live session. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share checked</button>
-          </div>
-          <p id="attach-sessions-status" class="hint hidden" style="margin-top:0.45rem" aria-live="polite"></p>
-        </div>
-      </details>
       <p id="monitor-cards-label" class="monitor-section-label hidden">Monitoring cards</p>
       <div id="monitor-cards" class="cards" style="margin-top:0.35rem"></div>
       </div>
@@ -3145,13 +3159,13 @@
       <summary class="panel-collapse-summary">Content Automation Hub</summary>
       <div class="panel-collapse-body" id="hub-body">
       <div class="task-group-head">
-        <p class="task-group-title">Saved content</p>
-        <button type="button" class="secondary help-toggle hub-help-btn" id="btn-hub-help" data-tip="Shows or hides the explanation paragraphs in this section. Buttons and status lines always stay visible.">Show help</button>
+        <p class="task-group-title">Saved Content</p>
+        <button type="button" class="secondary help-toggle hub-help-btn" id="btn-hub-help" data-tip="Shows or hides the explanation paragraphs in this section. Buttons and status lines always stay visible.">Show Help</button>
       </div>
       <p class="hint help-text">
         CAI replace and CAMGR transfer, using the saved content IDs list below.
         New saves are added automatically, and you can add rows from
-        <strong>Find saved content</strong>
+        <strong>Find Saved Content</strong>
         (<a href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer">dcloud-cai.cisco.com</a>,
         <a href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer">dcloud-camgr.cisco.com</a>).
         These are separate from the dCloud sign-in at the top of the page. Cisco network required.
@@ -3160,14 +3174,14 @@
         Connect to CAMGR, Load transfer VMs, check dest DCs, then Submit transfer.
       </p>
       <div class="list-toolbar" style="margin-top:0.75rem">
-        <button type="button" class="secondary" id="btn-saved-ids-find" data-tip="Lists your saved content in each DC under this button so you can add rows to the table below. Uses the last pull if one is saved.">Find saved content</button>
+        <button type="button" class="secondary" id="btn-saved-ids-find" data-tip="Lists your saved content in each DC under this button so you can add rows to the table below. Uses the last pull if one is saved.">Find Saved Content</button>
         <button type="button" class="secondary" id="btn-saved-ids-find-refresh" data-tip="Downloads a fresh copy of your saved content from every datacenter.">Refresh</button>
-        <button type="button" class="secondary" id="btn-saved-ids-remove" data-tip="Removes checked rows from this list only. Does not uncheck them, and does not delete saved content in dCloud.">Remove from list</button>
-        <button type="button" class="secondary" id="btn-saved-ids-remove-all" data-tip="Removes every row from this list in one step. Does not delete saved content in dCloud.">Remove all</button>
-        <button type="button" class="secondary" id="btn-use-root-as-target" disabled data-tip="Copies Root ID into Target ID for checked rows. Use this when you want CAI to replace VMs in the original base demo instead of the previous save.">Use root as target</button>
-        <button type="button" class="secondary" id="btn-recheck-roots" data-tip="Looks up the original base demo ID for every row again, even ones already checked. Asks dCloud first, then CAMGR if it is connected.">Recheck root IDs</button>
+        <button type="button" class="secondary" id="btn-saved-ids-remove" data-tip="Removes checked rows from this list only. Does not uncheck them, and does not delete saved content in dCloud.">Remove from List</button>
+        <button type="button" class="secondary" id="btn-saved-ids-remove-all" data-tip="Removes every row from this list in one step. Does not delete saved content in dCloud.">Remove All</button>
+        <button type="button" class="secondary" id="btn-use-root-as-target" disabled data-tip="Copies Root ID into Target ID for checked rows. Use this when you want CAI to replace VMs in the original base demo instead of the previous save.">Use Root as Target</button>
+        <button type="button" class="secondary" id="btn-recheck-roots" data-tip="Looks up the original base demo ID for every row again, even ones already checked. Asks dCloud first, then CAMGR if it is connected.">Recheck Root IDs</button>
       </div>
-      <p class="step-label" style="margin-top:0.85rem">Add content by ID</p>
+      <p class="step-label" style="margin-top:0.85rem">Add Content by ID</p>
       <p class="hint help-text">Add any demo ID you can access; it does not have to appear under Find saved content.</p>
       <div class="row">
         <div>
@@ -3189,15 +3203,15 @@
         </div>
       </div>
       <details id="saved-ids-found-panel" class="found-sessions-panel hidden">
-        <summary id="saved-ids-found-summary">Your saved content</summary>
+        <summary id="saved-ids-found-summary">Your Saved Content</summary>
         <div class="found-sessions-body">
         <p class="hint help-text" id="saved-ids-finder-hint">Check rows below, then add them to this list. This does not delete dCloud content. Newest saves are listed first; click a column header to change the sort.</p>
         <div class="list-toolbar">
-          <button type="button" id="btn-saved-ids-found-add" disabled data-tip="Adds checked rows to the Saved content IDs table below. Does not change dCloud.">Add checked to this list</button>
-          <button type="button" class="secondary" id="btn-saved-ids-found-check-all">Check all</button>
-          <button type="button" class="secondary" id="btn-saved-ids-found-uncheck-all">Uncheck all</button>
-          <button type="button" class="secondary" id="btn-saved-ids-found-expand">Expand all DCs</button>
-          <button type="button" class="secondary" id="btn-saved-ids-found-collapse">Collapse all</button>
+          <button type="button" id="btn-saved-ids-found-add" disabled data-tip="Adds checked rows to the Saved content IDs table below. Does not change dCloud.">Add Checked to This List</button>
+          <button type="button" class="secondary" id="btn-saved-ids-found-check-all">Check All</button>
+          <button type="button" class="secondary" id="btn-saved-ids-found-uncheck-all">Uncheck All</button>
+          <button type="button" class="secondary" id="btn-saved-ids-found-expand">Expand All DCs</button>
+          <button type="button" class="secondary" id="btn-saved-ids-found-collapse">Collapse All</button>
         </div>
         <div class="list-toolbar">
           <input type="search" class="list-filter" id="filter-saved-ids-found" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
@@ -3218,8 +3232,8 @@
             <th>Target ID</th>
             <th>Root ID</th>
             <th>Name</th>
-            <th>CAI status</th>
-            <th>CAMGR status</th>
+            <th>CAI Status</th>
+            <th>CAMGR Status</th>
             <th></th>
           </tr>
         </thead>
@@ -3232,7 +3246,7 @@
         Use the header checkbox to select rows for Load VMs, CAI replace, or CAMGR transfer.
         After a spin-up save, check every DC of the <strong>same</strong> demo together — they share the same VMs.
         Do not mix two different demos.
-        <strong>Remove from list</strong> takes checked rows off this list; <strong>Remove all</strong> clears every row in one confirmation.
+        <strong>Remove from List</strong> takes checked rows off this list; <strong>Remove All</strong> clears every row in one confirmation.
         Neither deletes dCloud content.
         Find saved content, then Add, to put more IDs here.
         CAMGR status comes from <strong>your</strong> jobs in Content Transfer and fills in once you are
@@ -3241,19 +3255,19 @@
       <details class="task-group camgr" id="camgr-task-group" open>
       <summary class="task-group-head">
         <span class="task-group-title">Content Transfer Tasks</span>
-        <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
+        <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show Help</button>
       </summary>
       <div class="task-group-body">
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-camgr-connect" data-tip="Opens CAMGR in a tool-owned Chromium window. Sign in with Cisco SSO/Duo once; later Connect/refresh reuse that profile instead of Chrome Keychain.">Connect to CAMGR</button>
         <a class="secondary" id="btn-camgr-open" href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Transfer in a new tab if you want to look at CAMGR. Not required for Connect.">Open CAMGR</a>
-        <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load transfer VMs</button>
+        <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load Transfer VMs</button>
         <p class="hint load-target" id="camgr-load-target"></p>
       </div>
       <p id="camgr-status" class="hint" style="margin-top:0.35rem">Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.</p>
       <p class="hint">
         Check a box in the saved content list above for what you want to transfer, then click
-        <strong>Load transfer VMs</strong> and pick the destination DCs. Several rows of the same demo can be
+        <strong>Load Transfer VMs</strong> and pick the destination DCs. Several rows of the same demo can be
         checked together; two different demos cannot.
       </p>
       <p class="hint help-text">
@@ -3264,14 +3278,14 @@
       </p>
       <div id="camgr-vm-toolbar" class="list-toolbar chip-toolbar hidden">
         <p class="hint chip-toolbar-label">Transfer VMs</p>
-        <button type="button" class="secondary" id="btn-camgr-vms-check-all">Check all</button>
-        <button type="button" class="secondary" id="btn-camgr-vms-uncheck-all">Uncheck all</button>
+        <button type="button" class="secondary" id="btn-camgr-vms-check-all">Check All</button>
+        <button type="button" class="secondary" id="btn-camgr-vms-uncheck-all">Uncheck All</button>
       </div>
       <div id="camgr-vm-list" class="cai-vm-list"></div>
       <div id="camgr-dest-toolbar" class="list-toolbar chip-toolbar hidden">
         <p class="hint chip-toolbar-label">Destination DCs</p>
-        <button type="button" class="secondary" id="btn-camgr-dest-check-all">Check all</button>
-        <button type="button" class="secondary" id="btn-camgr-dest-uncheck-all">Uncheck all</button>
+        <button type="button" class="secondary" id="btn-camgr-dest-check-all">Check All</button>
+        <button type="button" class="secondary" id="btn-camgr-dest-uncheck-all">Uncheck All</button>
       </div>
       <div id="camgr-dest-list" class="camgr-dest-list" data-dc-order></div>
       <label id="camgr-auto-integrate-wrap" class="camgr-auto-integrate hidden">
@@ -3285,7 +3299,7 @@
         <span>day(s)</span>
       </div>
       <div class="actions">
-        <button type="button" id="btn-camgr-transfer" data-tip="Submits a CAMGR transfer for each checked row to the checked destination DCs. Greyed out for ContentDEV rows — use Submit dev transfer instead.">Submit transfer</button>
+        <button type="button" id="btn-camgr-transfer" data-tip="Submits a CAMGR transfer for each checked row to the checked destination DCs. Greyed out for ContentDEV rows — use Submit dev transfer instead.">Submit Transfer</button>
       </div>
       <hr class="task-divider" />
       <p class="step-label" style="margin-top:0" id="camgr-dev-title">Transfer VMs from Content Dev to RTP</p>
@@ -3302,12 +3316,12 @@
       </div>
       <div id="camgr-dev-vm-toolbar" class="list-toolbar chip-toolbar hidden">
         <p class="hint chip-toolbar-label">vPod VMs</p>
-        <button type="button" class="secondary" id="btn-camgr-dev-vms-check-all">Check all</button>
-        <button type="button" class="secondary" id="btn-camgr-dev-vms-uncheck-all">Uncheck all</button>
+        <button type="button" class="secondary" id="btn-camgr-dev-vms-check-all">Check All</button>
+        <button type="button" class="secondary" id="btn-camgr-dev-vms-uncheck-all">Uncheck All</button>
       </div>
       <div id="camgr-dev-vm-list" class="cai-vm-list"></div>
       <div class="actions">
-        <button type="button" id="btn-camgr-dev-transfer" disabled data-tip="Submits a CAMGR transfer from this vPod back to its own datacenter. Greyed out until you discover VMs and check at least one.">Submit dev transfer</button>
+        <button type="button" id="btn-camgr-dev-transfer" disabled data-tip="Submits a CAMGR transfer from this vPod back to its own datacenter. Greyed out until you discover VMs and check at least one.">Submit Dev Transfer</button>
       </div>
       </div>
       </details>
@@ -3315,7 +3329,7 @@
       <details class="task-group cai" id="cai-task-group" open>
       <summary class="task-group-head">
         <span class="task-group-title">Content Integration Tasks</span>
-        <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show help</button>
+        <button type="button" class="secondary help-toggle hub-help-btn" data-tip="Shows or hides the explanation paragraphs in this section.">Show Help</button>
       </summary>
       <div class="task-group-body">
       <div class="actions" style="margin-top:0">
@@ -3334,19 +3348,19 @@
         Target ID is the demo this save came from (filled when this tool saved the session). Root ID is the original base; copy it into Target if you want CAI to replace VMs there instead.
       </p>
       <div id="cai-vm-list" class="cai-vm-list"></div>
-      <p class="step-label hidden" id="cai-integrate-label" style="margin-top:0.85rem">CAI Integrate destinations</p>
+      <p class="step-label hidden" id="cai-integrate-label" style="margin-top:0.85rem">CAI Integrate Destinations</p>
       <p class="hint help-text hidden" id="cai-integrate-hint">
-        These checkboxes are for <strong>Submit integration</strong> only (CAI creates a separate task per dest DC, like rtp ⇒ sjc).
+        These checkboxes are for <strong>Submit Integration</strong> only (CAI creates a separate task per dest DC, like rtp ⇒ sjc).
         Load VMs after a CAMGR transfer to show dests. Dest DCs that CAI already integrated are disabled.
         They are not used for VM replacement.
       </p>
       <div id="cai-integrate-list" class="camgr-dest-list" data-dc-order></div>
       <div class="actions">
-        <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM replacement</button>
-        <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for dest DCs that are not already integrated. Needs a CAMGR transfer first. Already-integrated dests cannot be selected.">Submit integration</button>
+        <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM Replacement</button>
+        <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for dest DCs that are not already integrated. Needs a CAMGR transfer first. Already-integrated dests cannot be selected.">Submit Integration</button>
       </div>
       <hr class="task-divider" />
-      <p class="step-label" style="margin-top:0">Integrate Template from Content Dev or a demo</p>
+      <p class="step-label" style="margin-top:0">Integrate Template from Content Dev or a Demo</p>
       <p class="hint">
         Pick where the VM sits now, then enter its exact name. The folder and the VM name are both
         case sensitive — CAI returns Error if either is off. Show help explains the whole flow.
@@ -3409,19 +3423,19 @@
         <label><input type="checkbox" class="cai-template-dest" value="syd" /> SYD</label>
       </div>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-cai-template-check-all">Check all</button>
-        <button type="button" class="secondary" id="btn-cai-template-uncheck-all">Uncheck all</button>
-        <button type="button" id="btn-cai-template-submit" disabled data-tip="Creates a CAI template task per checked site from the exact VM name in this folder.">Submit template</button>
+        <button type="button" class="secondary" id="btn-cai-template-check-all">Check All</button>
+        <button type="button" class="secondary" id="btn-cai-template-uncheck-all">Uncheck All</button>
+        <button type="button" id="btn-cai-template-submit" disabled data-tip="Creates a CAI template task per checked site from the exact VM name in this folder.">Submit Template</button>
       </div>
       <div id="cai-template-tasks-toolbar" class="list-toolbar chip-toolbar hidden">
         <p class="hint chip-toolbar-label">Template requests</p>
         <button type="button" class="secondary" id="btn-cai-template-refresh" data-tip="Re-reads the CAI task list and updates each template request below.">Refresh</button>
-        <button type="button" class="secondary" id="btn-cai-template-clear" data-tip="Clears this template list in the tool only. Does not cancel anything in CAI.">Clear list</button>
+        <button type="button" class="secondary" id="btn-cai-template-clear" data-tip="Clears this template list in the tool only. Does not cancel anything in CAI.">Clear List</button>
       </div>
       <table id="cai-template-tasks-table" class="hidden" style="margin-top:0.5rem">
         <thead>
           <tr>
-            <th>Source folder</th>
+            <th>Source Folder</th>
             <th>VM</th>
             <th>Submitted</th>
             <th>Destinations</th>
@@ -3459,18 +3473,18 @@
           </div>
         </div>
         <div class="list-toolbar" style="margin-top:0.65rem">
-          <button type="button" id="btn-events-find" data-tip="Lists events in the checked datacenters from the last pull if one is saved. Does not download every session until you Add or View sessions.">Find events</button>
+          <button type="button" id="btn-events-find" data-tip="Lists events in the checked datacenters from the last pull if one is saved. Does not download every session until you Add or View sessions.">Find Events</button>
           <button type="button" class="secondary" id="btn-events-find-refresh" data-tip="Downloads a fresh copy of events in the checked datacenters.">Refresh</button>
         </div>
         <details id="found-events-panel" class="found-sessions-panel hidden">
-          <summary id="found-events-summary">Found events</summary>
+          <summary id="found-events-summary">Found Events</summary>
           <div class="found-sessions-body">
             <div class="list-toolbar">
-              <button type="button" class="secondary" id="btn-found-events-add" disabled data-tip="Adds checked events to the Events section below and loads their sessions.">Add checked</button>
-              <button type="button" class="secondary" id="btn-found-events-check-all">Check all</button>
-              <button type="button" class="secondary" id="btn-found-events-uncheck-all">Uncheck all</button>
-              <button type="button" class="secondary" id="btn-found-events-expand">Expand all DCs</button>
-              <button type="button" class="secondary" id="btn-found-events-collapse">Collapse all</button>
+              <button type="button" class="secondary" id="btn-found-events-add" disabled data-tip="Adds checked events to the Events section below and loads their sessions.">Add Checked</button>
+              <button type="button" class="secondary" id="btn-found-events-check-all">Check All</button>
+              <button type="button" class="secondary" id="btn-found-events-uncheck-all">Uncheck All</button>
+              <button type="button" class="secondary" id="btn-found-events-expand">Expand All DCs</button>
+              <button type="button" class="secondary" id="btn-found-events-collapse">Collapse All</button>
             </div>
             <div class="list-toolbar">
               <input type="search" class="list-filter" id="filter-found-events" autocomplete="off" placeholder="Filter by event ID, name, owner, or status" aria-label="Filter found events" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing." />
@@ -3480,7 +3494,7 @@
             <div id="found-events" style="margin-top:0.35rem"></div>
           </div>
         </details>
-        <p class="step-label" style="margin-top:0.85rem">Add by event ID</p>
+        <p class="step-label" style="margin-top:0.85rem">Add by Event ID</p>
         <div class="row">
           <div>
             <label for="event-site">Datacenter</label>
@@ -3497,13 +3511,13 @@
             <input id="event-id" inputmode="numeric" autocomplete="off" placeholder="399485" />
           </div>
           <div style="align-self:flex-end">
-            <button type="button" id="btn-event-add">Add event</button>
+            <button type="button" id="btn-event-add">Add Event</button>
           </div>
         </div>
         <div class="list-toolbar" style="margin-top:0.65rem">
-          <button type="button" class="secondary" id="btn-events-refresh">Refresh all</button>
-          <button type="button" class="secondary" id="btn-events-expand">Expand all</button>
-          <button type="button" class="secondary" id="btn-events-collapse">Collapse all</button>
+          <button type="button" class="secondary" id="btn-events-refresh">Refresh All</button>
+          <button type="button" class="secondary" id="btn-events-expand">Expand All</button>
+          <button type="button" class="secondary" id="btn-events-collapse">Collapse All</button>
           <label class="check-line" for="event-action-delay" data-tip="Reset and End go out one session at a time. dCloud rejects a burst against one event, so this pause sits between each one.">
             <span>Seconds between bulk actions</span>
             <input id="event-action-delay" type="number" min="0" max="30" step="1" value="1" />
@@ -3529,7 +3543,7 @@
           instantly by name, ID, owner, or status.
         </p>
         <div>
-          <span>Load from</span>
+          <span>Load From</span>
           <div class="unified-search-dcs" id="unified-search-dcs" data-dc-order>
             <label><input type="checkbox" class="unified-search-dc" value="sjc" /> SJC</label>
             <label><input type="checkbox" class="unified-search-dc" value="rtp" checked /> RTP</label>
@@ -3543,13 +3557,14 @@
         <div class="unified-search-toolbar" style="margin-top:0.65rem">
           <button type="button" id="btn-unified-load-content">Load Content</button>
           <button type="button" id="btn-unified-load-sessions">Load Sessions</button>
-          <button type="button" class="secondary" id="btn-unified-load-both">Load both</button>
-          <button type="button" class="secondary" id="btn-unified-search-refresh" data-tip="Downloads fresh copies of the lists already loaded, bypassing the 15-minute server cache.">Refresh loaded data</button>
+          <button type="button" class="secondary" id="btn-unified-load-both">Load Both</button>
+          <button type="button" class="secondary" id="btn-unified-search-refresh" data-tip="Downloads a new copy from dCloud before the 5-minute wait is over.">Refresh Loaded Data</button>
         </div>
-        <p id="unified-search-cache-status" class="hint">No saved Content or Sessions data is available yet.</p>
+        <p class="hint">A full Content or Sessions download is kept for 5 minutes. Another Load in that window uses the copy already here, so it comes back right away. Refresh Loaded Data downloads a new copy from dCloud.</p>
+        <p id="unified-search-status" class="hint" aria-live="polite"></p>
         <div class="unified-search-filters" style="margin-top:0.7rem">
           <label style="flex:1;min-width:16rem">
-            <span>Filter loaded Content and Sessions</span>
+            <span>Filter Loaded Sessions and Content</span>
             <input id="unified-search-filter" type="search" autocomplete="off" placeholder="Start typing a name, ID, owner, or status" />
           </label>
           <label>
@@ -3560,14 +3575,13 @@
           </label>
         </div>
         <div class="unified-search-toolbar" style="margin-top:0.5rem">
-          <button type="button" class="secondary" id="btn-unified-expand-all" data-tip="Opens the Content and Sessions sections and every datacenter inside them.">Expand all</button>
-          <button type="button" class="secondary" id="btn-unified-collapse-all" data-tip="Closes the Content and Sessions sections and every datacenter inside them.">Collapse all</button>
+          <button type="button" class="secondary" id="btn-unified-expand-all" data-tip="Opens the Content and Sessions sections and every datacenter inside them.">Expand All</button>
+          <button type="button" class="secondary" id="btn-unified-collapse-all" data-tip="Closes the Content and Sessions sections and every datacenter inside them.">Collapse All</button>
         </div>
-        <p id="unified-search-status" class="hint"></p>
         <div id="unified-search-results" class="unified-search-results"></div>
 
         <hr style="margin:1rem 0;border:0;border-top:1px solid var(--border)" />
-        <h3 style="margin:0 0 0.35rem">Catalog search</h3>
+        <h3 style="margin:0 0 0.35rem">Catalog Search</h3>
         <p class="hint">Catalog uses its own search. Enter a name or catalog ID.</p>
         <div class="unified-search-toolbar">
           <label style="flex:1;min-width:16rem">
@@ -3594,22 +3608,22 @@
       <p class="hint">Scroll this box to see older lines. It stays put unless you are already at the bottom.</p>
       <pre id="log"></pre>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-clear-log" data-tip="Clears the log panel on this page. Does not affect dCloud or the saved job file.">Clear log</button>
+        <button type="button" class="secondary" id="btn-clear-log" data-tip="Clears the log panel on this page. Does not affect dCloud or the saved job file.">Clear Log</button>
       </div>
       </div>
     </details>
     </section>
 
     <section class="app-view" id="view-reset" data-view="reset">
-    <h2 class="view-title">Start fresh</h2>
+    <h2 class="view-title">Start Fresh</h2>
     <div class="panel" id="panel-start-fresh">
-      <p class="step-label">Start fresh</p>
+      <p class="step-label">Start Fresh</p>
       <p class="hint" style="margin:0 0 0.75rem">
         Local reset — puts the page back to how it looks on a first visit. Pick what to clear and what
         to keep. Does not end or save anything in dCloud.
       </p>
       <div class="actions" style="margin-top:0">
-        <button type="button" class="secondary" id="btn-start-fresh" data-tip="Asks what to clear, then resets those parts of the page and the matching files on this machine. Does not end or save anything in dCloud.">Start fresh</button>
+        <button type="button" class="secondary" id="btn-start-fresh" data-tip="Asks what to clear, then resets those parts of the page and the matching files on this machine. Does not end or save anything in dCloud.">Start Fresh</button>
       </div>
     </div>
     </section>
@@ -3946,7 +3960,7 @@
     function promptSaveDetails(
       message,
       {
-        title = "Save as",
+        title = "Save As",
         name = "",
         description = DEFAULT_SAVE_DESCRIPTION,
         okLabel = "Save",
@@ -4040,7 +4054,7 @@
       if (!button) return;
       button.classList.toggle("authorized", Boolean(authorized));
       button.setAttribute("aria-pressed", authorized ? "true" : "false");
-      button.setAttribute("aria-label", authorized ? "dCloud account menu" : "Sign in to dCloud");
+      button.setAttribute("aria-label", authorized ? "dCloud account menu" : "Sign In to dCloud");
       button.setAttribute(
         "data-tip",
         label || (authorized
@@ -4077,7 +4091,7 @@
       }
       if (metaEl) {
         if (!authorized) {
-          metaEl.textContent = "Sign in to dCloud";
+          metaEl.textContent = "Sign In to dCloud";
         } else {
           const id = lastSessionUser.id;
           const email = lastSessionUser.email;
@@ -4090,9 +4104,9 @@
       }
       $("account-signout")?.classList.toggle("hidden", !authorized);
       const openAuth = $("account-open-auth");
-      if (openAuth) openAuth.textContent = authorized ? "Login and token" : "Sign in to dCloud";
+      if (openAuth) openAuth.textContent = authorized ? "Login and token" : "Sign In to dCloud";
       const themeBtn = $("account-theme");
-      if (themeBtn) themeBtn.textContent = readTheme() === "dark" ? "Light theme" : "Dark theme";
+      if (themeBtn) themeBtn.textContent = readTheme() === "dark" ? "Light Theme" : "Dark theme";
     }
 
     function accountMenuOpen() {
@@ -4285,7 +4299,7 @@
       if (isHubAuthError(msg) && t.includes("camgr")) return "CAMGR sign-in needed";
       if (isHubAuthError(msg)) return "CAI sign-in needed";
       if (isHubActionMessage(msg)) return "Content Automation Hub";
-      if (isTokenError(msg)) return "dCloud token needed";
+      if (isTokenError(msg)) return "dCloud Token Needed";
       if (t.includes("session id") || t.includes("datacenter") || t.includes("active session")) {
         return "Load VMs — session needed";
       }
@@ -4298,7 +4312,7 @@
       if (t.includes("saved content") || t.includes("find saved") || t.includes("find sessions")) {
         return t.includes("delete") || t.includes("survey") ? "Cleanup / attach" : "Schedule sessions — saved content";
       }
-      return "Action needed";
+      return "Action Needed";
     }
 
     function scrollTargetForMessage(msg) {
@@ -4370,7 +4384,7 @@
         gotoBtn.classList.toggle("hidden", !showGoto);
         gotoBtn.textContent = actionAlertScrollTarget === ".auth-panel"
           ? "Go to step"
-          : "Go there";
+          : "Go There";
       }
       modal.classList.remove("hidden");
       $("action-alert-ok")?.focus();
@@ -4532,10 +4546,10 @@
       if (!rows.length) return `<p class="hint">No sessions were returned for this event.</p>`;
       return `
         <div class="list-toolbar">
-          <button type="button" class="secondary event-check-all">Check all</button>
-          <button type="button" class="secondary event-uncheck-all">Uncheck all</button>
-          <button type="button" class="secondary event-reset-checked" disabled>Reset checked</button>
-          <button type="button" class="danger event-end-checked" disabled>End checked</button>
+          <button type="button" class="secondary event-check-all">Check All</button>
+          <button type="button" class="secondary event-uncheck-all">Uncheck All</button>
+          <button type="button" class="secondary event-reset-checked" disabled>Reset Checked</button>
+          <button type="button" class="danger event-end-checked" disabled>End Checked</button>
         </div>
         <table class="dc-list event-sessions-table">
           <thead>
@@ -4543,7 +4557,7 @@
               <th><input type="checkbox" class="event-head-check" title="Check or uncheck every session in this event" /></th>
               <th>ID</th>
               <th>User ID</th>
-              <th>Session name</th>
+              <th>Session Name</th>
               <th>Demo ID</th>
               <th>VC</th>
               <th>Start</th>
@@ -4577,10 +4591,10 @@
                     <div class="vm-menu-list">
                       <button type="button" class="event-session-info" ${rowData}>Info</button>
                       ${canReset ? `<button type="button" class="event-session-reset" ${rowData}>Reset</button>` : ""}
-                      ${canEnd ? `<button type="button" class="danger event-session-end" ${rowData}>End session</button>` : ""}
+                      ${canEnd ? `<button type="button" class="danger event-session-end" ${rowData}>End Session</button>` : ""}
                       <button type="button" class="event-session-logs" ${rowData}>Logs</button>
-                      ${row.active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
-                      ${row.demoId ? `<button type="button" class="event-session-content" ${rowData} data-demo-id="${escapeHtml(row.demoId)}">Go to demo</button>` : ""}
+                      ${row.active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View Session</a>` : ""}
+                      ${row.demoId ? `<button type="button" class="event-session-content" ${rowData} data-demo-id="${escapeHtml(row.demoId)}">Go to Demo</button>` : ""}
                     </div>
                   </details>
                 </td>
@@ -4603,8 +4617,8 @@
         if (summary) {
           const count = eventCount ?? lastFoundEvents.length;
           summary.textContent = count
-            ? `Found events (${count}) — click to expand or collapse`
-            : "Found events — click to expand or collapse";
+            ? `Found Events (${count}) — click to expand or collapse`
+            : "Found Events — click to expand or collapse";
         }
       }
     }
@@ -4716,7 +4730,7 @@
       await unifiedSavedDataReady;
       const sites = selectedEventFindDcs();
       if (!sites.length) {
-        showActionAlert("Check at least one datacenter.", { title: "Find events" });
+        showActionAlert("Check at least one datacenter.", { title: "Find Events" });
         return;
       }
       const missing = refresh ? sites : sites.filter((site) => !finderMs(finderLists.events.fetchedAt[site]));
@@ -4771,7 +4785,7 @@
     async function addCheckedFoundEvents() {
       const selected = visibleBoxes(".found-event:checked:not(:disabled)");
       if (!selected.length) {
-        showActionAlert("Check at least one event to add.", { title: "Add events" });
+        showActionAlert("Check at least one event to add.", { title: "Add Events" });
         return;
       }
       for (const box of selected) {
@@ -4857,8 +4871,8 @@
                 <details class="event-group" data-site="${escapeHtml(site)}" data-event-id="${escapeHtml(entry.eventId)}" ${openEvents.has(eventKey(site, entry.eventId)) || entry.loading ? "open" : ""}>
                   <summary><span class="dc-group-title">${escapeHtml(label)}${Number.isFinite(count) ? ` (${count})` : ""}</span></summary>
                   <div class="list-toolbar">
-                    <button type="button" class="secondary event-refresh">Refresh event</button>
-                    <button type="button" class="secondary event-remove">Remove event</button>
+                    <button type="button" class="secondary event-refresh">Refresh Event</button>
+                    <button type="button" class="secondary event-remove">Remove Event</button>
                   </div>
                   ${entry.loading ? `<p class="hint">Loading event ${escapeHtml(entry.eventId)}…</p>` : ""}
                   ${entry.error ? `<p class="error">${escapeHtml(entry.error)}</p>` : ""}
@@ -4961,7 +4975,7 @@
       const site = $("event-site").value;
       const eventId = $("event-id").value.trim();
       if (!/^\d+$/.test(eventId)) {
-        showActionAlert("Enter a numeric event ID.", { title: "Add event" });
+        showActionAlert("Enter a numeric event ID.", { title: "Add Event" });
         return;
       }
       $("event-id").value = "";
@@ -5251,25 +5265,20 @@
       return finderLists[source].rows.filter((row) => wanted.has(String(row.site || "").toLowerCase()));
     }
 
+    function unifiedSourceAgeText(source) {
+      const loadedSites = new Set(unifiedSearchDcData.sites[source] || []);
+      if (!loadedSites.size) return "";
+      const available = SITE_ORDER
+        .filter((site) => loadedSites.has(site))
+        .map((site) => `${site.toUpperCase()} (${formatUnifiedDataAge(unifiedSearchDcData.fetchedAt[source][site])})`);
+      const missing = SITE_ORDER.filter((site) => !loadedSites.has(site)).map((site) => site.toUpperCase());
+      return `Last pulled ${available.join(", ")}${missing.length ? `; not loaded: ${missing.join(", ")}` : "."}`;
+    }
+
     function updateUnifiedCacheStatus() {
-      const hasSavedData = ["content", "sessions"].some((source) =>
-        (unifiedSearchDcData.sites[source] || []).length
-      );
-      if (!hasSavedData) {
-        $("unified-search-cache-status").textContent = "No saved Content or Sessions data is available yet.";
-        return;
-      }
-      const lines = ["content", "sessions"].map((source) => {
-        const label = source === "content" ? "Content" : "Sessions";
-        const loadedSites = new Set(unifiedSearchDcData.sites[source] || []);
-        if (!loadedSites.size) return `${label}: not loaded`;
-        const available = SITE_ORDER
-          .filter((site) => loadedSites.has(site))
-          .map((site) => `${site.toUpperCase()} (${formatUnifiedDataAge(unifiedSearchDcData.fetchedAt[source][site])})`);
-        const missing = SITE_ORDER.filter((site) => !loadedSites.has(site)).map((site) => site.toUpperCase());
-        return `${label}: ${available.join(", ")}${missing.length ? `; not loaded: ${missing.join(", ")}` : "; all datacenters loaded"}`;
+      document.querySelectorAll("[data-unified-age]").forEach((el) => {
+        el.textContent = unifiedSourceAgeText(el.dataset.unifiedAge);
       });
-      $("unified-search-cache-status").textContent = `Preloaded data — ${lines.join(". ")}.`;
     }
 
     async function restoreUnifiedSavedData() {
@@ -5299,7 +5308,18 @@
       }
       renderUnifiedDcData();
       updateUnifiedCacheStatus();
+      restoreCachedSessionList();
       restoreCachedSavedContentList();
+    }
+
+    function restoreCachedSessionList() {
+      if (!finderCachedSites("mine-sessions", SITE_ORDER).length) return;
+      renderFoundSessions({
+        sessions: rowsForFinderSites("mine-sessions", SITE_ORDER),
+        errors: finderLists["mine-sessions"].errors,
+        usedCache: true,
+      });
+      setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: true });
     }
 
     function restoreCachedSavedContentList() {
@@ -5369,10 +5389,10 @@
         if (source === "content") {
           actions = `
             ${row.scheduleId ? `<button type="button" class="search-row-action" data-action="content-schedule">Schedule</button>` : ""}
-            ${row.topologyUrl ? `<a href="${escapeHtml(row.topologyUrl)}" target="_blank" rel="noopener noreferrer">Edit topology</a>` : ""}
+            ${row.topologyUrl ? `<a href="${escapeHtml(row.topologyUrl)}" target="_blank" rel="noopener noreferrer">Edit Topology</a>` : ""}
             <button type="button" class="search-row-action" data-action="content-filters">Filters</button>
             <button type="button" class="search-row-action" data-action="content-permissions">Permissions</button>
-            <button type="button" class="search-row-action" data-action="content-resources">Content resources</button>
+            <button type="button" class="search-row-action" data-action="content-resources">Content Resources</button>
           `;
         } else {
           const status = String(row.status || "").toLowerCase();
@@ -5384,16 +5404,16 @@
           const attachable = !terminal && !unavailable && !error;
           actions = `
             <button type="button" class="search-row-action" data-action="session-info">Info</button>
-            ${attachable ? `<button type="button" class="search-row-action" data-action="session-workspace">Add to job workspace</button>` : ""}
-            ${attachable ? `<button type="button" class="search-row-action" data-action="session-monitor">Add to session monitoring</button>` : ""}
+            ${attachable ? `<button type="button" class="search-row-action" data-action="session-workspace">Add to Job Workspace</button>` : ""}
+            ${attachable ? `<button type="button" class="search-row-action" data-action="session-monitor">Add to Session Monitoring</button>` : ""}
             ${scheduled || active ? `<button type="button" class="search-row-action" data-action="session-edit">Edit…</button>` : ""}
             ${active ? `<button type="button" class="search-row-action" data-action="session-save">Save</button>` : ""}
             ${active || (error && row.canReset !== false) ? `<button type="button" class="search-row-action" data-action="session-reset">Reset</button>` : ""}
             ${active || terminal || unavailable || error ? `<button type="button" class="search-row-action" data-action="session-logs">Logs</button>` : ""}
-            ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View session</a>` : ""}
-            ${row.demoId ? `<button type="button" class="search-row-action" data-action="session-content" data-tip="Shows the parent content ${escapeHtml(row.demoId)} under Content, the same place dCloud's Go to demo lands.">Go to demo</button>` : ""}
-            ${scheduled ? `<button type="button" class="danger search-row-action" data-action="session-cancel">Cancel session</button>` : ""}
-            ${active ? `<button type="button" class="danger search-row-action" data-action="session-end">End session</button>` : ""}
+            ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View Session</a>` : ""}
+            ${row.demoId ? `<button type="button" class="search-row-action" data-action="session-content" data-tip="Shows the parent content ${escapeHtml(row.demoId)} under Content, the same place dCloud's Go to demo lands.">Go to Demo</button>` : ""}
+            ${scheduled ? `<button type="button" class="danger search-row-action" data-action="session-cancel">Cancel Session</button>` : ""}
+            ${active ? `<button type="button" class="danger search-row-action" data-action="session-end">End Session</button>` : ""}
           `;
         }
         return `
@@ -5435,7 +5455,7 @@
           <tbody>${body}</tbody>
         </table>
       ` + (remaining > 0
-        ? `<button type="button" class="secondary btn-search-show-more" data-source="${escapeHtml(source)}" data-site="${escapeHtml(site)}">Show ${Math.min(100, remaining)} more</button>`
+        ? `<button type="button" class="secondary btn-search-show-more" data-source="${escapeHtml(source)}" data-site="${escapeHtml(site)}">Show ${Math.min(100, remaining)} More</button>`
         : "");
     }
 
@@ -5527,9 +5547,10 @@
             <summary>
               <span class="dc-group-title">${label} (${matches.length})${error ? ` — ${escapeHtml(error)}` : ""}</span>
             </summary>
+            <p class="hint" data-unified-age="${escapeHtml(source)}">${escapeHtml(unifiedSourceAgeText(source))}</p>
             <div class="list-toolbar" style="align-items:center">
-              <button type="button" class="secondary btn-search-expand-all" data-source="${escapeHtml(source)}">Expand all DCs</button>
-              <button type="button" class="secondary btn-search-collapse-all" data-source="${escapeHtml(source)}">Collapse all DCs</button>
+              <button type="button" class="secondary btn-search-expand-all" data-source="${escapeHtml(source)}">Expand All DCs</button>
+              <button type="button" class="secondary btn-search-collapse-all" data-source="${escapeHtml(source)}">Collapse All DCs</button>
             </div>
             ${body}
           </details>
@@ -5569,7 +5590,7 @@
           <td>${escapeHtml(formatSessionWhen(row.updated) || row.updated || "—")}</td>
           <td><div class="search-result-actions">
             <button type="button" class="btn-search-catalog-schedule" data-name="${escapeHtml(row.name || "")}">Schedule</button>
-            ${row.profileUrl ? `<a class="secondary" href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer">Open catalog</a>` : ""}
+            ${row.profileUrl ? `<a class="secondary" href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer">Open Catalog</a>` : ""}
           </div></td>
         </tr>
       `);
@@ -5752,7 +5773,7 @@
         });
         const panels = Array.isArray(data.panels) ? data.panels : [];
         const link = data.viewUrl
-          ? `<p class="hint"><a href="${escapeHtml(data.viewUrl)}" target="_blank" rel="noopener noreferrer">Open this session in dCloud</a></p>`
+          ? `<p class="hint"><a href="${escapeHtml(data.viewUrl)}" target="_blank" rel="noopener noreferrer">Open This Session in dCloud</a></p>`
           : "";
         const note = data.note ? `<p class="hint">${escapeHtml(data.note)}</p>` : "";
         showDetailsModal(
@@ -5862,12 +5883,14 @@
     }
 
     async function runSearchSessionAction(row, action) {
+      const verb = { save: "saving", end: "ending", cancel: "cancelling", reset: "resetting" }[action] || "updating";
+      if (!ensureTokenReady(`${verb} the session`)) return;
       const site = String(row.site || "").toLowerCase();
       let name = "";
       let description = "";
       if (action === "save") {
         const values = await promptSaveDetails("Name and describe the saved content.", {
-          title: "Save session",
+          title: "Save Session",
           name: row.name || "",
         });
         if (values === null) return;
@@ -5890,6 +5913,12 @@
         cancel: "Cancelling",
         reset: "Resetting",
       };
+      const doneLabels = {
+        save: "Save requested",
+        end: "Ended",
+        cancel: "Cancelled",
+        reset: "Reset requested for",
+      };
       $("unified-search-status").textContent = `${progressLabels[action] || "Updating"} session ${row.id}…`;
       try {
         const result = await api("/api/search/session-action", {
@@ -5904,10 +5933,14 @@
             description,
           }),
         });
-        $("unified-search-status").textContent = result.message || `Session ${action} completed.`;
+        const message = result.message || `${doneLabels[action] || "Updated"} session ${row.id}.`;
+        $("unified-search-status").textContent = message;
+        showToast(message, { kind: "ok" });
         await loadUnifiedDcData(["sessions"], { refreshData: true });
+        $("unified-search-status").textContent = message;
       } catch (err) {
         $("unified-search-status").textContent = err.message;
+        showToast(err.message, { kind: "err" });
       }
     }
 
@@ -6027,6 +6060,16 @@
         const count = sources.reduce((total, source) => total + (data[source] || []).length, 0);
         $("unified-search-status").textContent =
           `Loaded ${count} record(s) from ${sites.map((site) => site.toUpperCase()).join(", ")}. Type in the filter box to narrow the results instantly.`;
+        const loadedBits = [];
+        if (sources.includes("content")) {
+          const contentCount = (data.content || []).length;
+          loadedBits.push(contentCount === 1 ? "1 content record" : `${contentCount} content records`);
+        }
+        if (sources.includes("sessions")) {
+          const sessionCount = (data.sessions || []).length;
+          loadedBits.push(sessionCount === 1 ? "1 session" : `${sessionCount} sessions`);
+        }
+        if (loadedBits.length) showToast(`Loaded ${loadedBits.join(" and ")}.`);
         saveUnifiedSearchSettings();
       } catch (err) {
         $("unified-search-status").textContent = err.message;
@@ -6311,7 +6354,7 @@
         if (!modal || !title || !body || !requested) {
           confirmAction(
             `${site}: selected time is not available. Schedule the next slot instead?`,
-            { title: "Scheduling conflict", okLabel: "Schedule next slot", cancelLabel: "Skip this DC" }
+            { title: "Scheduling Conflict", okLabel: "Schedule Next Slot", cancelLabel: "Skip This DC" }
           ).then((ok) => resolve(ok ? "schedule_next" : "skip"));
           return;
         }
@@ -6330,7 +6373,7 @@
         }
         if (useNextBtn) {
           useNextBtn.disabled = !hasNext;
-          useNextBtn.textContent = hasNext ? "Schedule next slot" : "No next slot available";
+          useNextBtn.textContent = hasNext ? "Schedule Next Slot" : "No next slot available";
         }
         modal.classList.remove("hidden");
         (hasNext ? useNextBtn : $("schedule-conflict-skip"))?.focus();
@@ -6559,7 +6602,7 @@
         input.placeholder = "123456";
         hint.textContent = "Load VMs from saved content when you do not have an active session yet. Skip this for a normal session.";
       } else {
-        label.textContent = "Active session ID";
+        label.textContent = "Active Session ID";
         input.placeholder = "123456";
         hint.textContent = "Load VMs from a running session, or switch to Published/Saved content if the demo is not active.";
       }
@@ -6658,7 +6701,7 @@
       } else if (!rdpOff && vm.rdpUrl) {
         links.push(`<a href="${vm.rdpUrl}" target="_blank" rel="noopener noreferrer">RDP</a>`);
       }
-      if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM console</a>`);
+      if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM Console</a>`);
       const selectedBadge = vm.selected && (dc.powerOnTargets || []).length
         ? `<span class="badge ok vm-selected" data-tip="Checked in Load VMs when this session was scheduled">selected</span>`
         : "";
@@ -6675,11 +6718,11 @@
                 <summary>Actions</summary>
                 <div class="vm-menu-list">
                   ${links.join("")}
-                  <button type="button" class="btn-vm-on" ${vmData} ${canAct ? "" : "disabled"} data-tip="Powers on this VM in dCloud.">Power on</button>
-                  <button type="button" class="btn-vm-hard-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Hard power off this VM (not a graceful guest shutdown).">Power off</button>
+                  <button type="button" class="btn-vm-on" ${vmData} ${canAct ? "" : "disabled"} data-tip="Powers on this VM in dCloud.">Power On</button>
+                  <button type="button" class="btn-vm-hard-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Hard power off this VM (not a graceful guest shutdown).">Power Off</button>
                   ${vmNeedsHardPowerOff(vm)
                     ? `<span class="hint" title="vCUBE has no guest OS shutdown — dCloud would restart it. Use Power off.">No guest shutdown</span>`
-                    : `<button type="button" class="btn-vm-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Sends a guest shutdown to this VM only.">Guest shutdown</button>`}
+                    : `<button type="button" class="btn-vm-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Sends a guest shutdown to this VM only.">Guest Shutdown</button>`}
                 </div>
               </details>
             </div>
@@ -6916,27 +6959,32 @@
       boxes.forEach((box) => {
         const onCard = keys.has(sessionKey(box.dataset.site, box.dataset.session));
         const row = box.closest("tr");
-        // Each row's own Add button follows the same state as its checkbox.
-        const addBtn = row?.querySelector(".btn-add-found-session, .btn-add-workspace-session");
+        const addBtns = [...(row?.querySelectorAll(".btn-add-found-session, .btn-add-workspace-session, .found-session-action[data-action='workspace']") || [])];
+        const labelFor = (addBtn) => {
+          if (addBtn.dataset.action === "workspace") return "Add to Job Workspace";
+          if (addBtn.classList.contains("btn-add-found-session")) return "Add to Monitoring";
+          return "Add";
+        };
         if (onCard) {
           box.checked = false;
           box.disabled = true;
           box.title = "Already on monitoring or job cards";
           row?.classList.add("found-session-attached");
-          if (addBtn) {
+          addBtns.forEach((addBtn) => {
             addBtn.disabled = true;
             addBtn.title = "Already on monitoring or job cards";
             addBtn.textContent = "Added";
-          }
+          });
         } else {
           box.disabled = false;
           box.title = "";
           row?.classList.remove("found-session-attached");
-          if (addBtn && !addBtn.classList.contains("is-busy")) {
+          addBtns.forEach((addBtn) => {
+            if (addBtn.classList.contains("is-busy")) return;
             addBtn.disabled = false;
             addBtn.title = "";
-            addBtn.textContent = "Add";
-          }
+            addBtn.textContent = labelFor(addBtn);
+          });
         }
       });
       syncFoundAll();
@@ -7078,9 +7126,9 @@
       const entered = await promptText(
         "How much longer should this session run?\n\nExamples: 5, 5d, 6h, or 5d 6h. A number by itself means days.",
         {
-          title: "Extend session",
+          title: "Extend Session",
           name: current || "1d",
-          inputLabel: "Extend by",
+          inputLabel: "Extend By",
           okLabel: "Continue",
         },
       );
@@ -7209,7 +7257,7 @@
           ${next
             ? `<div><strong>Shorter option:</strong> ${escapeHtml(String(suggestedDays))} day${suggestedDays === 1 ? "" : "s"}, ${escapeHtml(next)}</div>`
             : `<div>No suitable opening starts within the next 24 hours.</div>`}
-          ${reason ? `<details class="conflict-reason"><summary>Technical reason from dCloud</summary><div>${escapeHtml(reason)}</div></details>` : ""}
+          ${reason ? `<details class="conflict-reason"><summary>Technical Reason from dCloud</summary><div>${escapeHtml(reason)}</div></details>` : ""}
         </div>
       `;
     }
@@ -7260,14 +7308,14 @@
       const names = (prompt.vms || []).join(", ") || "some VMs";
       const powerLabel = prompt.saveAfter
         ? "Power off remaining VMs and save"
-        : "Power off remaining VMs";
+        : "Power Off Remaining VMs";
       const saveBit = prompt.saveAfter
         ? " Powering them off will then save this session."
         : " This does not save the session.";
       return `<div class="warn-box shutdown-prompt" style="margin-top:0.55rem">
         <div>Guest shutdown has been waiting more than 10 minutes. Still on: ${escapeHtml(names)}. Keep waiting, or hard power off remaining VMs.${saveBit}</div>
         <div class="shutdown-prompt-actions">
-          <button type="button" class="btn-shutdown-wait" ${cardData}>Keep waiting</button>
+          <button type="button" class="btn-shutdown-wait" ${cardData}>Keep Waiting</button>
           <button type="button" class="danger btn-shutdown-power-off" ${cardData}>${powerLabel}</button>
         </div>
       </div>`;
@@ -7366,7 +7414,7 @@
         ? `<div class="hint">Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}</div>`
         : "";
       const saved = dc.savedId
-        ? `<div class="mono">saved ID ${escapeHtml(dc.savedId)}${dc.contentViewUrl ? ` · <a href="${dc.contentViewUrl}" target="_blank" rel="noopener noreferrer">edit topology</a>` : ""}</div>`
+        ? `<div class="mono">saved ID ${escapeHtml(dc.savedId)}${dc.contentViewUrl ? ` · <a href="${dc.contentViewUrl}" target="_blank" rel="noopener noreferrer">Edit Topology</a>` : ""}</div>`
         : "";
       const canEnd = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase);
       const notStarted = isScheduledNotStarted(dc);
@@ -7391,7 +7439,7 @@
         && dc.ownedByMe !== false
         && !shutdownWatching
         && (dc.vms || []).some((vm) => isPoweredOnState(vm.powerState));
-      const saveLabel = saveFailed ? "Retry save" : "Guest shutdown &amp; save";
+      const saveLabel = saveFailed ? "Retry save" : "Guest Shutdown &amp; Save";
       const saveTip = dc.ownedByMe === false
         ? `Only ${escapeHtml(dc.owner || "the owner")} can shut down and save this session.`
         : "Guest-shuts down this session's VMs, waits for them to power off, then saves.";
@@ -7432,7 +7480,7 @@
       const sharedLine = formatSharedWithLine(dc);
       const conflictDetails = scheduleConflictDetails(dc);
       const adjustSchedule = dc.phase === "error" && dc.scheduleConflict && !dc.sessionId
-        ? `<button type="button" class="btn-adjust-schedule" ${cardData} data-requested-start="${escapeHtml(dc.scheduleConflict.requestedStart || "")}">Adjust schedule</button>`
+        ? `<button type="button" class="btn-adjust-schedule" ${cardData} data-requested-start="${escapeHtml(dc.scheduleConflict.requestedStart || "")}">Adjust Schedule</button>`
         : "";
       const canRename = canRenameSession(dc);
       const displayName = demoName || (canRename ? "Untitled session" : "");
@@ -7444,7 +7492,7 @@
       const summaryName = displayName || `Demo ${dc.demoId || "session"}`;
       const summarySession = dc.sessionId ? String(dc.sessionId) : `demo ${dc.demoId || "—"}`;
       const openSession = dc.viewUrl
-        ? `<a class="card-open-session" href="${escapeHtml(dc.viewUrl)}" target="_blank" rel="noopener noreferrer">Open session</a>`
+        ? `<a class="card-open-session" href="${escapeHtml(dc.viewUrl)}" target="_blank" rel="noopener noreferrer">Open Session</a>`
         : "";
       const renameBtn = canRename
         ? `<button type="button" class="card-rename-btn" ${cardData} data-tip="Rename this session in dCloud" aria-label="Rename session">✎</button>`
@@ -7453,10 +7501,10 @@
                 <details class="vm-menu card-actions-menu">
                   <summary data-tip="Save, extend, end, or move this card.">Actions</summary>
                   <div class="vm-menu-list">
-                    ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session info</button>` : ""}
+                    ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session Info</button>` : ""}
                     ${shareBtn}
                     <button type="button" class="btn-move-card" ${cardData} data-monitor="${moveMonitorVal}" data-tip="${moveTip}">${moveLabel}</button>
-                    ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest shutdown all powered-on VMs</button>`}
+                    ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest Shutdown All Powered-On VMs</button>`}
                     ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                     <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
                     <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
@@ -7658,7 +7706,7 @@
     function applyHubHelp(show) {
       $("hub-body")?.classList.toggle("help-hidden", !show);
       document.querySelectorAll(".hub-help-btn").forEach((btn) => {
-        btn.textContent = show ? "Hide help" : "Show help";
+        btn.textContent = show ? "Hide help" : "Show Help";
       });
     }
 
@@ -8054,7 +8102,7 @@
         : labels.join(", ");
       if (!await confirmAction(
         `Remove ${rows.length} saved content row(s) from this list?\n\n${preview}\n\nThis does not delete saved content in dCloud.`,
-        { title: all ? "Remove all from list" : "Remove from list", okLabel: "Remove" }
+        { title: all ? "Remove all from list" : "Remove from List", okLabel: "Remove" }
       )) {
         return;
       }
@@ -8266,7 +8314,7 @@
       const preview = rows.map((row) => `${row.site.toUpperCase()} ${row.saved_id} → ${row.target_id} (${vms.join(", ")})`).join("\n");
       if (!await confirmAction(
         `Submit CAI VM replacement for ${rows.length} saved content item(s)?\n\n${preview}\n\nThis copies the checked VMs into the target demo in the same DC. A wrong Target ID fails in CAI.`,
-        { title: "Submit VM replacement" }
+        { title: "Submit VM Replacement" }
       )) {
         return;
       }
@@ -8346,7 +8394,7 @@
       const preview = rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id} → ${remaining.join(", ").toUpperCase()}`).join("\n");
       if (!await confirmAction(
         `Submit CAI integration for ${rows.length} saved content item(s)?\n\n${preview}\n\nSame as selecting dest DCs and clicking Integrate on the CAI demo page.`,
-        { title: "Submit integration" }
+        { title: "Submit Integration" }
       )) {
         return;
       }
@@ -8570,7 +8618,7 @@
     async function clearCaiTemplates() {
       if (!await confirmAction(
         "Clear the template request list in this tool?\n\nCAI keeps its own task list; this only clears what is shown here.",
-        { title: "Clear template list" }
+        { title: "Clear Template List" }
       )) {
         return;
       }
@@ -8609,7 +8657,7 @@
       if (!await confirmAction(
         `Create a template from ${sourcePath} VM "${server}" in ${dcs.map((dc) => dc.toUpperCase()).join(", ")}?`
         + "\n\nThe folder and the VM name are both case sensitive — CAI returns Error if either is off.",
-        { title: "Submit CAI template", okLabel: "Submit template" }
+        { title: "Submit CAI Template", okLabel: "Submit Template" }
       )) {
         return;
       }
@@ -8631,7 +8679,7 @@
               + "add the VM to a blank demo, save it, transfer that demo out, then come back and use the "
               + "folder from the transfer email (like RTP/1348363) with every site checked."
             : "CAI accepted the template request. It is listed under Template requests below with a status per site.",
-          { title: "Template request submitted" }
+          { title: "Template Request Submitted" }
         );
         renderCaiTemplateTasks(data.templates || []);
         startCaiTemplatePoll();
@@ -8960,7 +9008,7 @@
       if (!await confirmAction(
         `Transfer ${vms.length} VM(s) from ${label} vPod ${vpod} to ${home}?\n\n${vms.join(", ")}`
         + "\n\nDev transfers are not integrated — this only copies the VMs back to the datacenter.",
-        { title: "Submit dev transfer" }
+        { title: "Submit Dev Transfer" }
       )) {
         return;
       }
@@ -9047,7 +9095,7 @@
     }
 
     async function loadCamgrVms() {
-      if (rejectCdevCamgrDemoAction("Load transfer VMs")) return;
+      if (rejectCdevCamgrDemoAction("Load Transfer VMs")) return;
       const rows = requireSameDemoRows("Check at least one saved content row to load transfer VMs.", "load transfer VMs");
       if (!rows) return;
       $("btn-camgr-load-vms").disabled = true;
@@ -9076,7 +9124,7 @@
     }
 
     async function submitCamgrTransfer() {
-      if (rejectCdevCamgrDemoAction("Submit transfer")) return;
+      if (rejectCdevCamgrDemoAction("Submit Transfer")) return;
       const rows = requireSameDemoRows("Check at least one saved content row.", "submit a transfer");
       if (!rows) return;
       const vms = selectedCamgrVms();
@@ -9104,7 +9152,7 @@
         `Submit CAMGR transfer for ${rows.length} saved content item(s)?\n\n${preview}`
         + (autoIntegrate ? `\n\nWhen CAMGR is COMPLETE, automatically Submit CAI Integrate to the same DCs (${dcs.join(", ")}).` : "")
         + (autoBurnIn ? `\n\nWhen integration finishes, schedule each new demo for a ${burnInDays}-day burn-in at the next available time.` : ""),
-        { title: "Submit transfer" }
+        { title: "Submit Transfer" }
       )) {
         return;
       }
@@ -9415,7 +9463,7 @@
           : rootIsSelf
             ? `<span title="${escapeHtml(String(row.rootNote || "").trim() || "This saved content is the original base.")}">${escapeHtml(savedId)}</span> <span class="hint">(this is the base)</span>`
             : root
-              ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as target</button>` : ""}`
+              ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as Target</button>` : ""}`
               : `<span class="hint" title="${escapeHtml(String(row.rootNote || "").trim() || (camgrLoggedIn ? "CAMGR has not answered for this row yet — use Recheck root IDs." : "Connect to CAMGR to load the original base demo ID."))}">—</span>`;
         const savedLink = isDevSite
           ? `<span class="hint" title="ContentDEV transfers use a vPod, not a saved demo ID.">—</span>`
@@ -9475,7 +9523,7 @@
 
     let manualDcloudTokenValidated = false;
     let attachSessionsBusy = false;
-    const ATTACH_SESSIONS_LABEL = "Add to monitoring";
+    const ATTACH_SESSIONS_LABEL = "Add to Monitoring";
 
     function formatSessionExpiry(expiresAt) {
       if (!expiresAt) return "";
@@ -10172,7 +10220,7 @@
       const detail = lines.length
         ? `<span class="run-result-detail">${lines.join(" · ")}</span>`
         : "";
-      const show = '<button type="button" class="linkish btn-show-workspace">Show in Job workspace</button>';
+      const show = '<button type="button" class="linkish btn-show-workspace">Show in Job Workspace</button>';
       if (pending) {
         setRunResult(`Scheduling ${expected} session${expected === 1 ? "" : "s"}…${detail}${show}`);
         return;
@@ -10211,7 +10259,7 @@
       if (exported && !selected.length) {
         if (!await confirmAction(
           "No VMs are checked, so nothing will power on. Schedule anyway?",
-          { title: "No VMs checked", okLabel: "Schedule anyway", cancelLabel: "Go back" }
+          { title: "No VMs Checked", okLabel: "Schedule Anyway", cancelLabel: "Go Back" }
         )) {
           revealScheduleLoadVms();
           return;
@@ -10237,8 +10285,8 @@
             + "If you meant a different demo, go back and Load VMs from it first so every DC field is refreshed.",
             {
               title: many ? "Schedule these demos again?" : "Schedule this demo again?",
-              okLabel: "Schedule again",
-              cancelLabel: "Go back",
+              okLabel: "Schedule Again",
+              cancelLabel: "Go Back",
             },
           )) {
             $("btn-run").disabled = false;
@@ -10255,7 +10303,7 @@
           : `copies of the same demo ${MIN_SAME_DEMO_GAP_MINUTES} minutes apart`;
         if (!await confirmAction(
           `Schedule ${total} session${total === 1 ? "" : "s"} (${gap})? Each one gets its own session ID.`,
-          { title: "Schedule several sessions", okLabel: `Schedule ${total}`, cancelLabel: "Go back" }
+          { title: "Schedule Several Sessions", okLabel: `Schedule ${total}`, cancelLabel: "Go Back" }
         )) {
           $("btn-run").disabled = false;
           return;
@@ -10461,7 +10509,7 @@
             groups.length > 1
               ? "Enter a save name for each demo, or cancel the save."
               : "Enter a save name, or cancel the save.",
-            { title: "Name needed" }
+            { title: "Name Needed" }
           );
           return null;
         }
@@ -10482,7 +10530,7 @@
       if (theirs.length) {
         showActionAlert(
           `Skipping sessions you do not own:\n${ownerLabels(theirs).join("\n")}\n\nOnly the owner can shut down and save a session.`,
-          { title: "Not your session" }
+          { title: "Not Your Session" }
         );
       }
       if (!targets.length) {
@@ -10496,7 +10544,7 @@
       if (!singleCard) {
         if (!await confirmAction(
           `Guest-shutdown and save these sessions?\n\n${list}\n\nEach one waits for its VMs to power off before saving. Already-saved sessions are not included.`,
-          { title: "Guest shutdown & save" }
+          { title: "Guest Shutdown & Save" }
         )) {
           return;
         }
@@ -10546,7 +10594,7 @@
       const msg = hasMonitor
         ? "Remove job workspace cards from this tool? Monitoring cards will stay. Nothing is ended or saved in dCloud."
         : "Remove these session cards from this tool? This does not end or save anything in dCloud.";
-      if (!await confirmAction(msg, { title: "Remove cards" })) {
+      if (!await confirmAction(msg, { title: "Remove Cards" })) {
         return;
       }
       const id = jobId;
@@ -10707,32 +10755,32 @@
     const FRESH_SCOPES = [
       {
         id: "token",
-        label: "dCloud sign-in",
+        label: "dCloud Sign-In",
         hint: "Drops the token this tool holds, so Sign in to dCloud returns to the login controls.",
       },
       {
         id: "step2",
-        label: "Load VMs (optional power-on picks)",
+        label: "Load VMs (Optional Power-On Picks)",
         hint: "Datacenter, source ID, and the loaded VM list inside Schedule sessions.",
       },
       {
         id: "step3",
-        label: "Schedule sessions — demo IDs and schedule",
+        label: "Schedule Sessions — Demo IDs and Schedule",
         hint: "Per-DC IDs, catalog hints, duration, and dates.",
       },
       {
         id: "saved-schedule",
-        label: "Manage your own saved content",
-        hint: "Saved-content search results and their checked rows.",
+        label: "My Content",
+        hint: "Saved content and active session search results, and their checked rows.",
       },
       {
         id: "cards",
-        label: "Job workspace cards",
+        label: "Job Workspace Cards",
         hint: "Cards in the job workspace and the saved job file. Sessions keep running in dCloud.",
       },
       {
         id: "monitoring",
-        label: "Session monitoring",
+        label: "Session Monitoring",
         hint: "Monitoring cards and the found-sessions list. Sessions keep running in dCloud.",
       },
       {
@@ -10747,7 +10795,7 @@
       },
       {
         id: "layout",
-        label: "Page layout",
+        label: "Page Layout",
         hint: "Every section back to its default open or closed state, scrolled to the top.",
       },
     ];
@@ -10785,7 +10833,7 @@
       const picked = await askFreshScopes();
       if (!picked) return;
       if (!picked.size) {
-        showActionAlert("Nothing was checked, so nothing was cleared.", { title: "Start fresh" });
+        showActionAlert("Nothing was checked, so nothing was cleared.", { title: "Start Fresh" });
         return;
       }
       showError("");
@@ -10854,7 +10902,7 @@
           ? "Cancelling it drops someone else's scheduled session. Are you sure?"
           : "Ending it destroys someone else's running work with no save. Are you sure?"),
         {
-          title: "Not your session",
+          title: "Not Your Session",
           okLabel: notStarted ? "Yes, cancel it anyway" : "Yes, end it anyway",
           cancelLabel: notStarted ? "Keep it" : "Cancel",
         }
@@ -10868,11 +10916,11 @@
           : `End these sessions without saving?\n\n${list}\n\nSame as dCloud /end — the session is discarded.`,
         notStarted
           ? {
-            title: one ? "Cancel session" : "Cancel sessions",
-            okLabel: one ? "Cancel session" : "Cancel sessions",
-            cancelLabel: "Keep it",
+            title: one ? "Cancel Session" : "Cancel sessions",
+            okLabel: one ? "Cancel Session" : "Cancel sessions",
+            cancelLabel: "Keep It",
           }
-          : { title: "End sessions" }
+          : { title: "End Sessions" }
       )) {
         return;
       }
@@ -10910,7 +10958,7 @@
       const summary = bulkSessionLabels(targets).join("; ") || "this session";
       if (!await confirmAction(
         `Reset in dCloud?\n\n${list}\n\nSame as the Reset button in the dCloud dashboard: the session is torn down and rebuilt with the same demo and session ID. It disappears for a while before it comes back.`,
-        { title: "Reset session", okLabel: "Reset session" }
+        { title: "Reset Session", okLabel: "Reset Session" }
       )) {
         return;
       }
@@ -10970,7 +11018,7 @@
       const confirmMsg = extraMinutes >= 30
         ? `Extend these sessions by ${formatExtendAmount(extraMinutes)} from each session's current end?\n\n${list}`
         : `Extend these sessions until ${formatSessionWhen(stopAt)}?\n\n${list}`;
-      if (!await confirmAction(confirmMsg, { title: "Extend sessions" })) {
+      if (!await confirmAction(confirmMsg, { title: "Extend Sessions" })) {
         return;
       }
       showError("");
@@ -11001,7 +11049,7 @@
         }).join("\n");
         const proceed = await confirmAction(
           `You can only go out this far — resources are booked after the session.\n\n${offerList}\n\nExtend to that time?`,
-          { title: "Extend as far as available", okLabel: "Extend to that time" }
+          { title: "Extend as Far as Available", okLabel: "Extend to That Time" }
         );
         if (!proceed) {
           noteLog("Shorter extend declined.");
@@ -11161,7 +11209,7 @@
       if (powerBtn) {
         powerBtn.textContent = prompt.saveAfter
           ? "Power off remaining VMs and save"
-          : "Power off remaining VMs";
+          : "Power Off Remaining VMs";
         powerBtn.dataset.site = pending.site || "";
         powerBtn.dataset.session = pending.sessionId || "";
       }
@@ -11357,7 +11405,7 @@
     const SETTINGS_KEY = "dcloud-content-manager-settings-v1";
     const DEFAULT_NAV_ITEMS = Object.freeze([
       { id: "schedule", title: "Schedule" },
-      { id: "saved", title: "Saved content" },
+      { id: "saved", title: "My Content" },
       { id: "workspace", title: "Workspace" },
       { id: "monitor", title: "Monitor" },
       { id: "hub", title: "Hub" },
@@ -11616,10 +11664,10 @@
       const btn = $("btn-theme");
       if (btn) {
         btn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
-        btn.setAttribute("data-tip", dark ? "Light theme" : "Dark theme");
+        btn.setAttribute("data-tip", dark ? "Light Theme" : "Dark theme");
       }
       const accountTheme = $("account-theme");
-      if (accountTheme) accountTheme.textContent = dark ? "Light theme" : "Dark theme";
+      if (accountTheme) accountTheme.textContent = dark ? "Light Theme" : "Dark theme";
     }
 
     function persistTheme(theme) {
@@ -12258,14 +12306,19 @@
       const container = $(config.container);
       const input = $(config.input);
       if (!container || !input) return;
-      const needle = input.value.trim().toLowerCase();
+      const own = input.value.trim().toLowerCase();
+      const shares = config.input === "filter-schedule-saved" || config.input === "filter-found-sessions";
+      const sharedInput = shares ? $("filter-my-content") : null;
+      const shared = sharedInput ? sharedInput.value.trim().toLowerCase() : "";
+      const filtering = Boolean(shared || own);
       let total = 0;
       let shown = 0;
       let hiddenChecked = 0;
       const rowSelector = config.rowSelector || "table tbody tr";
       container.querySelectorAll(rowSelector).forEach((row) => {
         total += 1;
-        const match = !needle || row.textContent.toLowerCase().includes(needle);
+        const text = row.textContent.toLowerCase();
+        const match = (!shared || text.includes(shared)) && (!own || text.includes(own));
         row.classList.toggle("filtered-out", !match);
         if (match) {
           shown += 1;
@@ -12279,14 +12332,14 @@
         container.querySelectorAll(selector).forEach((group) => {
           const rows = [...group.querySelectorAll(rowSelector)];
           const visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
-          group.classList.toggle("filtered-out", Boolean(needle) && rows.length > 0 && visible === 0);
-          if (needle && visible) group.open = true;
+          group.classList.toggle("filtered-out", filtering && rows.length > 0 && visible === 0);
+          if (filtering && visible) group.open = true;
           // Event site groups count events, not rows, so leave their titles alone.
           if (config.retitleGroups === false || !group.matches("details.dc-group")) return;
           const title = group.querySelector(".dc-group-title");
           if (!title) return;
           const site = String(group.dataset.site || "").toUpperCase();
-          title.textContent = needle
+          title.textContent = filtering
             ? `${site} (${visible} of ${rows.length})`
             : `${site} (${rows.length})`;
         });
@@ -12299,12 +12352,47 @@
             ? " 1 checked row is hidden by this filter and still counts toward the buttons above."
             : ` ${hiddenChecked} checked rows are hidden by this filter and still count toward the buttons above.`)
           : "";
-        status.textContent = needle
+        status.textContent = own
           ? `Showing ${shown} of ${total} ${noun} matching “${input.value.trim()}”.${hidden}`
           : "";
       }
+      if (shares) updateMyContentFilterStatus();
       config.sync?.();
       makeColumnsResizable(config.container);
+    }
+
+    function updateMyContentFilterStatus() {
+      const input = $("filter-my-content");
+      const status = $("filter-my-content-status");
+      if (!input || !status) return;
+      const needle = input.value.trim();
+      if (!needle) {
+        status.textContent = "";
+        return;
+      }
+      const lists = [
+        ["found-sessions", "session"],
+        ["found-schedule-saved", "saved content item"],
+      ];
+      const parts = [];
+      let hiddenChecked = 0;
+      for (const [id, noun] of lists) {
+        const rows = [...($(id)?.querySelectorAll("table tbody tr") || [])];
+        if (!rows.length) continue;
+        const shown = rows.filter((row) => !row.classList.contains("filtered-out")).length;
+        hiddenChecked += rows.filter((row) => (
+          row.classList.contains("filtered-out") && row.querySelector('input[type="checkbox"]:checked')
+        )).length;
+        parts.push(`${shown} of ${rows.length} ${noun}${rows.length === 1 ? "" : "s"}`);
+      }
+      const hidden = hiddenChecked
+        ? (hiddenChecked === 1
+          ? " 1 checked row is hidden by this filter and still counts toward the buttons below."
+          : ` ${hiddenChecked} checked rows are hidden by this filter and still count toward the buttons below.`)
+        : "";
+      status.textContent = parts.length
+        ? `Showing ${parts.join(" and ")} matching “${needle}”.${hidden}`
+        : `No saved content or active sessions loaded yet to match “${needle}”.`;
     }
 
     function refreshListFilters() {
@@ -12480,7 +12568,7 @@
       return LIST_FILTERS.find((config) => config.input === inputId) || { input: inputId };
     }
 
-    function setFoundSessionsPanelVisible(visible, { open = true, sessionCount = null } = {}) {
+    function setFoundSessionsPanelVisible(visible, { open = true, sessionCount = null, pending = false } = {}) {
       const panel = $("found-sessions-panel");
       if (!panel) return;
       panel.classList.toggle("hidden", !visible);
@@ -12488,10 +12576,10 @@
         panel.open = persistedPanelOpen("found-sessions-panel", open);
         const summary = $("found-sessions-summary");
         if (summary) {
-          const count = sessionCount ?? document.querySelectorAll(".found-session:not(:disabled)").length;
-          summary.textContent = count
-            ? `Your active dCloud sessions (${count}) — click to expand or collapse`
-            : "Your active dCloud sessions — click to expand or collapse";
+          const count = sessionCount ?? document.querySelectorAll(".found-session").length;
+          summary.textContent = pending
+            ? "Your Active Sessions — click Find above to retrieve your sessions."
+            : `Your Active Sessions (${count})`;
         }
       }
       if (!visible) syncAttachSessionsButton();
@@ -12522,6 +12610,70 @@
       }
     }
 
+    function foundSessionActionsMenu(row) {
+      const status = String(row.status || "").toLowerCase();
+      const scheduled = status === "scheduled";
+      const active = Boolean(row.active) || status === "active";
+      const unavailable = String(row.rawStatus ?? "") === "95" || status === "vc unavailable";
+      const error = String(row.rawStatus ?? "") === "99" || status === "error";
+      const terminal = ["cancelled", "canceled", "deleted"].includes(status);
+      const attachable = !terminal && !unavailable && !error;
+      const site = escapeHtml(row.site);
+      const sessionId = escapeHtml(row.sessionId);
+      const name = escapeHtml(row.name || "");
+      const attrs = [
+        `data-site="${site}"`,
+        `data-session="${sessionId}"`,
+        `data-name="${name}"`,
+        `data-status="${escapeHtml(row.status || "")}"`,
+        `data-raw-status="${escapeHtml(row.rawStatus ?? "")}"`,
+        `data-demo-id="${escapeHtml(row.demoId || "")}"`,
+        `data-view-url="${escapeHtml(row.viewUrl || "")}"`,
+      ].join(" ");
+      return `
+        <details class="vm-menu search-actions-menu found-session-actions" ${attrs}>
+          <summary data-tip="Info, edit, save, reset, logs, share, end, or add this session.">Actions</summary>
+          <div class="vm-menu-list">
+            <button type="button" class="found-session-action" data-action="info">Info</button>
+            ${attachable ? `<button type="button" class="found-session-action btn-add-found-session" data-action="monitor" data-site="${site}" data-session="${sessionId}" data-tip="Add just this session as a monitoring card.">Add to Monitoring</button>` : ""}
+            ${attachable ? `<button type="button" class="found-session-action" data-action="workspace" data-site="${site}" data-session="${sessionId}">Add to Job Workspace</button>` : ""}
+            ${scheduled || active ? `<button type="button" class="found-session-action" data-action="edit">Edit…</button>` : ""}
+            ${active ? `<button type="button" class="found-session-action" data-action="save">Save</button>` : ""}
+            ${active || error ? `<button type="button" class="found-session-action" data-action="reset">Reset</button>` : ""}
+            ${active || terminal || unavailable || error ? `<button type="button" class="found-session-action" data-action="logs">Logs</button>` : ""}
+            ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View Session</a>` : ""}
+            ${row.demoId ? `<button type="button" class="found-session-action" data-action="demo">Go to Demo</button>` : ""}
+            <button type="button" class="found-session-action btn-dc-share" data-action="share" data-share-kind="session" data-site="${site}" data-session="${sessionId}" data-name="${name}">Share…</button>
+            ${scheduled ? `<button type="button" class="danger found-session-action" data-action="cancel">Cancel Session</button>` : ""}
+            ${active ? `<button type="button" class="danger found-session-action" data-action="end">End Session</button>` : ""}
+          </div>
+        </details>
+      `;
+    }
+
+    function foundSessionActionRow(menu) {
+      if (!menu) return null;
+      return {
+        id: menu.dataset.session || "",
+        site: menu.dataset.site || "",
+        name: menu.dataset.name || "",
+        status: menu.dataset.status || "",
+        rawStatus: menu.dataset.rawStatus || "",
+        demoId: menu.dataset.demoId || "",
+        viewUrl: menu.dataset.viewUrl || "",
+      };
+    }
+
+    function bindFoundSessionActionMenus() {
+      $("found-sessions")?.querySelectorAll("details.found-session-actions").forEach((menu) => {
+        menu.addEventListener("toggle", () => {
+          if (!menu.open) return;
+          closeSearchActionsMenus(menu);
+          positionSearchActionsMenu(menu);
+        });
+      });
+    }
+
     function renderFoundSessions(data) {
       const rows = data.sessions || [];
       const groups = groupRowsBySite(rows);
@@ -12543,9 +12695,7 @@
                   <td class="mono">${escapeHtml(row.sessionId)}</td>
                   <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
                   <td>${escapeHtml(row.status)}</td>
-                  <td class="saved-actions">
-                    <button type="button" class="secondary btn-add-found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" data-tip="Add just this session as a monitoring card.">Add</button>
-                  </td>
+                  <td class="saved-actions">${foundSessionActionsMenu(row)}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -12558,9 +12708,9 @@
         ${renderErrorHints(data.errors)}
         ${body}
       `;
-      const attachable = rows.filter((row) => row.sessionId).length;
-      setFoundSessionsPanelVisible(rows.length > 0, { open: true, sessionCount: attachable });
+      setFoundSessionsPanelVisible(true, { open: true, sessionCount: rows.length });
       markFoundSessionsOnCards(lastRenderedJob);
+      bindFoundSessionActionMenus();
       applyListFilter(listFilterConfig("filter-found-sessions"));
     }
 
@@ -12650,7 +12800,7 @@
             <summary data-tip="Schedule, edit, share, or delete this saved content.">Actions</summary>
             <div class="vm-menu-list">
               <button type="button" class="btn-managed-schedule" ${rowData}>Schedule</button>
-              ${row.contentViewUrl ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">Edit topology</a>` : ""}
+              ${row.contentViewUrl ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">Edit Topology</a>` : ""}
               <button type="button" class="btn-saved-share" ${rowData} data-share-kind="content">Share…</button>
               ${deletable ? `<button type="button" class="danger btn-managed-delete" ${rowData}>Delete…</button>` : ""}
             </div>
@@ -12792,11 +12942,18 @@
       return "found-saved-dc-head";
     }
 
-    function setScheduleSavedPanelVisible(visible) {
+    function setScheduleSavedPanelVisible(visible, { contentCount = null } = {}) {
       const panel = $("found-schedule-saved-panel");
       if (!panel) return;
       panel.classList.toggle("hidden", !visible);
-      if (visible) panel.open = persistedPanelOpen("found-schedule-saved-panel", true);
+      if (visible) {
+        panel.open = persistedPanelOpen("found-schedule-saved-panel", true);
+        const summary = $("found-schedule-saved-summary");
+        if (summary) {
+          const count = contentCount ?? document.querySelectorAll("#found-schedule-saved .schedule-saved-content").length;
+          summary.textContent = `Your Saved Content (${count})`;
+        }
+      }
     }
 
     function clearFoundSavedResults(mount) {
@@ -12887,7 +13044,7 @@
         const promotedBody = promotedGroups.length
           ? `
             <details class="saved-promoted-group" id="saved-promoted-group">
-              <summary>Topology Builder v2 promoted — EOL only (${promotedRows.length})</summary>
+              <summary>Topology Builder V2 Promoted — EOL only (${promotedRows.length})</summary>
               <p class="hint">These items can still be scheduled, edited, or shared, but dCloud does not allow them to be deleted directly. EOL them in the <a href="${DCLOUD_CATALOG_EOL_URL}" target="_blank" rel="noopener noreferrer">dCloud Content Catalog</a>.</p>
               ${promotedGroups.map(({ site, rows: siteRows }) => `
                 <p class="saved-promoted-site">${escapeHtml(site.toUpperCase())} (${siteRows.length})</p>
@@ -12903,7 +13060,7 @@
             ${body}
           `;
         }
-        setScheduleSavedPanelVisible(true);
+        setScheduleSavedPanelVisible(true, { contentCount: rows.length });
         const promotedEl = $("saved-promoted-group");
         if (promotedEl) promotedEl.open = persistedPanelOpen("saved-promoted-group", promotedEl.open);
         restoreFoundContentChecks(itemClass, checkedKeys);
@@ -13098,7 +13255,9 @@
       }
       const selector = forSchedule ? ".schedule-saved-content" : ".found-saved-content";
       if (!document.querySelector(selector)) {
-        showError("Click Find saved content first, then use Recheck saved IDs.");
+        showError(forSchedule
+          ? "Click Find my saved content first, then use Recheck saved IDs."
+          : "Click Find saved content first, then use Recheck saved IDs.");
         return;
       }
       showError("");
@@ -13114,7 +13273,7 @@
       if (!ensureTokenReady("declining surveys")) return;
       if (!await confirmAction(
         `Decline all pending session feedback surveys in ${SITE_ORDER.map((site) => site.toUpperCase()).join(", ")}?\n\nThis matches clicking Decline on each survey in the dCloud dashboard.`,
-        { title: "Decline surveys" }
+        { title: "Decline Surveys" }
       )) {
         return;
       }
@@ -13150,10 +13309,11 @@
       }
     }
 
-    async function findSavedContents(mount = "schedule", { refresh = false } = {}) {
-      await unifiedSavedDataReady;
-      showError("");
+    async function findSavedContents(mount = "schedule", { refresh = false, clearError = true } = {}) {
       const thisMount = mount === "saved-ids" ? mount : "schedule";
+      const hintId = thisMount === "saved-ids" ? "saved-ids-found-cache-status" : "found-schedule-saved-cache-status";
+      await unifiedSavedDataReady;
+      if (clearError) showError("");
       foundSavedMount = thisMount;
       if (thisMount === "schedule") {
         const panel = $("panel-saved-schedule");
@@ -13170,7 +13330,10 @@
             usedCache: true,
           };
         } else {
-          if (!ensureTokenReady("finding saved content")) return;
+          if (!ensureTokenReady("finding saved content")) {
+            setFinderCacheHint(hintId, "mine-content", sites, { usedCache: true });
+            return null;
+          }
           data = await api("/api/contents/mine", {
             method: "POST",
             body: JSON.stringify({ ...tokenPayload(), refresh: Boolean(refresh), sites: missing }),
@@ -13186,7 +13349,6 @@
           };
         }
         renderFoundSaved(data, thisMount);
-        const hintId = thisMount === "saved-ids" ? "saved-ids-found-cache-status" : "found-schedule-saved-cache-status";
         setFinderCacheHint(hintId, "mine-content", sites, { usedCache: data.usedCache });
         const rows = data.contents || [];
         const deletable = rows.filter((row) => row.deletable !== false && !row.eolOnly).length;
@@ -13205,9 +13367,12 @@
         } else {
           noteLog("No saved custom content found in any DC.");
         }
+        return { count: rows.length };
       } catch (err) {
         clearFoundSavedResults(thisMount);
+        setFinderCacheHint(hintId, "mine-content", sites, { usedCache: true });
         showError(err.message);
+        return null;
       }
     }
 
@@ -13284,7 +13449,7 @@
       const more = selected.length > 12 ? `\n…and ${selected.length - 12} more` : "";
       if (!await confirmAction(
         `Permanently delete ${selected.length} saved content item(s)?\n\n${preview}${more}\n\nThis cannot be undone.`,
-        { title: "Delete saved content", okLabel: "Delete" }
+        { title: "Delete Saved Content", okLabel: "Delete" }
       )) {
         return;
       }
@@ -13384,7 +13549,7 @@
       if (names.length > 1) {
         if (!await confirmAction(
           `Checked rows have different names:\n\n${names.map((name) => `• ${name}`).join("\n")}\n\nCopy them anyway? Each DC keeps its own content ID.`,
-          { title: "Different saved content names", okLabel: "Copy anyway", cancelLabel: "Go back" },
+          { title: "Different Saved Content Names", okLabel: "Copy Anyway", cancelLabel: "Go Back" },
         )) {
           return;
         }
@@ -13441,7 +13606,7 @@
         name: box.dataset.name || "",
       }));
       if (!selected.length) {
-        showError("Find saved content in Manage your own saved content, then check the items to schedule.");
+        showError("Find my saved content on My Content, then check the items to schedule.");
         return;
       }
       const selectedVms = selectedVmsForSchedule();
@@ -13452,7 +13617,7 @@
       if (exportedSaved && !selectedVms.length) {
         if (!await confirmAction(
           "No VMs are checked in Load VMs, so nothing will power on after these sessions start. Schedule anyway?",
-          { title: "No VMs checked", okLabel: "Schedule anyway", cancelLabel: "Go back" }
+          { title: "No VMs Checked", okLabel: "Schedule Anyway", cancelLabel: "Go Back" }
         )) {
           revealScheduleLoadVms();
           return;
@@ -13477,7 +13642,7 @@
         : "";
       if (!await confirmAction(
         `Schedule ${selected.length} saved content item(s) as ${kind} sessions?\n\n${preview}${more}${copyNote}${gapNote}\n\nAll selected DCs are scheduled in parallel (multiple sessions per DC are allowed).`,
-        { title: "Schedule saved content" }
+        { title: "Schedule Saved Content" }
       )) {
         return;
       }
@@ -13544,22 +13709,88 @@
       };
     }
 
-    async function findSessions({ refresh = false } = {}) {
-      showError("");
+    async function findSessions({ refresh = false, clearError = true } = {}) {
+      if (clearError) showError("");
       try {
         const data = await loadMineSessions({ refresh });
-        if (!data) return;
+        if (!data) {
+          setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: true });
+          return null;
+        }
         renderFoundSessions(data);
         setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: data.usedCache });
         const count = (data.sessions || []).length;
         noteLog(data.usedCache
           ? `Showing ${count} cached session(s) from ${finderAgeLine("mine-sessions", SITE_ORDER)}.`
           : (count ? `Found ${count} session(s) on your dashboard.` : "No active sessions on your dCloud dashboard."));
+        return { count };
       } catch (err) {
         $("found-sessions").innerHTML = "";
-        setFoundSessionsPanelVisible(false);
+        setFoundSessionsPanelVisible(true, { pending: true });
+        setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: true });
         showError(err.message);
+        return null;
       }
+    }
+
+    function myContentPullToast(sessions, content) {
+      const bits = [];
+      if (sessions) bits.push(sessions.count === 1 ? "1 active session" : `${sessions.count} active sessions`);
+      if (content) bits.push(content.count === 1 ? "1 saved content item" : `${content.count} saved content items`);
+      return bits.length ? `Found ${bits.join(" and ")}.` : "";
+    }
+
+    const MY_CONTENT_FIND_LABELS = {
+      "btn-find-sessions": "Find My Active Sessions",
+      "btn-refresh-sessions": "Refresh Sessions",
+      "btn-find-schedule-saved": "Find My Saved Content",
+      "btn-refresh-schedule-saved": "Refresh Saved Content",
+      "btn-find-both": "Find Both",
+    };
+    let myContentFindBusy = false;
+
+    const MY_CONTENT_ACTIVITY = {
+      "btn-find-sessions": "Pulling your active sessions from dCloud…",
+      "btn-refresh-sessions": "Pulling your active sessions from dCloud…",
+      "btn-find-schedule-saved": "Pulling your saved content from dCloud…",
+      "btn-refresh-schedule-saved": "Pulling your saved content from dCloud…",
+      "btn-find-both": "Pulling your active sessions and your saved content from dCloud…",
+    };
+
+    async function runMyContentPull(activeId, busyLabel, work) {
+      if (myContentFindBusy) return;
+      myContentFindBusy = true;
+      const activity = $("my-content-activity");
+      if (activity) activity.textContent = MY_CONTENT_ACTIVITY[activeId] || "";
+      for (const id of Object.keys(MY_CONTENT_FIND_LABELS)) {
+        const button = $(id);
+        if (!button) continue;
+        button.disabled = true;
+        button.classList.add("is-busy");
+        button.setAttribute("aria-busy", "true");
+        if (id === activeId) button.textContent = busyLabel;
+      }
+      try {
+        await work();
+      } finally {
+        myContentFindBusy = false;
+        const activity = $("my-content-activity");
+        if (activity) activity.textContent = "";
+        for (const [id, label] of Object.entries(MY_CONTENT_FIND_LABELS)) {
+          const button = $(id);
+          if (!button) continue;
+          button.disabled = false;
+          button.classList.remove("is-busy");
+          button.removeAttribute("aria-busy");
+          button.textContent = label;
+        }
+      }
+    }
+
+    async function findBothMyContent({ refresh = true } = {}) {
+      const sessions = await findSessions({ refresh });
+      const content = await findSavedContents("schedule", { refresh, clearError: false });
+      return { sessions, content };
     }
 
     function syncWorkspaceFoundAll() {
@@ -13617,7 +13848,7 @@
       if (rows.length) {
         panel.open = true;
         $("found-workspace-sessions-summary").textContent =
-          `Your active dCloud sessions (${rows.length}) — click to expand or collapse`;
+          `Your Active dCloud Sessions (${rows.length}) — click to expand or collapse`;
       }
       syncWorkspaceFoundAll();
       applyListFilter(listFilterConfig("filter-workspace-sessions"));
@@ -13642,7 +13873,7 @@
       } finally {
         if (button) {
           button.disabled = false;
-          button.textContent = refresh ? "Refresh" : "Find my sessions";
+          button.textContent = refresh ? "Refresh" : "Find My Sessions";
         }
       }
     }
@@ -13705,7 +13936,7 @@
           .map((row) => ({ site: row.site || site, session_id: row.sessionId }))
           .filter((row) => row.session_id);
         button.disabled = false;
-        button.textContent = "Add to job workspace";
+        button.textContent = "Add to Job Workspace";
         await attachWorkspaceSessions(
           sessions,
           button,
@@ -13716,7 +13947,7 @@
         showError(err.message);
       } finally {
         button.disabled = false;
-        button.textContent = "Add to job workspace";
+        button.textContent = "Add to Job Workspace";
       }
     }
 
@@ -13752,7 +13983,7 @@
       } catch (err) {
         button.classList.remove("is-busy");
         button.disabled = false;
-        button.textContent = "Add";
+        button.textContent = "Add to Monitoring";
         showError(err.message);
       } finally {
         button.classList.remove("is-busy");
@@ -13840,7 +14071,7 @@
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "Add to monitoring";
+          btn.textContent = "Add to Monitoring";
         }
       }
     }
@@ -13920,7 +14151,7 @@
       if (!jobId) return;
       if (!await confirmAction(
         "Remove this card from the tool? The dCloud session stays running — this does not end or save it.",
-        { title: "Remove card" }
+        { title: "Remove Card" }
       )) {
         return;
       }
@@ -14055,7 +14286,7 @@
       const hint = $("share-modal-hint");
       const label = $("share-modal-list-label");
       const empty = $("share-current-empty");
-      if (label) label.textContent = targets?.length ? "People to add" : "Shared with";
+      if (label) label.textContent = targets?.length ? "People to add" : "Shared With";
       if (empty) {
         empty.textContent = targets?.length
           ? "No one selected yet. Search below to add people to every checked item."
@@ -14248,7 +14479,7 @@
       });
       showActionAlert(
         `Shared ${added}, ${failed.length} failed:\n\n${lines.map((line) => `• ${line}`).join("\n")}`,
-        { title: "Sharing incomplete" },
+        { title: "Sharing Incomplete" },
       );
       showToast(
         `Shared ${added}, ${failed.length} failed.`,
@@ -14387,7 +14618,7 @@
       input.className = "card-name-input";
       input.maxLength = 255;
       input.value = current === "Untitled session" ? "" : current;
-      input.placeholder = "Session name";
+      input.placeholder = "Session Name";
       const saveBtn = document.createElement("button");
       saveBtn.type = "button";
       saveBtn.className = "card-rename-save";
@@ -14494,21 +14725,21 @@
       if (onBtn) {
         ev.preventDefault();
         if (onBtn.disabled) return;
-        runVmAction(onBtn, "vmPowerOn", "Power on").catch((err) => showError(err.message));
+        runVmAction(onBtn, "vmPowerOn", "Power On").catch((err) => showError(err.message));
         return;
       }
       const hardOffBtn = ev.target.closest(".btn-vm-hard-off");
       if (hardOffBtn) {
         ev.preventDefault();
         if (hardOffBtn.disabled) return;
-        runVmAction(hardOffBtn, "vmPowerOff", "Power off").catch((err) => showError(err.message));
+        runVmAction(hardOffBtn, "vmPowerOff", "Power Off").catch((err) => showError(err.message));
         return;
       }
       const vmBtn = ev.target.closest(".btn-vm-off");
       if (vmBtn) {
         ev.preventDefault();
         if (vmBtn.disabled) return;
-        runVmAction(vmBtn, "guestShutdown", "Guest shutdown").catch((err) => showError(err.message));
+        runVmAction(vmBtn, "guestShutdown", "Guest Shutdown").catch((err) => showError(err.message));
         return;
       }
       const saveBtn = ev.target.closest(".btn-dc-save");
@@ -14885,8 +15116,27 @@
       });
     }
 
-    $("btn-find-sessions").addEventListener("click", () => findSessions().catch((err) => showError(err.message)));
-    $("btn-refresh-sessions")?.addEventListener("click", () => findSessions({ refresh: true }).catch((err) => showError(err.message)));
+    $("btn-find-sessions").addEventListener("click", () => {
+      runMyContentPull("btn-find-sessions", "Finding Sessions…", async () => {
+        const sessions = await findSessions({ refresh: true });
+        const toast = myContentPullToast(sessions, null);
+        if (toast) showToast(toast);
+      }).catch((err) => showError(err.message));
+    });
+    $("btn-refresh-sessions")?.addEventListener("click", () => {
+      runMyContentPull("btn-refresh-sessions", "Refreshing Sessions…", async () => {
+        const sessions = await findSessions({ refresh: true });
+        const toast = myContentPullToast(sessions, null);
+        if (toast) showToast(toast);
+      }).catch((err) => showError(err.message));
+    });
+    $("btn-find-both")?.addEventListener("click", () => {
+      runMyContentPull("btn-find-both", "Finding Both…", async () => {
+        const { sessions, content } = await findBothMyContent({ refresh: true });
+        const toast = myContentPullToast(sessions, content);
+        if (toast) showToast(toast);
+      }).catch((err) => showError(err.message));
+    });
     $("btn-monitor-manual").addEventListener("click", () => addManualMonitoring().catch((err) => showError(err.message)));
     $("monitor-manual-id").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") addManualMonitoring().catch((err) => showError(err.message));
@@ -14916,8 +15166,20 @@
       syncWorkspaceFoundAll();
     });
     $("btn-decline-all-surveys").addEventListener("click", () => declineAllSurveys().catch((err) => showError(err.message)));
-    $("btn-find-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule").catch((err) => showError(err.message)));
-    $("btn-refresh-schedule-saved")?.addEventListener("click", () => findSavedContents("schedule", { refresh: true }).catch((err) => showError(err.message)));
+    $("btn-find-schedule-saved")?.addEventListener("click", () => {
+      runMyContentPull("btn-find-schedule-saved", "Finding Content…", async () => {
+        const content = await findSavedContents("schedule", { refresh: true });
+        const toast = myContentPullToast(null, content);
+        if (toast) showToast(toast);
+      }).catch((err) => showError(err.message));
+    });
+    $("btn-refresh-schedule-saved")?.addEventListener("click", () => {
+      runMyContentPull("btn-refresh-schedule-saved", "Refreshing Content…", async () => {
+        const content = await findSavedContents("schedule", { refresh: true });
+        const toast = myContentPullToast(null, content);
+        if (toast) showToast(toast);
+      }).catch((err) => showError(err.message));
+    });
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
     $("btn-copy-saved-to-schedule")?.addEventListener("click", () => copyCheckedSavedToSchedule().catch((err) => showError(err.message)));
     $("btn-share-schedule-saved")?.addEventListener("click", () => {
@@ -14939,10 +15201,52 @@
       openBulkShareModal(checkedFoundSessionTargets("found-session"));
     });
     $("found-sessions").addEventListener("click", (ev) => {
-      const addBtn = ev.target.closest(".btn-add-found-session");
-      if (!addBtn || addBtn.disabled) return;
-      ev.preventDefault();
-      attachOneMonitorSession(addBtn).catch((err) => showError(err.message));
+      const actionBtn = ev.target.closest(".found-session-action");
+      if (!actionBtn || actionBtn.disabled) return;
+      const action = actionBtn.dataset.action || "";
+      if (action === "share") {
+        ev.preventDefault();
+        openShareModal(actionBtn).catch((err) => showError(err.message));
+        return;
+      }
+      const menu = actionBtn.closest(".found-session-actions");
+      const row = foundSessionActionRow(menu);
+      if (menu) menu.open = false;
+      if (action === "monitor") {
+        ev.preventDefault();
+        attachOneMonitorSession(actionBtn).catch((err) => showError(err.message));
+        return;
+      }
+      if (action === "workspace") {
+        ev.preventDefault();
+        attachOneWorkspaceSession(actionBtn).catch((err) => showError(err.message));
+        return;
+      }
+      if (!row) return;
+      if (action === "info") {
+        showSessionInfo({ site: row.site, sessionId: row.id, label: row.name });
+        return;
+      }
+      if (action === "demo") {
+        showContentForDemo(row.site, row.demoId).catch((err) => showError(err.message));
+        return;
+      }
+      if (action === "edit") {
+        if (!ensureTokenReady("editing the session")) return;
+        openSessionEditModal(row);
+        return;
+      }
+      if (action === "logs") {
+        if (!ensureTokenReady("loading the session log")) return;
+        showSessionLog(row);
+        return;
+      }
+      const sessionActions = { cancel: "cancel", end: "end", save: "save", reset: "reset" };
+      if (sessionActions[action]) {
+        runSearchSessionAction(row, sessionActions[action]).catch((err) => {
+          showToast(err.message || "Session action failed.", { kind: "err" });
+        });
+      }
     });
     $("found-workspace-sessions").addEventListener("click", (ev) => {
       const addBtn = ev.target.closest(".btn-add-workspace-session");
@@ -14964,6 +15268,10 @@
     });
     LIST_FILTERS.forEach((config) => {
       $(config.input)?.addEventListener("input", () => applyListFilter(config));
+    });
+    $("filter-my-content")?.addEventListener("input", () => {
+      applyListFilter(listFilterConfig("filter-schedule-saved"));
+      applyListFilter(listFilterConfig("filter-found-sessions"));
     });
     bindFoundSavedListEvents("found-schedule-saved", "schedule-saved-content", "schedule-saved-dc-head", syncScheduleSavedAll);
     bindFoundSavedListEvents("saved-ids-found", "saved-ids-found-content", "saved-ids-found-dc-head", syncSavedIdsFoundAll);
@@ -15301,7 +15609,10 @@
         const site = menu?.dataset.site || "";
         const id = menu?.dataset.id || "";
         const row = findUnifiedRow(source, site, id);
-        if (!row) return;
+        if (!row) {
+          showToast("Could not find that row in the current list. Refresh loaded data and try again.", { kind: "warn" });
+          return;
+        }
         menu.open = false;
         const action = actionButton.dataset.action || "";
         if (action === "content-schedule") {
@@ -15317,7 +15628,7 @@
           const labels = {
             "content-filters": "Filters",
             "content-permissions": "Permissions",
-            "content-resources": "Content resources",
+            "content-resources": "Content Resources",
           };
           loadContentActionDetails(row, labels[action] || "Details");
           return;
@@ -15354,7 +15665,11 @@
           "session-save": "save",
           "session-reset": "reset",
         };
-        if (sessionActions[action]) runSearchSessionAction(row, sessionActions[action]);
+        if (sessionActions[action]) {
+          runSearchSessionAction(row, sessionActions[action]).catch((err) => {
+            showToast(err.message || "Session action failed.", { kind: "err" });
+          });
+        }
         return;
       }
       const contentButton = ev.target.closest(".btn-search-content-schedule");

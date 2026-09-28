@@ -541,7 +541,7 @@ def test_bulk_share_adds_people_without_replacing() -> None:
     )
     check(
         "a failed share names the session in a popup",
-        "Sharing incomplete" in page
+        "Sharing Incomplete" in page
         and "function shareResultLabel(" in page
         and "function reportBulkShareOutcome(" in page,
     )
@@ -735,7 +735,7 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("the API rewrites vCUBE guest shutdown", "vCUBE has no guest shutdown" in (ROOT / "app.py").read_text(encoding="utf-8"))
     check(
         "the card can shut down all powered-on VMs without saving",
-        "Guest shutdown all powered-on VMs" in INDEX,
+        "Guest Shutdown All Powered-On VMs" in INDEX,
     )
     check(
         "the no-save action has its own endpoint",
@@ -780,7 +780,7 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("bulk save goes through the same wait", "_shutdown_one_dc," in bulk)
 
     # Card actions name the action and drop the redundant "session".
-    check('the card menu says "Guest shutdown & save"', '"Guest shutdown &amp; save"' in INDEX)
+    check('the card menu says "Guest shutdown & save"', '"Guest Shutdown &amp; Save"' in INDEX)
     check("the old card label is gone", "Shutdown &amp; save this session" not in INDEX)
     for gone in ("Share session…", ">Reset session<"):
         check(f"card menu no longer says {gone}", gone not in INDEX)
@@ -1758,6 +1758,7 @@ def test_staggered_session_copies_cards() -> None:
         "minmax(160px, 1fr)" not in INDEX
         and "input[type=\"number\"]" in INDEX
         and "width: 5.5rem" in INDEX
+        and "width: 8.25rem" in INDEX
         and "width: max-content" in INDEX
         and "min-width: 9.75rem" in INDEX,
     )
@@ -1768,7 +1769,8 @@ def test_staggered_session_copies_cards() -> None:
     check(
         "saved-content management is its own card",
         'id="panel-saved-schedule"' in INDEX
-        and "Manage your own saved content across all DCs" in INDEX,
+        and "Manage Your Own Content" in INDEX
+        and "Manage your own saved content across all DCs" not in INDEX,
     )
     check(
         "cleanup no longer holds the saved-content scheduler",
@@ -1780,9 +1782,41 @@ def test_staggered_session_copies_cards() -> None:
         and 'id="btn-delete-schedule-saved"' in INDEX
         and 'id="btn-find-saved"' not in INDEX,
     )
+    my_content = INDEX[INDEX.index('id="view-saved"'):INDEX.index('id="view-surveys"')]
+    monitor = INDEX[INDEX.index('id="view-monitor"'):INDEX.index('id="view-hub"')]
+    check(
+        "My Content finds saved content and active sessions together",
+        'slot="content">My Content' in INDEX
+        and 'name="squares-four"' in INDEX
+        and 'id="btn-find-both"' in my_content
+        and 'id="filter-my-content"' in my_content
+        and 'id="btn-find-sessions"' in my_content
+        and 'id="btn-find-schedule-saved"' in my_content
+        and my_content.index('id="found-sessions-panel"') < my_content.index('id="found-schedule-saved-panel"')
+        and "Your Active Sessions" in my_content
+        and my_content.index("Find your active sessions and your saved content")
+        < my_content.index("On saved copies you can sort")
+        and "Active Sessions and Saved Content" in my_content
+        and "Your Saved Content" in my_content
+        and "Your Active Sessions (${count})" in INDEX
+        and "Your active sessions (${count}) — click to expand or collapse" not in INDEX
+        and "Your Saved Content (${count})" in INDEX
+        and "found-session-actions" in INDEX
+        and "function findBothMyContent" in INDEX
+        and "function runMyContentPull" in INDEX
+        and "Finding Both…" in INDEX
+        and "Pulling your active sessions from dCloud…" in INDEX
+        and "Pulling your saved content from dCloud…" in INDEX
+        and "refresh = true" in INDEX[INDEX.index("async function findBothMyContent"):INDEX.index("async function findBothMyContent") + 400]
+        and "function updateMyContentFilterStatus" in INDEX
+        and '{ id: "saved", title: "My Content" }' in INDEX
+        and ".found-session-attached { opacity" not in INDEX
+        and ".found-session-attached td { color: var(--text); }" in INDEX
+        and 'id="btn-find-sessions"' not in monitor,
+    )
     check(
         "cleanup is surveys only",
-        "Session feedback surveys" in INDEX
+        "Session Feedback Surveys" in INDEX
         and 'id="btn-decline-all-surveys"' in INDEX
         and 'id="found-saved-panel"' not in INDEX,
     )
@@ -1917,7 +1951,7 @@ def test_schedule_capacity_explains_and_stays_nearby() -> None:
     )
     check(
         "the card displays dCloud's technical reason",
-        "Technical reason from dCloud" in INDEX,
+        "Technical Reason from dCloud" in INDEX,
     )
     adjust = js_function("adjustScheduleFromCard")
     for field in ("days", "sched-delay", "sched-copies"):
@@ -2199,6 +2233,8 @@ def test_event_management_section() -> None:
         and "function finderOkSites(" in INDEX
         and "function restoreCachedSavedContentList(" in INDEX
         and "restoreCachedSavedContentList()" in INDEX
+        and "function restoreCachedSessionList(" in INDEX
+        and "restoreCachedSessionList()" in INDEX
         and 'id="btn-events-find-refresh"' in INDEX
         and 'id="btn-refresh-sessions"' in INDEX
         and 'id="btn-refresh-workspace-sessions"' in INDEX
@@ -2226,12 +2262,23 @@ def test_event_management_section() -> None:
         empty_events == [] and "sites" in empty_errors and empty_fetched == {},
         str((empty_events, empty_errors, empty_fetched)),
     )
-    dcloud_client._write_admin_cache("sjc", "mine-sessions", [{"site": "sjc", "sessionId": "42"}], time.time())
-    cached_rows, cached_error = dcloud_client.list_dashboard_sessions("token", "sjc")
+    client_source = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    sessions_fn = client_source[
+        client_source.index("def list_dashboard_sessions(") : client_source.index("def _list_sites(")
+    ]
+    saved_fn = client_source[
+        client_source.index("def list_saved_contents_for_site(") : client_source.index("def list_saved_contents_all_sites(")
+    ]
     check(
-        "Find my sessions reuses the 15-minute server cache",
-        cached_rows == [{"site": "sjc", "sessionId": "42"}] and cached_error is None,
-        str((cached_rows, cached_error)),
+        "your own sessions and saved content are downloaded every time",
+        "_read_admin_cache" not in sessions_fn and "_read_admin_cache" not in saved_fn,
+    )
+    check(
+        "full Content and Sessions lists are kept for 5 minutes",
+        "_ADMIN_SEARCH_CACHE_SECONDS = 5 * 60" in client_source
+        and "kept for 5 minutes" in INDEX
+        and "data-unified-age" in INDEX
+        and 'id="my-content-activity"' in INDEX,
     )
     check(
         "multiple events persist and render inside site and event groups",
@@ -2267,6 +2314,13 @@ def test_event_management_section() -> None:
         and "time.sleep(body.delay_seconds)" in source
         and "ThreadPoolExecutor" not in source[source.index('@app.post("/api/events/session-action")'):]
         .split("@app.post", 2)[1],
+    )
+    search_action = js_function("runSearchSessionAction")
+    check(
+        "Search dCloud End/Save/Reset toasts success and failure",
+        "showToast(message, { kind: \"ok\" })" in search_action
+        and 'showToast(err.message, { kind: "err" })' in search_action
+        and "ensureTokenReady" in search_action,
     )
     check(
         "a failed bulk action reports dCloud's reason instead of only a count",
@@ -2324,6 +2378,11 @@ def test_event_management_section() -> None:
             "End falls back the same way",
             end_result["ok"] is True and calls[-1].endswith("/api/admin/sessions/491872/end"),
             str(calls),
+        )
+        check(
+            "a successful End names the session instead of HTTP 200",
+            end_result["message"] == "Session 491872 ended.",
+            str(end_result.get("message")),
         )
 
         calls.clear()
@@ -2821,7 +2880,7 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and "keepDemoIds" in page
         and "Check only one row per DC" in page
         and 'id="panel-step2"' in page
-        and "Copy to Schedule sessions" in page,
+        and "Copy to Schedule Sessions" in page,
     )
     check(
         "list columns can be dragged wider and remember it",

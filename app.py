@@ -68,6 +68,7 @@ from browser_auth.dcloud_token import (
     validate_dcloud_token,
 )
 from dcloud_client import (
+    _ADMIN_SEARCH_CACHE_SECONDS,
     admin_records_cached_at,
     attach_vm_access_links,
     apply_tbv3_power_states,
@@ -8166,7 +8167,7 @@ def api_unified_dc_data(body: UnifiedSearchPayload) -> dict[str, Any]:
             for site in sites
             if not errors.get(f"{source}:{site}")
         },
-        "cacheSeconds": 15 * 60,
+        "cacheSeconds": _ADMIN_SEARCH_CACHE_SECONDS,
     }
 
 
@@ -8268,7 +8269,7 @@ def api_unified_search(body: UnifiedSearchPayload) -> dict[str, Any]:
             for item in sessions_by_site.get(site, [])
         ],
         "errors": errors,
-        "cacheSeconds": 15 * 60,
+        "cacheSeconds": _ADMIN_SEARCH_CACHE_SECONDS,
     }
 
 

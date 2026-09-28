@@ -28,7 +28,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SITES = ("sjc", "rtp", "lon", "sng", "syd")
 KNOWN_SITES = frozenset(SITES)
-_ADMIN_SEARCH_CACHE_SECONDS = 15 * 60
+# Full admin Content and Sessions lists only. A person's own sessions and
+# saved content are small, so those downloads are never served from this cache.
+_ADMIN_SEARCH_CACHE_SECONDS = 5 * 60
 _admin_search_cache_lock = threading.Lock()
 _admin_search_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 
@@ -3367,15 +3369,16 @@ def guest_shutdown_vms(
 
 
 def list_dashboard_sessions(token: str, site: str, *, refresh: bool = False) -> tuple[list[dict[str, Any]], str | None]:
-    """GET /api/sessions?expand=sharedWith — same list the bot /ms command uses."""
+    """GET /api/sessions?expand=sharedWith — same list the bot /ms command uses.
+
+    Always downloads. ``refresh`` is accepted so callers match the other list
+    helpers; this list is not held for the 5-minute admin cache.
+    """
+    del refresh
     site_code = (site or "").strip().lower()
     if site_code not in KNOWN_SITES:
         return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
     now = time.time()
-    if not refresh:
-        cached = _read_admin_cache(site_code, "mine-sessions")
-        if cached and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
-            return list(cached[1]), None
     url = f"{site_base(site_code)}/api/sessions?expand=sharedWith"
     try:
         response = _request("GET", url, token)
@@ -4018,12 +4021,16 @@ def end_session(token: str, site: str, session_id: str) -> dict[str, Any]:
     ok, _body, status, detail, tried = _session_action(token, site, sid, "end")
     if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
-    message = detail or f"HTTP {status}"
+    message = detail or ""
+    if ok:
+        message = message or f"Session {sid} ended."
+    else:
+        message = message or (f"End session failed (HTTP {status})." if status else "End session failed.")
     return {
         "ok": ok,
         "sessionId": sid,
         "triedPaths": tried,
-        "message": message if message else ("Session ended." if ok else "End session failed."),
+        "message": message,
     }
 
 
@@ -4465,14 +4472,12 @@ def summarize_saved_content(item: dict[str, Any], site: str) -> dict[str, Any]:
 
 
 def list_saved_contents_for_site(token: str, site: str, *, refresh: bool = False) -> tuple[list[dict[str, Any]], str | None]:
+    """Always download this person's saved content. Not held for the 5-minute admin cache."""
+    del refresh
     site_code = (site or "").strip().lower()
     if site_code not in KNOWN_SITES:
         return [], "Datacenter must be SJC, RTP, LON, SNG, or SYD."
     now = time.time()
-    if not refresh:
-        cached = _read_admin_cache(site_code, "mine-content")
-        if cached and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
-            return list(cached[1]), None
     items, err = list_saved_contents(token, site_code, state="saved")
     if err:
         return [], err
