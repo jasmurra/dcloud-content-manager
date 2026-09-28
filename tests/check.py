@@ -1855,8 +1855,8 @@ def test_staggered_session_copies_cards() -> None:
     check(
         "bulk delete confirms the exact cross-DC selection",
         'id="btn-delete-schedule-saved"' in INDEX
-        and "Permanently delete ${selected.length} saved content item(s)?" in INDEX
-        and "${row.site.toUpperCase()} ${row.content_id} — ${row.name}" in INDEX,
+        and "Permanently delete ${selected.length} saved content item" in INDEX
+        and '${row.site.toUpperCase()} ${row.content_id} — ${row.name || "saved content"}' in INDEX,
     )
     check(
         "TBv2 promoted content stays EOL-only and cannot render Delete",
@@ -2305,8 +2305,21 @@ def test_event_management_section() -> None:
         "event endpoints validate lookup and limit bulk changes",
         '@app.post("/api/events/lookup")' in source
         and '@app.post("/api/events/session-action")' in source
-        and "len(session_ids) > 250" in source
-        and 'action not in {"end", "reset"}' in source,
+        and 'action not in {"end", "reset"}' in source
+        and "An empty selection does not end every session." in source
+        and "def named_session_pairs(" in source
+        and "rows = bulkCardSessions(true)" in INDEX
+        and "checked.length ? checked : visibleSessionTargets()" not in INDEX
+        and 'id="btn-end" disabled' in INDEX
+        and 'id="btn-shutdown" disabled' in INDEX
+        and 'id="btn-extend-checked" disabled' in INDEX
+        and "function syncWorkspaceBulkButtons(" in INDEX
+        and "function confirmListedBatch(" in INDEX,
+    )
+    import app
+    check(
+        "an empty end request names no sessions",
+        app.named_session_pairs(app.EndPayload()) == [],
     )
     check(
         "bulk event actions are paced one at a time instead of fired in parallel",

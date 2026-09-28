@@ -1091,6 +1091,10 @@
       color: var(--text);
       white-space: pre-wrap;
     }
+    #confirm-alert-body {
+      max-height: min(50vh, 22rem);
+      overflow: auto;
+    }
     .modal-card .actions {
       margin-top: 1.1rem;
       gap: 0.45rem;
@@ -3090,15 +3094,15 @@
             </div>
           </div>
           <div style="align-self:flex-end">
-            <button type="button" class="secondary" id="btn-extend-checked" data-tip="Adds the days and hours to each checked session's current end. If that window is booked, you are asked whether to take the farthest time that is still free.">Extend Checked</button>
+            <button type="button" class="secondary" id="btn-extend-checked" disabled data-tip="Adds the days and hours to each checked session's current end. If that window is booked, you are asked whether to take the farthest time that is still free.">Extend Checked</button>
             <button type="button" class="secondary" id="btn-share-checked-cards" disabled data-tip="Opens one share dialog for every checked live session card. The people you add are applied to all of them. Existing sharing is kept.">Share Checked</button>
           </div>
         </div>
         <p class="hint" style="margin:0 0 0.75rem">Each session is pushed this far past its own end. Five days is one click. If resources are booked, the tool finds the farthest time that still fits and asks before applying it. Set days and hours to 0 to use the until time as an exact stop for every checked session.</p>
         <div class="actions">
         <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh All Session Statuses</button>
-        <button type="button" class="danger" id="btn-shutdown" data-tip="Guest-shuts down checked ready cards, waits for their VMs to power off, then saves. Uses all remaining ready cards if none are checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest Shutdown &amp; Save</button>
-        <button type="button" class="end" id="btn-end" data-tip="Ends checked sessions without saving, or all visible cards if none checked.">End Sessions (No Save)</button>
+        <button type="button" class="danger" id="btn-shutdown" disabled data-tip="Guest-shuts down the checked ready cards, waits for their VMs to power off, then saves. Stays off until a card is checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest Shutdown &amp; Save</button>
+        <button type="button" class="end" id="btn-end" disabled data-tip="Ends the checked sessions without saving. Stays off until a card is checked.">End Sessions (No Save)</button>
         <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear Job Workspace Cards</button>
         </div>
       </div>
@@ -3633,6 +3637,20 @@
   <script type="module" src="/harbor-elements/harbor-elements.esm.js" data-id="dcloud-content-manager" data-version="2.0.2" data-theme="hbr-theme-magnetic"></script>
   <script>
     const $ = (id) => document.getElementById(id);
+    // A batch this large gets a second confirmation that lists every item again.
+    const BULK_WARN_AT = 10;
+    async function confirmListedBatch(lines, { count, title, detail, okLabel }) {
+      const list = lines.map((line) => `  • ${line}`).join("\n");
+      const first = await confirmAction(
+        `${detail}\n\n${list}\n\nOnly the ${count} item${count === 1 ? "" : "s"} listed above ${count === 1 ? "is" : "are"} included.`,
+        { title, okLabel }
+      );
+      if (!first || count < BULK_WARN_AT) return first;
+      return confirmAction(
+        `Large batch — ${count} items. Nothing else in dCloud is included. This is the full list again:\n\n${list}`,
+        { title: `Confirm All ${count}`, okLabel: `Yes, Only These ${count}`, cancelLabel: "Go Back" }
+      );
+    }
     const JOB_STORE = "dcloud-content-manager-job-id";
     const APP_VIEW_STORE = "dcloud-app-view";
     const LEGACY_JOB_STORES = ["dcloud-session-manager-job-id", "dcloud-vuln-job-id"];
@@ -5038,9 +5056,14 @@
       const pacing = sessionIds.length > 1
         ? `\n\nThese go out one at a time, ${delay}s apart — at least ${spacing < 60 ? `${spacing}s` : `${Math.ceil(spacing / 60)} minute(s)`} of spacing, plus however long dCloud takes to answer each one. Leave this page open.`
         : "";
-      const ok = await confirmAction(
-        `${verb} ${sessionIds.length} event session${sessionIds.length === 1 ? "" : "s"}?\n\n${sessionIds.join(", ")}\n\n${detail}${pacing}`,
-        { title: `${verb} event sessions`, okLabel: verb }
+      const ok = await confirmListedBatch(
+        sessionIds.map((id) => `${String(site || "").toUpperCase()} session ${id}`),
+        {
+          count: sessionIds.length,
+          title: `${verb} Event Sessions`,
+          okLabel: verb,
+          detail: `${verb} ${sessionIds.length} event session${sessionIds.length === 1 ? "" : "s"}?${pacing}\n\n${detail}`,
+        },
       );
       if (!ok) return;
       $("events-status").textContent = `${verb} requested for ${sessionIds.length} session(s), ${delay}s apart…`;
@@ -6896,8 +6919,8 @@
       } else if (sites?.length && sessionId) {
         rows = [{ site: sites[0], session_id: sessionId }];
       } else {
-        const checked = bulkCardSessions(false);
-        rows = checked.length ? checked : visibleSessionTargets();
+        // Checked cards only. An empty selection is not "every visible card".
+        rows = bulkCardSessions(true);
       }
       if (!singleCard) {
         // A card moved back to monitoring, or left over from an earlier run, must drop
@@ -6918,10 +6941,7 @@
       if (sites?.length && sessionId) {
         return [{ site: sites[0], session_id: sessionId }];
       }
-      if (sites?.length) {
-        return sites.map((site) => ({ site, session_id: "" }));
-      }
-      return visibleSessionTargets();
+      return [];
     }
 
     function formatBulkSessionList(targets) {
@@ -6936,9 +6956,9 @@
     }
 
     function bulkActionLabel(requireChecked = false) {
-      const sessions = bulkCardSessions(requireChecked);
-      if (requireChecked && !sessions.length) return "";
-      const targets = sessions.length ? sessions : visibleSessionTargets();
+      const sessions = bulkCardSessions(true);
+      if (!sessions.length) return "";
+      const targets = sessions;
       const labels = bulkSessionLabels(targets);
       if (!labels.length) return "all visible sessions";
       return labels.join("; ");
@@ -7166,13 +7186,22 @@
 
     function setCardChecks(checked) {
       document.querySelectorAll(".card-select").forEach((el) => { el.checked = checked; });
-      syncShareCheckedCardsButton();
+      syncWorkspaceBulkButtons();
     }
 
     function syncShareCheckedCardsButton() {
       const btn = $("btn-share-checked-cards");
       if (!btn) return;
       btn.disabled = checkedShareTargetsFromCards().length === 0;
+    }
+
+    function syncWorkspaceBulkButtons() {
+      const anyChecked = document.querySelectorAll("#cards .card-select:checked").length > 0;
+      for (const id of ["btn-extend-checked", "btn-shutdown", "btn-end"]) {
+        const button = $(id);
+        if (button) button.disabled = !anyChecked;
+      }
+      syncShareCheckedCardsButton();
     }
 
     function closeVmMenuFrom(el) {
@@ -7630,7 +7659,7 @@
             $("job-cards-label")?.classList.toggle("hidden", visibleJob.length === 0);
             if (!$("sched-extend").value) suggestExtendDate(job);
             saveUiStateFromDom();
-            syncShareCheckedCardsButton();
+            syncWorkspaceBulkButtons();
           }
         }
       }
@@ -10535,17 +10564,18 @@
       }
       if (!targets.length) {
         if (!theirs.length) {
-          showError("No ready sessions to save. Already-saved or in-progress cards are skipped.");
+          showError("Check the sessions to save. An empty selection does not save every session.");
         }
         return;
       }
-      const list = formatBulkSessionList(targets);
       const summary = bulkSessionLabels(targets).join("; ");
       if (!singleCard) {
-        if (!await confirmAction(
-          `Guest-shutdown and save these sessions?\n\n${list}\n\nEach one waits for its VMs to power off before saving. Already-saved sessions are not included.`,
-          { title: "Guest Shutdown & Save" }
-        )) {
+        if (!await confirmListedBatch(bulkSessionLabels(targets), {
+          count: targets.length,
+          title: "Guest Shutdown & Save",
+          okLabel: "Guest Shutdown & Save",
+          detail: "Guest-shutdown and save these sessions? Each one waits for its VMs to power off before saving. Already-saved sessions are not included.",
+        })) {
           return;
         }
       }
@@ -10885,11 +10915,10 @@
       const singleCard = Boolean(sites?.length && sessionId && !sessions?.length);
       const targets = resolveActionSessions(sites, sessionId, sessions, { singleCard });
       if (!targets.length) {
-        showError("No job workspace sessions to end. Monitoring cards are never part of End all.");
+        showError("Check the sessions to end. An empty selection does not end every session.");
         return;
       }
-      const list = formatBulkSessionList(targets);
-      const summary = bulkSessionLabels(targets).join("; ") || "all attached sessions";
+      const summary = bulkSessionLabels(targets).join("; ");
       const theirs = splitOwnedTargets(targets).theirs;
       // Nothing here has started yet, so call it cancelling in the prompts too.
       const notStarted = targets.every(
@@ -10909,19 +10938,15 @@
       )) {
         return;
       }
-      if (!await confirmAction(
-        notStarted
-          ? `Cancel ${one ? "this scheduled session" : "these scheduled sessions"}?\n\n${list}\n\n`
-            + `${one ? "It has" : "They have"} not started, so nothing is running and there is nothing to save.`
-          : `End these sessions without saving?\n\n${list}\n\nSame as dCloud /end — the session is discarded.`,
-        notStarted
-          ? {
-            title: one ? "Cancel Session" : "Cancel sessions",
-            okLabel: one ? "Cancel Session" : "Cancel sessions",
-            cancelLabel: "Keep It",
-          }
-          : { title: "End Sessions" }
-      )) {
+      const endLines = bulkSessionLabels(targets);
+      if (!await confirmListedBatch(endLines, {
+        count: targets.length,
+        title: notStarted ? (one ? "Cancel Session" : "Cancel Sessions") : "End Sessions",
+        okLabel: notStarted ? (one ? "Cancel Session" : "Cancel Sessions") : "End Sessions",
+        detail: notStarted
+          ? `Cancel ${one ? "this scheduled session" : "these scheduled sessions"}? ${one ? "It has" : "They have"} not started, so nothing is running and there is nothing to save.`
+          : "End these sessions without saving? Same as dCloud /end — the session is discarded.",
+      })) {
         return;
       }
       showError("");
@@ -10954,12 +10979,17 @@
       if (!jobId) { showError("Restore or attach sessions first."); return; }
       if (!ensureTokenReady("resetting sessions")) return;
       const targets = resolveActionSessions(sites, sessionId, sessions);
-      const list = formatBulkSessionList(targets);
-      const summary = bulkSessionLabels(targets).join("; ") || "this session";
-      if (!await confirmAction(
-        `Reset in dCloud?\n\n${list}\n\nSame as the Reset button in the dCloud dashboard: the session is torn down and rebuilt with the same demo and session ID. It disappears for a while before it comes back.`,
-        { title: "Reset Session", okLabel: "Reset Session" }
-      )) {
+      if (!targets.length) {
+        showError("Check the sessions to reset. An empty selection does not reset every session.");
+        return;
+      }
+      const summary = bulkSessionLabels(targets).join("; ");
+      if (!await confirmListedBatch(bulkSessionLabels(targets), {
+        count: targets.length,
+        title: "Reset Session",
+        okLabel: "Reset Session",
+        detail: "Reset in dCloud? Same as the Reset button in the dCloud dashboard: the session is torn down and rebuilt with the same demo and session ID. It disappears for a while before it comes back.",
+      })) {
         return;
       }
       showError("");
@@ -13442,15 +13472,13 @@
         showError("Check at least one directly deletable item. Promoted TBv2 content uses EOL in the Content Catalog.");
         return;
       }
-      const preview = selected
-        .slice(0, 12)
-        .map((row) => `${row.site.toUpperCase()} ${row.content_id} — ${row.name}`)
-        .join("\n");
-      const more = selected.length > 12 ? `\n…and ${selected.length - 12} more` : "";
-      if (!await confirmAction(
-        `Permanently delete ${selected.length} saved content item(s)?\n\n${preview}${more}\n\nThis cannot be undone.`,
-        { title: "Delete Saved Content", okLabel: "Delete" }
-      )) {
+      const deleteLines = selected.map((row) => `${row.site.toUpperCase()} ${row.content_id} — ${row.name || "saved content"}`);
+      if (!await confirmListedBatch(deleteLines, {
+        count: selected.length,
+        title: "Delete Saved Content",
+        okLabel: "Delete",
+        detail: `Permanently delete ${selected.length} saved content item${selected.length === 1 ? "" : "s"}? This cannot be undone.`,
+      })) {
         return;
       }
       showError("");
@@ -15009,7 +15037,7 @@
       openBulkShareModal(checkedShareTargetsFromCards());
     });
     $("cards")?.addEventListener("change", (ev) => {
-      if (ev.target.classList.contains("card-select")) syncShareCheckedCardsButton();
+      if (ev.target.classList.contains("card-select")) syncWorkspaceBulkButtons();
     });
     $("btn-shutdown").addEventListener("click", () => shutdownSave([]));
     $("btn-end").addEventListener("click", () => endSessions([]));

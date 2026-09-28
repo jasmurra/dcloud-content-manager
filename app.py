@@ -2408,6 +2408,21 @@ def _dc_activity_ts(job: dict[str, Any], dc: dict[str, Any]) -> float:
     return touched or _job_activity_ts(job)
 
 
+def named_session_pairs(payload: EndPayload | ResetPayload) -> list[tuple[str, str]]:
+    """Sessions this end or reset is allowed to touch.
+
+    An empty selection is empty. It does not mean every card on the job.
+    """
+    pairs = _session_ref_pairs(payload.sessions)
+    if pairs:
+        return pairs
+    sid = str(payload.session_id or "").strip()
+    sites = [str(site or "").strip().lower() for site in payload.sites if str(site or "").strip()]
+    if sid and len(sites) == 1 and sites[0] in SITES:
+        return [(sites[0], sid)]
+    return []
+
+
 def _dc_too_old_for_bulk(job: dict[str, Any], dc: dict[str, Any]) -> bool:
     activity = _dc_activity_ts(job, dc)
     if activity <= 0:
@@ -6377,8 +6392,12 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
     job["token"] = token
     wanted = {site.strip().lower() for site in payload.sites if site.strip()}
     wanted_sid = str(payload.session_id or "").strip()
-    session_pairs = _session_ref_pairs(payload.sessions)
-    use_pairs = session_pairs if session_pairs else None
+    session_pairs = named_session_pairs(payload)
+    if not session_pairs:
+        job["error"] = "Check the sessions to end. An empty selection does not end every session."
+        _persist_job(job)
+        return
+    use_pairs = session_pairs
     job["phase"] = "ending"
     job["error"] = ""
     ended = 0
@@ -6471,8 +6490,12 @@ def _reset_job(job: dict[str, Any], payload: "ResetPayload") -> None:
     job["token"] = token
     wanted = {site.strip().lower() for site in payload.sites if site.strip()}
     wanted_sid = str(payload.session_id or "").strip()
-    session_pairs = _session_ref_pairs(payload.sessions)
-    use_pairs = session_pairs if session_pairs else None
+    session_pairs = named_session_pairs(payload)
+    if not session_pairs:
+        job["error"] = "Check the sessions to reset. An empty selection does not reset every session."
+        _persist_job(job)
+        return
+    use_pairs = session_pairs
     reset_count = 0
     attempted = 0
     for dc in job["dcs"]:
@@ -7841,6 +7864,8 @@ def api_shutdown_save(job_id: str, body: ShutdownPayload) -> dict[str, Any]:
 def api_end_sessions(job_id: str, body: EndPayload) -> dict[str, Any]:
     job = _job(job_id)
     body.job_id = job_id
+    if not named_session_pairs(body):
+        raise HTTPException(400, "Check the sessions to end. An empty selection does not end every session.")
     threading.Thread(target=_end_job, args=(job, body), daemon=True).start()
     return _public_job(job)
 
@@ -7849,6 +7874,8 @@ def api_end_sessions(job_id: str, body: EndPayload) -> dict[str, Any]:
 def api_reset_sessions(job_id: str, body: ResetPayload) -> dict[str, Any]:
     job = _job(job_id)
     body.job_id = job_id
+    if not named_session_pairs(body):
+        raise HTTPException(400, "Check the sessions to reset. An empty selection does not reset every session.")
     _reset_job(job, body)
     return _public_job(job)
 
@@ -8041,9 +8068,6 @@ def api_event_session_action(body: EventSessionActionPayload) -> dict[str, Any]:
         raise HTTPException(400, "Event session action must be Reset or End.")
     if not session_ids:
         raise HTTPException(400, "Choose at least one event session.")
-    if len(session_ids) > 250:
-        raise HTTPException(400, "No more than 250 sessions can be changed at once.")
-
     token = _resolve_token(body)
     operation = reset_session if action == "reset" else end_session
     # dCloud rejects a burst of resets against one event, so these go out one at a
