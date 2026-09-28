@@ -1,3 +1,9 @@
+## 2.0.7 — 2026-09-28
+
+- **A refused extend is not reported as done.** If dCloud says resources are only available for part of the time you asked for, the tool offers that shorter end and waits for you to confirm. If the extend does not happen, you see dCloud’s message
+- **Remove on a hub row stays removed.** The row is not pasted back onto the list, and the site code shows in capitals
+- **Each datacenter links to dCloud.** On Your Active Sessions and Your Saved Content, Click to view in dCloud opens that site’s sessions or saved-content page in a new tab. A datacenter with nothing in it still shows as 0 so the link is there
+
 ## 2.0.6 — 2026-09-28
 
 - **Log in to dCloud keeps the sign-in window up through Duo.** It stays open until that login can be used, instead of closing first

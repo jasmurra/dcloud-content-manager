@@ -3599,6 +3599,29 @@ def resolve_extended_stop_by_minutes(
     return _dcloud_timestamp(new_stop), None
 
 
+_RESOURCE_WINDOW_RE = re.compile(
+    r"available only for\s+"
+    r"(?:(\d+)\s+days?)?\s*"
+    r"(?:(\d+)\s+hours?)?\s*"
+    r"(?:(\d+)\s+minutes?)?",
+    re.IGNORECASE,
+)
+
+
+def extend_capacity_window(message: str) -> timedelta | None:
+    """How far dCloud said the session can still run, when it names the window."""
+    match = _RESOURCE_WINDOW_RE.search(str(message or ""))
+    if match is None:
+        return None
+    days, hours, minutes = (int(part or 0) for part in match.groups())
+    if not (days or hours or minutes):
+        return None
+    extra = timedelta(days=days, hours=hours, minutes=minutes)
+    if extra < timedelta(minutes=30):
+        return None
+    return extra
+
+
 def extend_is_capacity_blocked(message: str) -> bool:
     text = str(message or "").strip().lower()
     if not text:
@@ -3607,6 +3630,8 @@ def extend_is_capacity_blocked(message: str) -> bool:
         "fully booked" in text
         or "resources are fully booked" in text
         or "booked out after" in text
+        or "resources available only" in text
+        or "available only for" in text
         or ("resource" in text and "unavailable" in text)
     )
 
@@ -3729,6 +3754,25 @@ def probe_max_extend_stop(
 
     current = parse_schedule_datetime(original)
     want = parse_schedule_datetime(requested)
+    named = extend_capacity_window(first.get("message") or "")
+    if named is not None and current is not None and want is not None:
+        farthest = _floor_minutes(current + named, 5)
+        if current + timedelta(minutes=30) <= farthest < want:
+            stamp = _dcloud_timestamp(farthest)
+            return {
+                "ok": False,
+                "applied": False,
+                "offer": True,
+                "sessionId": sid,
+                "suggested_stop": stamp,
+                "requested_stop": requested,
+                "current_stop": original,
+                "message": first.get("message") or (
+                    "Resources are only available for part of that extend. "
+                    f"The farthest you can go is {stamp}."
+                ),
+            }
+
     if current is None or want is None or want <= current + timedelta(minutes=30):
         return {
             "ok": False,

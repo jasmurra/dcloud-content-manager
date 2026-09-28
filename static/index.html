@@ -1396,6 +1396,13 @@
     }
     details.dc-group > summary::-webkit-details-marker { display: none; }
     .dc-group-title { flex: 1; min-width: 0; }
+    a.dc-view-link {
+      margin-left: auto;
+      flex: 0 0 auto;
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
     details.event-group {
       margin: 0.55rem 0 0.15rem;
       border-top: 1px solid var(--border);
@@ -3796,24 +3803,9 @@
     }
 
     function hubRowsForJob(job) {
-      const rows = [...(job?.savedIds?.rows || [])];
-      const seen = new Set(rows.map((row) => `${String(row.site || "").toLowerCase()}:${row.savedId}`));
-      for (const dc of job?.dcs || []) {
-        if (dc.phase !== "saved" || !dc.saveConfirmed || !dc.savedId) continue;
-        const key = `${String(dc.site || "").toLowerCase()}:${dc.savedId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        rows.push({
-          site: dc.site,
-          savedId: dc.savedId,
-          publishedId: dc.savedParentId || dc.demoId || "",
-          parentId: dc.savedParentId || dc.demoId || "",
-          name: dc.savedName || dc.name || "",
-          sessionId: dc.sessionId || "",
-          contentViewUrl: dc.contentViewUrl || "",
-        });
-      }
-      return rows;
+      // The server list already drops a row Remove hid. Copying the saved card
+      // back from the job put that row on screen again, site code and all.
+      return [...(job?.savedIds?.rows || [])];
     }
 
     function visibleMonitorDcs(job) {
@@ -9536,7 +9528,7 @@
         const isChecked = checked.has(key) ? " checked" : "";
         return `<tr>
           <td><input type="checkbox" class="saved-id-select" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-target-id="${escapeHtml(target)}" data-root-id="${escapeHtml(root)}" data-name="${escapeHtml(row.name || "")}" ${isChecked} /></td>
-          <td>${escapeHtml(row.site || "")}</td>
+          <td>${escapeHtml(String(row.site || "").toUpperCase())}</td>
           <td class="mono">${savedLink}</td>
           <td class="mono">${
             isDevSite
@@ -11090,8 +11082,15 @@
         startPolling();
         const rows = Array.isArray(probed.extendProbe) ? probed.extendProbe : [];
         const offers = rows.filter((row) => row.offer && row.suggested_stop);
+        const applied = rows.filter((row) => row.applied);
+        const failed = rows.filter((row) => !row.applied && !row.offer);
         if (!offers.length) {
-          showToast(targets.length === 1 ? "Session extended." : "Sessions extended.");
+          if (failed.length) {
+            showError(failed.map((row) => row.message || "Extend failed.").filter(Boolean).join("\n"));
+          }
+          if (applied.length) {
+            showToast(applied.length === 1 ? "Session extended." : "Sessions extended.");
+          }
           return;
         }
         const offerList = offers.map((row) => {
@@ -12229,17 +12228,26 @@
       });
     }
 
-    function groupRowsBySite(rows) {
+    function groupRowsBySite(rows, { includeEmpty = false } = {}) {
       const map = new Map();
       for (const row of rows || []) {
         const site = String(row.site || "").toLowerCase();
         if (!map.has(site)) map.set(site, []);
         map.get(site).push(row);
       }
-      return SITE_ORDER.filter((site) => map.has(site)).map((site) => ({
+      const sites = includeEmpty ? SITE_ORDER : SITE_ORDER.filter((site) => map.has(site));
+      return sites.map((site) => ({
         site,
-        rows: map.get(site),
+        rows: map.get(site) || [],
       }));
+    }
+
+    function dcloudDashboardUrl(site, page) {
+      return `https://dcloud2-${String(site || "").trim().toLowerCase()}.cisco.com/dashboard/${page}`;
+    }
+
+    function dcViewLink(site, page) {
+      return `<a class="dc-view-link" href="${escapeHtml(dcloudDashboardUrl(site, page))}" target="_blank" rel="noopener noreferrer">Click to view in dCloud</a>`;
     }
 
     function renderErrorHints(errors) {
@@ -12247,7 +12255,7 @@
       return errBits.length ? `<p class="hint">${escapeHtml(errBits.join(" · "))}</p>` : "";
     }
 
-    function renderDcGroupedList(groups, emptyHint, renderGroupBody, containerId = null) {
+    function renderDcGroupedList(groups, emptyHint, renderGroupBody, containerId = null, viewPage = "") {
       if (!groups.length) return `<p class="hint">${escapeHtml(emptyHint)}</p>`;
       // Keep currently expanded DCs open across a re-render (View/Hide sessions
       // rebuilds this HTML). Persist only covers groups that were saved earlier.
@@ -12259,12 +12267,17 @@
       }
       return groups.map(({ site, rows }) => {
         const openAttr = (liveOpen.has(site) || (containerId && dcGroupIsOpen(containerId, site))) ? "open" : "";
+        const viewLink = viewPage ? dcViewLink(site, viewPage) : "";
+        const body = rows.length
+          ? renderGroupBody(site, rows)
+          : `<p class="hint">None in this datacenter.</p>`;
         return `
         <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
           <summary>
             <span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${rows.length})</span>
+            ${viewLink}
           </summary>
-          ${renderGroupBody(site, rows)}
+          ${body}
         </details>
       `;
       }).join("");
@@ -12399,6 +12412,7 @@
           if (filtering && visible) group.open = true;
           // Event site groups count events, not rows, so leave their titles alone.
           if (config.retitleGroups === false || !group.matches("details.dc-group")) return;
+          if (!rows.length) return;
           const title = group.querySelector(".dc-group-title");
           if (!title) return;
           const site = String(group.dataset.site || "").toUpperCase();
@@ -12739,7 +12753,7 @@
 
     function renderFoundSessions(data) {
       const rows = data.sessions || [];
-      const groups = groupRowsBySite(rows);
+      const groups = groupRowsBySite(rows, { includeEmpty: true });
       const body = renderDcGroupedList(
         groups,
         "No active sessions on your dCloud dashboard.",
@@ -12765,7 +12779,8 @@
           </table>
         `
         ,
-        "found-sessions"
+        "found-sessions",
+        "sessions"
       );
       $("found-sessions").innerHTML = `
         ${renderErrorHints(data.errors)}
@@ -13092,18 +13107,22 @@
       if (mount === "schedule") {
         const deletableRows = rows.filter((row) => row.deletable !== false && !row.eolOnly);
         const promotedRows = rows.filter((row) => row.eolOnly);
-        const deletableGroups = groupRowsBySite(deletableRows).filter((group) => group.rows.length > 0);
+        const deletableGroups = groupRowsBySite(deletableRows, { includeEmpty: true });
         const promotedGroups = groupRowsBySite(promotedRows).filter((group) => group.rows.length > 0);
-        const mainBody = deletableGroups.length
-          ? deletableGroups.map(({ site, rows: siteRows }) => {
-              const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
-              return `
+        const mainBody = deletableGroups.map(({ site, rows: siteRows }) => {
+          const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
+          const body = siteRows.length
+            ? renderManagedSavedTable(site, siteRows, { deletable: true, sort: managedSavedSort })
+            : `<p class="hint">None in this datacenter.</p>`;
+          return `
             <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
-              <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span></summary>
-              ${renderManagedSavedTable(site, siteRows, { deletable: true, sort: managedSavedSort })}
+              <summary>
+                <span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span>
+                ${dcViewLink(site, "customcontent")}
+              </summary>
+              ${body}
             </details>`;
-            }).join("")
-          : `<p class="hint">No directly deletable saved content in any DC.</p>`;
+        }).join("");
         const promotedBody = promotedGroups.length
           ? `
             <details class="saved-promoted-group" id="saved-promoted-group">
@@ -13115,11 +13134,11 @@
               `).join("")}
             </details>`
           : "";
-        const body = rows.length ? `${mainBody}${promotedBody}` : `<p class="hint">No saved custom content found in any DC.</p>`;
+        const body = `${mainBody}${promotedBody}`;
         if (container) {
           container.innerHTML = `
             ${renderErrorHints(data.errors)}
-            <p class="hint">${rows.length ? `${rows.length} saved content item(s) across all DCs · ${deletableRows.length} directly deletable${promotedRows.length ? ` · ${promotedRows.length} TBv2 promoted/EOL-only` : ""}. Click a column header to sort every datacenter.` : ""}</p>
+            ${rows.length ? `<p class="hint">${rows.length} saved content item(s) across all DCs · ${deletableRows.length} directly deletable${promotedRows.length ? ` · ${promotedRows.length} TBv2 promoted/EOL-only` : ""}. Click a column header to sort every datacenter.</p>` : ""}
             ${body}
           `;
         }
@@ -15248,6 +15267,13 @@
     });
     $("btn-schedule-saved").addEventListener("click", () => scheduleSelectedSaved().catch((err) => showError(err.message)));
     $("saved-schedule-export").addEventListener("change", () => syncScheduleSavedButton());
+    document.addEventListener("click", (ev) => {
+      const link = ev.target.closest?.("a.dc-view-link");
+      if (!link) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.open(link.href, "_blank", "noopener,noreferrer");
+    }, true);
     $("btn-expand-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", true));
     $("btn-collapse-sessions").addEventListener("click", () => setDcGroupsOpen("found-sessions", false));
     $("btn-check-all-sessions").addEventListener("click", () => setFoundSessionChecks(true));

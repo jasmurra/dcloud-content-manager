@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.7** | A refused extend shows dCloud’s resource limit; a removed hub row stays removed; each datacenter links to its dCloud sessions or saved content |
 | **2.0.6** | Sign-in window stays open through Duo, and CAMGR reuses that login |
 | **2.0.5** | Job workspace bulk end, reset, save, and extend stay off until a card is checked; a batch of 10 or more lists every item a second time |
 | **2.0.4** | My Content finds your sessions and saved content together and downloads them every time; Search reuses a full Content or Sessions download for 5 minutes, with a note and a toast |

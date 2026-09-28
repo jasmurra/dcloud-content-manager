@@ -1451,6 +1451,13 @@ def test_removed_id_can_be_added_back() -> None:
     resurrect the row, but an explicit Add to Hub has to clear both — otherwise
     the row is stored and filtered straight back out and the button looks dead.
     """
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    hub_rows = page[page.index("function hubRowsForJob") : page.index("function visibleMonitorDcs")]
+    check(
+        "a removed hub row is not copied back from the job card",
+        "dc.savedId" not in hub_rows
+        and "savedIds?.rows" in hub_rows,
+    )
     import app
     from app import CaiDemoRef
 
@@ -1561,7 +1568,9 @@ def test_extend_offers_the_farthest_bookable_stop() -> None:
     )
 
     booked = "Can't extend session: Resources are fully booked out after the session"
+    limited = "Can't extend session: Resources available only for 1 day 11 hours 52 minutes after the session"
     check("fully booked is treated as capacity", extend_is_capacity_blocked(booked))
+    check("a named resource window is treated as capacity", extend_is_capacity_blocked(limited))
 
     current = datetime(2026, 9, 20, 18, 20, tzinfo=timezone.utc)
     requested = current + timedelta(days=1)
@@ -1619,6 +1628,28 @@ def test_extend_offers_the_farthest_bookable_stop() -> None:
         put=lambda stop: {"ok": False, "message": booked},
     )
     check("no shorter window means no offer", not blocked.get("offer") and not blocked.get("applied"), str(blocked))
+
+    two_days, _two_err = resolve_extended_stop_by_minutes(current_stop=current_s, extra_minutes=2 * 24 * 60)
+    named_calls: list[str] = []
+    named = probe_max_extend_stop(
+        "token",
+        "lon",
+        "806828",
+        requested_stop=two_days,
+        current_stop=current_s,
+        put=lambda stop: named_calls.append(stop) or {"ok": False, "message": limited},
+    )
+    named_stop = parse_schedule_datetime(str(named.get("suggested_stop") or ""))
+    check(
+        "a named resource window is offered and not applied",
+        named.get("offer") and not named.get("applied") and named_calls == [two_days],
+        str(named),
+    )
+    check(
+        "the offer matches the 1 day 11 hour window dCloud named",
+        named_stop is not None and abs((named_stop - (current + timedelta(days=1, hours=11, minutes=50))).total_seconds()) <= 5 * 60,
+        str(named),
+    )
 
     check("extend by days is on the page", 'id="extend-days"' in INDEX and 'id="extend-hours"' in INDEX)
     check("the page probes before applying a shorter extend", "/api/jobs/${jobId}/probe-extend" in INDEX)
@@ -1833,9 +1864,14 @@ def test_staggered_session_copies_cards() -> None:
     check(
         "the management list keeps a collapsible group per DC",
         "function renderManagedSavedTable(site, rows" in INDEX
-        and 'groupRowsBySite(deletableRows).filter((group) => group.rows.length > 0)' in INDEX
+        and "groupRowsBySite(deletableRows, { includeEmpty: true })" in INDEX
+        and 'dcViewLink(site, "customcontent")' in INDEX
         and 'id="btn-expand-schedule-saved"' in INDEX
         and 'id="btn-collapse-schedule-saved"' in INDEX
+        and "function dcloudDashboardUrl(" in INDEX
+        and "https://dcloud2-${String(site || \"\").trim().toLowerCase()}.cisco.com/dashboard/${page}" in INDEX
+        and "groupRowsBySite(rows, { includeEmpty: true })" in INDEX
+        and 'closest?.("a.dc-view-link")' in INDEX
         and '"found-schedule-saved"' in INDEX[
             INDEX.index("const PERSIST_DC_GROUP_CONTAINERS")
             : INDEX.index("const PERSIST_DC_GROUP_SELECTOR")
@@ -2264,7 +2300,8 @@ def test_event_management_section() -> None:
         and "function showToast(" in INDEX
         and "function notifyRequestError(" in INDEX
         and 'showToast("Scheduling submitted.")' in INDEX
-        and 'showToast(targets.length === 1 ? "Session extended." : "Sessions extended.")' in INDEX,
+        and 'showToast(applied.length === 1 ? "Session extended." : "Sessions extended.")' in INDEX
+        and "!row.applied && !row.offer" in INDEX,
     )
     empty_events, empty_errors, empty_fetched = dcloud_client.list_admin_events("token", [])
     check(
