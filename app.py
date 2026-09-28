@@ -720,7 +720,7 @@ def _ensure_user_access_token(
             access = _refresh_with_any_site(refresh, site, progress)
             if access:
                 return access
-    if tool_browser_profile_exists() and _playwright_refresh_allowed("dcloud"):
+    if tool_browser_profile_exists() and not headed_is_open() and _playwright_refresh_allowed("dcloud"):
         access, new_refresh, found_site, _message = capture_dcloud_tokens(
             site or "rtp",
             headed=False,
@@ -3724,7 +3724,7 @@ def _camgr_auto_connect() -> dict[str, Any]:
                 "message": probed.get("message") or "CAMGR session is active.",
             }
         )
-    if tool_browser_profile_exists() and _playwright_refresh_allowed("camgr"):
+    if tool_browser_profile_exists() and not headed_is_open() and _playwright_refresh_allowed("camgr"):
         imported, _import_message = capture_camgr_session(headed=False)
         if imported:
             probed = probe_camgr_login(imported, allow_tab=False)
@@ -3756,7 +3756,7 @@ def _cai_auto_connect() -> dict[str, Any]:
         probed = probe_cai_login("")
         if probed.get("loggedIn"):
             cookie = ""
-    if not probed.get("loggedIn") and tool_browser_profile_exists() and _playwright_refresh_allowed("cai"):
+    if not probed.get("loggedIn") and tool_browser_profile_exists() and not headed_is_open() and _playwright_refresh_allowed("cai"):
         imported, _message = capture_cai_session(headed=False)
         if imported:
             probed = probe_cai_login(imported)
@@ -5005,15 +5005,19 @@ _load_persisted_session()
 _load_cai_session()
 _load_camgr_session()
 set_camgr_cookie_sink(_camgr_cookie_rotated)
-_start_auth_keepalive()
+# python app.py is the reloader parent. It imports this file, then uvicorn
+# imports it again in the worker. Starting the keepalive in both runs two
+# hidden browsers, and the extra one blocks the sign-in window.
+if __name__ != "__main__":
+    _start_auth_keepalive()
 
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    return HTMLResponse(
-        (STATIC_DIR / "index.html").read_text(encoding="utf-8"),
-        headers={"Cache-Control": "no-store"},
-    )
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    # The file keeps a placeholder so a failed sign-in status call cannot leave "1.0" up.
+    html = html.replace("Version 1.0", f"Version {_read_app_version()}", 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/version")

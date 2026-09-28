@@ -8,6 +8,7 @@ Refresh happens by loading the site in this profile, not by decrypting Chrome Sa
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -49,6 +50,13 @@ IDP_HOSTS = (
     "cloudsso.cisco.com",
 )
 IDP_SETTLE_SECONDS = 6.0
+# A saved dCloud token can sit in this profile from last time. Give Cisco a
+# moment to redirect onto Duo before that old token counts as "already signed in".
+SSO_SETTLE_SECONDS = 8.0
+# Duo closes its popup for a moment when Cisco login finishes. That is not the
+# user closing the sign-in window. "Continue in browser" can also take the
+# person to another window and back, so a short gap is not them quitting.
+WINDOW_BLANK_GRACE_SECONDS = 45.0
 DCLOUD_SIGN_IN_NEEDED = (
     "dCloud needs a sign-in in the tool browser — click Log in to dCloud."
 )
@@ -158,31 +166,186 @@ def take_hub_cookies() -> dict[str, str]:
         return cookies
 
 
-def _warm_hub_sessions(page: Any, context: Any) -> dict[str, str]:
-    """After Cisco SSO, visit CAI and CAMGR in the same window so those sessions exist."""
-    found: dict[str, str] = {}
-    for key, url, hosts in HUB_SITES:
-        if not context.pages:
-            break
+def _safe_pages(context: Any) -> list[Any]:
+    try:
+        return list(context.pages)
+    except Exception:
+        return []
+
+
+def _page_on_hosts(page: Any, hosts: tuple[str, ...]) -> bool:
+    try:
+        host = (urlparse(page.url or "").hostname or "").lower()
+    except Exception:
+        return False
+    return any(wanted in host for wanted in hosts)
+
+
+def _still_on_idp(context: Any) -> bool:
+    """True while any tool-browser tab is still the Cisco / Duo prompt."""
+    return any(_is_idp_page(page) for page in _safe_pages(context))
+
+
+def _open_target_page(context: Any, url: str) -> Any | None:
+    """Open the site we still need a cookie from. Used after SSO, when the login popup has closed."""
+    if _still_on_idp(context):
+        # Do not navigate away from Duo. The person still has to click
+        # Continue in browser, then come back to this same window.
+        return None
+    try:
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+    except Exception:
+        return None
+    return page
+
+
+def _duo_page(context: Any) -> Any | None:
+    """The Duo card CAMGR opens after dCloud already signed in."""
+    for page in _safe_pages(context):
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+            host = (urlparse(page.url or "").hostname or "").lower()
         except Exception:
             continue
-        deadline = time.time() + 18
-        header = ""
-        while time.time() < deadline:
-            if not context.pages:
-                break
-            header = _cookie_header(context.cookies(), hosts)
-            if header and not _is_idp_page(page):
-                found[key] = header
-                break
-            time.sleep(0.8)
-        if key not in found:
-            header = header or _cookie_header(context.cookies(), hosts)
-            if header:
-                found[key] = header
+        if "duosecurity" in host:
+            return page
+    return None
+
+
+def _advance_duo_prompt(page: Any) -> bool:
+    """Press the Duo button on CAMGR's redirect. The sign-in just finished."""
+    try:
+        clicked = page.evaluate(
+            """() => {
+              const nodes = [...document.querySelectorAll('button, a, input[type="submit"], [role="button"]')];
+              const wanted = nodes.map(el => ({
+                el,
+                text: (el.innerText || el.value || '').replace(/\\s+/g, ' ').trim().toLowerCase()
+              }));
+              const pick = wanted.find(item => item.text === 'log in')
+                || wanted.find(item => item.text === 'continue' || item.text.startsWith('continue'));
+              if (!pick) return '';
+              pick.el.click();
+              return pick.text;
+            }"""
+        )
+    except Exception:
+        return False
+    return bool(clicked)
+
+
+def _warm_hub_sessions(
+    page: Any,
+    context: Any,
+    *,
+    deadline: float | None = None,
+) -> dict[str, str]:
+    """Visit CAI and CAMGR in this same window once Duo is finished.
+
+    The Duo "Continue in browser" page has to stay up until the person clicks
+    it. Navigating to CAMGR, or closing the window, before that click loses
+    the prompt and never stores a CAMGR cookie.
+    """
+    end = deadline if deadline is not None else time.time() + 240
+    found: dict[str, str] = {}
+    pending = sorted(HUB_SITES, key=lambda item: item[0] != "camgr")
+    attempt_until = 0.0
+    navigate_after = 0.0
+    on_host_since: dict[str, float] = {}
+    duo_clicks = 0
+    last_duo_click = 0.0
+    while pending and time.time() < end:
+        workable = _work_page(context)
+        if _still_on_idp(context) and workable is None:
+            # CAMGR's own redirect lands here right after dCloud. Press Log in
+            # once so the session they just finished is reused.
+            now = time.time()
+            duo = _duo_page(context)
+            if duo is not None and duo_clicks < 3 and now - last_duo_click > 2:
+                if _advance_duo_prompt(duo):
+                    duo_clicks += 1
+                    last_duo_click = now
+                    time.sleep(1.0)
+                    continue
+            # Do not navigate away from Duo. A leftover Duo tab is not the
+            # page CAMGR loads in, and closing it restarts the window.
+            attempt_until = 0.0
+            on_host_since.clear()
+            time.sleep(0.6)
+            continue
+        key, url, hosts = pending[0]
+        pages = _safe_pages(context)
+        if workable is None and not pages:
+            on_host_since.pop(key, None)
+            if time.time() < navigate_after:
+                time.sleep(0.6)
+                continue
+            navigate_after = time.time() + 5
+            page = _open_target_page(context, url)
+            if page is None:
+                time.sleep(0.6)
+                continue
+        else:
+            page = workable or (pages[-1] if pages else None)
+            if page is None or _is_idp_page(page):
+                on_host_since.clear()
+                time.sleep(0.6)
+                continue
+            if not _page_on_hosts(page, hosts):
+                on_host_since.pop(key, None)
+                if time.time() < navigate_after:
+                    time.sleep(0.4)
+                    continue
+                navigate_after = time.time() + 5
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                except Exception:
+                    if _is_idp_page(page):
+                        continue
+                attempt_until = time.time() + 25
+                continue
+        if _is_idp_page(page):
+            on_host_since.clear()
+            continue
+        # An old cookie can already be in the profile. Wait until this tab has
+        # actually stayed on the site, so a hop through Duo is not counted.
+        arrived = on_host_since.setdefault(key, time.time())
+        if time.time() - arrived < 2.0:
+            time.sleep(0.4)
+            continue
+        header = _cookie_header(context.cookies(), hosts)
+        if header and (key != "camgr" or _camgr_cookie_works(header)):
+            found[key] = header
+            pending.pop(0)
+            attempt_until = 0.0
+            on_host_since.pop(key, None)
+            continue
+        # CAMGR is the cookie this sign-in exists to capture. Other hub
+        # sites can be skipped after a short try; CAMGR waits out the deadline.
+        if attempt_until <= 0:
+            attempt_until = time.time() + 25
+        if key != "camgr" and time.time() > attempt_until:
+            pending.pop(0)
+            attempt_until = 0.0
+            continue
+        time.sleep(0.6)
     return found
+
+
+def _camgr_cookie_works(header: str) -> bool:
+    """True only when CAMGR itself accepts the cookie. A leftover cookie must not close the window."""
+    if not header:
+        return False
+    try:
+        from camgr_client import probe_camgr_login
+
+        return bool(probe_camgr_login(header, allow_tab=False, timeout=8).get("loggedIn"))
+    except Exception:
+        return False
 
 
 def _cookie_header(raw: list[dict[str, Any]], hosts: tuple[str, ...]) -> str:
@@ -248,14 +411,319 @@ class _BrowserTurn:
         self.release()
 
 
+def _singleton_pid(lock: Path) -> int | None:
+    raw = ""
+    try:
+        raw = os.readlink(lock)
+    except OSError:
+        try:
+            raw = lock.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+    tail = str(raw).strip().rsplit("-", 1)[-1]
+    try:
+        return int(tail)
+    except ValueError:
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _is_hidden_browser(pid: int) -> bool:
+    """True for a headless tool browser. That process has no Mac window."""
+    try:
+        cmd = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="],
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "headless" in cmd.lower() and str(PROFILE_DIR) in cmd
+
+
+def _stop_hidden_profile_browsers() -> None:
+    """Stop headless browsers on this profile so a visible sign-in window can open."""
+    needle = str(PROFILE_DIR)
+    try:
+        out = subprocess.check_output(["ps", "-ax", "-o", "pid=,command="], text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return
+    pids: list[int] = []
+    for line in out.splitlines():
+        pid_s, _, cmd = line.strip().partition(" ")
+        if needle not in cmd or "headless" not in cmd.lower():
+            continue
+        try:
+            pids.append(int(pid_s))
+        except ValueError:
+            continue
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    for _ in range(20):
+        if not any(_pid_alive(pid) for pid in pids):
+            return
+        time.sleep(0.1)
+
+
+def _tool_chrome_app() -> Path | None:
+    """Playwright's window is Google Chrome for Testing, not the Chromium menu name."""
+    apps = sorted(BROWSERS_DIR.glob("chromium-*/chrome-mac*/Google Chrome for Testing.app"))
+    return apps[-1] if apps else None
+
+
+def _raise_tool_window() -> None:
+    """Put the sign-in window in front. System Events is blocked on this Mac."""
+    app = _tool_chrome_app()
+    if app is None:
+        return
+    try:
+        subprocess.run(["open", "-a", str(app)], timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def _stop_tool_chrome(pid: int) -> None:
+    """Stop a leftover tool browser. Never the person's normal Chrome."""
+    try:
+        cmd = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="],
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if str(PROFILE_DIR) not in cmd and str(BROWSERS_DIR) not in cmd:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    for _ in range(20):
+        if not _pid_alive(pid):
+            return
+        time.sleep(0.1)
+
+
+def _release_profile_lock(*, headed: bool) -> str | None:
+    """Clear a lock left by a dead, hidden, or leftover tool browser."""
+    lock = PROFILE_DIR / "SingletonLock"
+    pid = _singleton_pid(lock) if lock.exists() or lock.is_symlink() else None
+    if pid and _pid_alive(pid) and not _is_hidden_browser(pid):
+        if not headed:
+            # A background refresh must not close the window someone is using.
+            return (
+                "A sign-in window is already open. Use that window to finish Duo, "
+                "then leave it up until CAMGR loads."
+            )
+        # Duo's Continue button dismisses the window and leaves this process
+        # holding the profile, so the next Log in says it is already open
+        # even though nothing is on screen. Replace that leftover.
+        _stop_tool_chrome(pid)
+        if _pid_alive(pid):
+            _raise_tool_window()
+            return (
+                "A sign-in window is already open. It should be in front now. "
+                "Finish Duo there and leave it up until CAMGR loads."
+            )
+    _stop_hidden_profile_browsers()
+    for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        try:
+            (PROFILE_DIR / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return None
+
+
+# Duo's "open in browser" button calls window.close() and also opens a tab in
+# the main browser, behind the tool page. Block the close, and keep a second
+# tab so the Chromium window itself cannot disappear.
+_HOLD_SCRIPT = """
+(() => {
+  const block = function () {};
+  try {
+    Object.defineProperty(window, "close", { configurable: true, writable: false, value: block });
+  } catch (e) {
+    window.close = function () {};
+  }
+})();
+"""
+_KEEPER_TITLE = "Leave this window open"
+_KEEPER_HTML = """<!DOCTYPE html><html><head><title>Leave this window open</title></head>
+<body style="font-family:-apple-system,sans-serif;padding:2.5rem;line-height:1.45">
+<h1>Leave this window open</h1>
+<p>Finish the Duo prompt. If a tab opened in your main browser, it is being brought forward.</p>
+<p>This window stays here and then signs in to CAMGR. You can ignore it until that page loads.</p>
+</body></html>"""
+_last_duo_focus = 0.0
+
+
+def _hold_window_open(context: Any) -> None:
+    """Stop Duo from closing the tool window when it opens the main browser."""
+    try:
+        context.add_init_script(_HOLD_SCRIPT)
+    except Exception:
+        return
+    for page in _safe_pages(context):
+        try:
+            page.evaluate(_HOLD_SCRIPT)
+        except Exception:
+            continue
+
+
+def _is_keeper(page: Any) -> bool:
+    try:
+        return _KEEPER_TITLE in (page.title() or "")
+    except Exception:
+        return False
+
+
+def _login_pages(context: Any) -> list[Any]:
+    return [page for page in _safe_pages(context) if not _is_keeper(page)]
+
+
+def _page_host(page: Any) -> str:
+    try:
+        return (urlparse(page.url or "").hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _dcloud_page(context: Any) -> Any | None:
+    """The tab that already reached dCloud, not a second Duo prompt."""
+    for page in _login_pages(context):
+        if "dcloud2-" in _page_host(page):
+            return page
+    return None
+
+
+def _work_page(context: Any) -> Any | None:
+    """A tab CAMGR can load in. The extra Duo tab is left alone."""
+    for page in _login_pages(context):
+        if not _is_idp_page(page):
+            return page
+    return None
+
+
+def _show_sign_in(context: Any) -> None:
+    """The dCloud tab stays in front. The extra Duo tab is not the sign-in."""
+    page = _dcloud_page(context)
+    if page is None:
+        for candidate in _login_pages(context):
+            if _is_idp_page(candidate):
+                page = candidate
+                break
+    if page is None:
+        pages = _login_pages(context)
+        page = pages[-1] if pages else None
+    if page is None:
+        return
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+
+
+def _open_keeper(context: Any) -> Any | None:
+    """Keep the Cisco page in the one sign-in window. Do not open a second window."""
+    _show_sign_in(context)
+    return None
+
+
+def _focus_duo_tab() -> None:
+    """The Duo tab opens in the main browser behind the tool page. Bring it forward."""
+    global _last_duo_focus
+    now = time.time()
+    if now - _last_duo_focus < 2.0:
+        return
+    _last_duo_focus = now
+    script = r'''
+tell application "System Events"
+  set browserNames to {"Google Chrome", "Arc", "Microsoft Edge", "Brave Browser", "Chromium", "Safari"}
+  set runningNames to name of every application process
+end tell
+repeat with appName in browserNames
+  if runningNames contains appName then
+    try
+      tell application appName
+        repeat with w in windows
+          set i to 0
+          repeat with t in tabs of w
+            set i to i + 1
+            try
+              set tabURL to URL of t
+            on error
+              set tabURL to ""
+            end try
+            if tabURL contains "duosecurity" or tabURL contains "duo.com" then
+              set active tab index of w to i
+              set index of w to 1
+              activate
+              return
+            end if
+          end repeat
+        end repeat
+      end tell
+    end try
+  end if
+end repeat
+'''
+    try:
+        subprocess.run(["osascript", "-e", script], timeout=4, capture_output=True, check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+
+
+def _launch_failure(exc: Exception) -> str:
+    text = str(exc)
+    if text.startswith("A sign-in window"):
+        return text
+    if (
+        "existing browser session" in text
+        or "profile is already in use" in text
+        or "kill EPERM" in text
+    ):
+        return (
+            "A sign-in window is already open, or the last one is stuck. "
+            "Quit that Chromium window, then click Log in again. If macOS says Terminal "
+            "was blocked, allow it under System Settings → Privacy & Security → Files & Folders."
+        )
+    first = text.split("Call log:", 1)[0].strip()
+    if len(first) > 240:
+        first = first[:240].rsplit(" ", 1)[0] + "…"
+    return f"Could not open the sign-in browser. {first}"
+
+
 def _launch(playwright: Any, *, headed: bool):
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    stuck = _release_profile_lock(headed=headed)
+    if stuck:
+        raise RuntimeError(stuck)
+    args = ["--disable-blink-features=AutomationControlled"]
+    if not headed:
+        # A background refresh must not pop a window the person then sees close.
+        args.append("--headless=new")
     return playwright.chromium.launch_persistent_context(
         str(PROFILE_DIR),
         headless=not headed,
         viewport={"width": 1200, "height": 860},
         ignore_default_args=["--enable-automation"],
-        args=["--disable-blink-features=AutomationControlled"],
+        args=args,
     )
 
 
@@ -281,9 +749,12 @@ def capture_site_cookies(
             try:
                 context = _launch(playwright, headed=headed)
             except Exception as exc:
-                return None, f"Could not open the sign-in browser ({exc})."
+                return None, _launch_failure(exc)
             if headed:
                 _set_headed_open(True)
+                _hold_window_open(context)
+                _open_keeper(context)
+                _raise_tool_window()
             try:
                 page = context.pages[0] if context.pages else context.new_page()
                 try:
@@ -295,24 +766,87 @@ def capture_site_cookies(
                 except Exception as exc:
                     if not headed:
                         return None, "A sign-in is needed in the tool browser."
-                    return None, f"Could not open the sign-in page ({exc})."
+                    # The Duo page is often already on screen when this wait
+                    # gives up. Closing here takes the prompt away before the
+                    # person can click Continue in browser.
+                    if not _safe_pages(context):
+                        _open_target_page(context, url)
+                if headed:
+                    _show_sign_in(context)
                 last_header = ""
                 started = time.time()
+                saw_idp = False
+                opened_target_after_sso = False
+                reopened_blank = False
                 while time.time() < deadline:
                     if not headed and _user_needs_window.is_set():
                         return None, "A sign-in window was requested."
-                    if headed and not context.pages:
-                        return None, "The sign-in window was closed before login finished."
-                    last_header = _cookie_header(context.cookies(), hosts)
-                    if last_header and is_logged_in(last_header):
-                        return last_header, "Signed in with the tool browser."
-                    # Silent callers gain nothing by waiting out a login form.
+                    # The keeper tab does not count. Duo can close the prompt
+                    # tab; that used to look like "no pages" and context.close()
+                    # ran before any CAMGR cookie existed.
+                    pages = _login_pages(context) if headed else _safe_pages(context)
+                    if headed and not pages:
+                        _open_keeper(context)
+                        # One replacement tab. Opening a new one every pass
+                        # closes the window and brings it straight back.
+                        if not reopened_blank:
+                            reopened_blank = True
+                            _raise_tool_window()
+                            opened = _open_target_page(context, url)
+                            if opened is not None:
+                                page = opened
+                                opened_target_after_sso = True
+                                _hold_window_open(context)
+                                try:
+                                    page.bring_to_front()
+                                except Exception:
+                                    pass
+                        time.sleep(0.4)
+                        continue
+                    if pages:
+                        page = pages[-1]
+                        if headed:
+                            _show_sign_in(context)
+                    if _still_on_idp(context) or _is_idp_page(page):
+                        saw_idp = True
+                        opened_target_after_sso = False
+                        if headed:
+                            _focus_duo_tab()
+                        # Silent callers gain nothing by waiting out a login form.
+                        if (
+                            not headed
+                            and time.time() - started > IDP_SETTLE_SECONDS
+                        ):
+                            return None, "A sign-in is needed in the tool browser."
+                        time.sleep(1.2)
+                        continue
                     if (
-                        not headed
-                        and time.time() - started > IDP_SETTLE_SECONDS
-                        and _is_idp_page(page)
+                        headed
+                        and saw_idp
+                        and not opened_target_after_sso
+                        and not _page_on_hosts(page, hosts)
                     ):
-                        return None, "A sign-in is needed in the tool browser."
+                        try:
+                            page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                        except Exception:
+                            opened = _open_target_page(context, url)
+                            if opened is not None:
+                                page = opened
+                        opened_target_after_sso = True
+                        continue
+                    # A cookie saved from an earlier visit is not proof that
+                    # this window has reached the site. Closing on that cookie
+                    # was taking the window down a few seconds after it opened.
+                    if headed and not _page_on_hosts(page, hosts):
+                        time.sleep(0.6)
+                        continue
+                    last_header = _cookie_header(context.cookies(), hosts)
+                    try:
+                        logged_in = bool(last_header and is_logged_in(last_header))
+                    except Exception:
+                        logged_in = False
+                    if logged_in:
+                        return last_header, "Signed in with the tool browser."
                     time.sleep(1.2)
                 if last_header and is_logged_in(last_header):
                     return last_header, "Signed in with the tool browser."
@@ -356,9 +890,12 @@ def capture_dcloud_tokens(
             try:
                 context = _launch(playwright, headed=headed)
             except Exception as exc:
-                return "", "", site_code, f"Could not open the sign-in browser ({exc})."
+                return "", "", site_code, _launch_failure(exc)
             if headed:
                 _set_headed_open(True)
+                _hold_window_open(context)
+                _open_keeper(context)
+                _raise_tool_window()
             try:
                 # The dCloud app consumes the code and navigates on within a few
                 # hundred ms, so watch navigations instead of only sampling page.url.
@@ -384,25 +921,70 @@ def capture_dcloud_tokens(
                 except Exception as exc:
                     if not headed:
                         return "", "", site_code, DCLOUD_SIGN_IN_NEEDED
-                    return "", "", site_code, f"Could not open the sign-in page ({exc})."
+                    if not _safe_pages(context):
+                        _open_target_page(context, login_url)
+                if headed:
+                    _show_sign_in(context)
                 last_err = "Waiting for dCloud sign-in in the tool browser."
                 started = time.time()
 
                 def finish(access: str, refresh: str, found_site: str) -> tuple[str, str, str, str]:
                     # One Log in click also lands CAI and CAMGR cookies in this
-                    # profile. Silent refresh skips the extra hops.
+                    # profile. Silent refresh skips the extra hops. Drop the
+                    # leftover Duo tab first so CAMGR is not a second sign-in.
                     if headed:
                         try:
-                            _store_hub_cookies(_warm_hub_sessions(page, context))
+                            _store_hub_cookies(_warm_hub_sessions(page, context, deadline=deadline))
                         except Exception:
                             pass
                     return access, refresh, found_site, "Signed in with the tool browser."
 
+                saw_idp = False
+                code_landed_at = 0.0
+                tried_codes: set[str] = set()
+                reopened_login = False
+                blank_since = 0.0
                 while time.time() < deadline:
                     if not headed and _user_needs_window.is_set():
                         return "", "", site_code, "A sign-in window was requested."
-                    if headed and not context.pages:
-                        return "", "", site_code, "The sign-in window was closed before login finished."
+                    pages = _login_pages(context) if headed else _safe_pages(context)
+                    if headed and not pages:
+                        # Continue in browser closes the tab, then Duo opens the
+                        # return page itself. Opening CAMGR or a new login here
+                        # is a second Duo prompt.
+                        if blank_since <= 0:
+                            blank_since = time.time()
+                        _open_keeper(context)
+                        for code in list(seen):
+                            if not code or code in tried_codes:
+                                continue
+                            tried_codes.add(code)
+                            access, refresh, _expires, err = exchange_dcloud_access_code(
+                                site_code, code
+                            )
+                            if access:
+                                return finish(access, refresh, site_code)
+                            last_err = err or last_err
+                        if time.time() - blank_since < 6 or seen or reopened_login:
+                            time.sleep(0.4)
+                            continue
+                        reopened_login = True
+                        opened = _open_target_page(context, login_url)
+                        if opened is not None:
+                            page = opened
+                            attach(page)
+                            _hold_window_open(context)
+                            try:
+                                page.bring_to_front()
+                            except Exception:
+                                pass
+                        time.sleep(0.4)
+                        continue
+                    blank_since = 0.0
+                    if pages:
+                        page = pages[-1]
+                        if headed:
+                            _show_sign_in(context)
                     # Silent callers must not sit here: once the redirects settle on an
                     # identity-provider page, only a real person can move it forward.
                     if (
@@ -411,16 +993,56 @@ def capture_dcloud_tokens(
                         and _is_idp_page(page)
                     ):
                         return "", "", site_code, DCLOUD_SIGN_IN_NEEDED
-                    for code in (*seen, _oauth_code_from_pages(context)):
-                        if not code:
+                    # The authenticate page is already spending this code.
+                    # The extra Duo tab is not another sign-in. Leave it alone
+                    # and finish from the dCloud tab. Clicking that Duo tab is
+                    # what closes the window.
+                    dcloud = _dcloud_page(context) if headed else None
+                    if headed and dcloud is not None:
+                        _remember_page_code(dcloud, seen)
+                        on_authenticate = "authenticate" in _page_path(dcloud)
+                        if code_landed_at <= 0 and (seen or on_authenticate):
+                            code_landed_at = time.time()
+                        access, refresh, found_site = _read_dcloud_storage(dcloud, site_code)
+                        if access:
+                            return finish(access, refresh, found_site)
+                        pending_code = _oauth_code_from_pages(context) or (seen[-1] if seen else "")
+                        if (
+                            pending_code
+                            and pending_code not in tried_codes
+                            and code_landed_at > 0
+                            and time.time() - code_landed_at >= 4
+                        ):
+                            tried_codes.add(pending_code)
+                            access, refresh, _expires, err = exchange_dcloud_access_code(
+                                site_code, pending_code
+                            )
+                            if access:
+                                return finish(access, refresh, site_code)
+                            last_err = err or last_err
+                        if seen or on_authenticate:
+                            time.sleep(0.5)
                             continue
+                    if headed and _still_on_idp(context):
+                        saw_idp = True
+                        _focus_duo_tab()
+                        time.sleep(0.5)
+                        continue
+                    if headed and time.time() - started < SSO_SETTLE_SECONDS:
+                        time.sleep(0.5)
+                        continue
+                    for code in (*seen, _oauth_code_from_pages(context)):
+                        if not code or code in tried_codes:
+                            continue
+                        tried_codes.add(code)
                         access, refresh, _expires, err = exchange_dcloud_access_code(site_code, code)
                         if access:
                             return finish(access, refresh, site_code)
                         last_err = err or last_err
                     seen.clear()
                     # The app may also have exchanged the code itself by now.
-                    access, refresh, found_site = _read_dcloud_storage(page, site_code)
+                    storage_page = _dcloud_page(context) or page
+                    access, refresh, found_site = _read_dcloud_storage(storage_page, site_code)
                     if access:
                         return finish(access, refresh, found_site)
                     time.sleep(0.6)
@@ -431,6 +1053,35 @@ def capture_dcloud_tokens(
                     context.close()
                 except Exception:
                     pass
+
+
+def _page_path(page: Any) -> str:
+    try:
+        return urlparse(page.url or "").path or ""
+    except Exception:
+        return ""
+
+
+def _remember_page_code(page: Any, seen: list[str]) -> None:
+    """The address bar drops the code while 'Logging you in' is still spinning."""
+    code = ""
+    try:
+        code = _code_from_url(page.url or "")
+    except Exception:
+        code = ""
+    if not code:
+        try:
+            original = page.evaluate(
+                """() => {
+                  const nav = performance.getEntriesByType('navigation')[0];
+                  return (nav && nav.name) || '';
+                }"""
+            )
+        except Exception:
+            original = ""
+        code = _code_from_url(str(original or ""))
+    if code and code not in seen:
+        seen.append(code)
 
 
 def _code_from_url(url: str) -> str:

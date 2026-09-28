@@ -9727,7 +9727,7 @@
       } else if ($("token-source").value !== "paste") {
         $("dtoken").value = "";
       }
-      $("auth-status").textContent = status;
+      if (!$("btn-login")?.disabled) $("auth-status").textContent = status;
       const authorized = Boolean(
         (data.sessionLoggedIn && data.accessToken)
         || (manualDcloudTokenValidated && $("dtoken").value.trim()),
@@ -9778,7 +9778,7 @@
         const site = ($("src-site") && $("src-site").value) || "rtp";
         if (allowWindow) {
           $("auth-status").textContent =
-            "Opening the tool browser — signing in to dCloud, CAI, and CAMGR…";
+            "Leave the Chromium window open. If Duo opens a tab in this browser, finish it there — it may open behind this page. Chromium stays up until CAMGR is signed in.";
         }
         const data = await api(
           `/api/auth/dcloud-browser-login?site=${encodeURIComponent(site)}`
@@ -11425,7 +11425,17 @@
       }
     }
 
+    async function showAppVersion() {
+      try {
+        const data = await api("/api/version", { quiet: true });
+        if (data.version) $("app-version").textContent = `Version ${data.version}`;
+      } catch {
+        // The page itself is already stamped with the VERSION file.
+      }
+    }
+
     async function bootstrapPage() {
+      await showAppVersion();
       await refreshAuth().catch((err) => showError(err.message));
       await Promise.all([
         warmAuthFromToolBrowser().catch(() => {}),

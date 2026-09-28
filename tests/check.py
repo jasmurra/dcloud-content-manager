@@ -272,6 +272,12 @@ def test_release_metadata() -> None:
     check("What’s new does not dump raw markdown", '<pre class="changelog-text">' not in INDEX)
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     check("the header reads VERSION from disk", '"version": _read_app_version()' in source)
+    check(
+        "the page title is stamped with the VERSION file before sign-in finishes",
+        'html.replace("Version 1.0", f"Version {_read_app_version()}", 1)' in source
+        and "async function showAppVersion(" in INDEX
+        and '"/api/version"' in INDEX,
+    )
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     check(f"README What's new lists {VERSION}", f"**{VERSION}**" in readme)
 
@@ -2584,6 +2590,56 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "dCloud sign-in starts at the SSO authorize URL, not the marketing home",
         "build_dcloud_login_url" in browser
         and 'f"https://dcloud2-{site_code}.cisco.com/"' not in browser,
+    )
+    check(
+        "a stuck sign-in window does not paste the Playwright log into the dialog",
+        "def _launch_failure(" in browser
+        and "Call log:" in browser
+        and "kill EPERM" in browser,
+    )
+    check(
+        "a headed sign-in stays open when the Duo popup closes and then opens the target site",
+        "WINDOW_BLANK_GRACE_SECONDS" in browser
+        and "def _open_target_page(" in browser
+        and "opened_target_after_sso" in browser
+        and "def _open_keeper(" in browser
+        and "def _focus_duo_tab(" in browser,
+    )
+    warm = browser[browser.index("def _warm_hub_sessions(") : browser.index("def _cookie_header(")]
+    check(
+        "the Duo Continue page stays up until CAMGR can be opened",
+        "def _still_on_idp(" in browser
+        and "Do not navigate away from Duo." in warm
+        and "_warm_hub_sessions(page, context, deadline=deadline)" in browser
+        and 'key != "camgr"' in warm
+        and "window.close = function" in browser
+        and "_advance_duo_prompt" in warm,
+    )
+    check(
+        "a finished dCloud login does not close and reopen the sign-in window",
+        "already spending this code" in browser
+        and "Target.closeTarget" not in browser
+        and "_close_extra_idp_tabs" not in warm
+        and "reopened_login" in browser
+        and "reopened_blank" in browser,
+    )
+    release = browser[browser.index("def _release_profile_lock(") : browser.index("def _hold_window_open(")]
+    check(
+        "a live sign-in window is not force-closed",
+        "SIGTERM" not in release
+        and "not _is_hidden_browser" in release
+        and "_stop_tool_chrome(pid)" in release
+        and "Google Chrome for Testing.app" in browser,
+    )
+    check(
+        "a hidden background browser does not block the sign-in window",
+        "def _is_hidden_browser(" in browser
+        and "def _stop_hidden_profile_browsers(" in browser
+        and "_stop_hidden_profile_browsers()" in release,
+    )
+    check(
+        "the reloader parent does not start a second hidden browser",
+        'if __name__ != "__main__":\n    _start_auth_keepalive()' in source,
     )
     check(
         "a silent capture gives up once it lands on a login page",
