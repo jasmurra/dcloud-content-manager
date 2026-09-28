@@ -23,14 +23,18 @@ def capture_camgr_session(
         return capture_site_cookies(
             CAMGR_HOME,
             hosts,
-            lambda cookie: bool(probe_camgr_login(cookie, allow_tab=False).get("loggedIn")),
+            lambda cookie: bool(
+                probe_camgr_login(cookie, allow_tab=False, timeout=8).get("loggedIn")
+            ),
             headed=False,
             timeout_s=min(25.0, timeout_s),
         )
     return capture_site_cookies(
         CAMGR_HOME,
         hosts,
-        lambda cookie: bool(probe_camgr_login(cookie, allow_tab=False).get("loggedIn")),
+        lambda cookie: bool(
+            probe_camgr_login(cookie, allow_tab=False, timeout=8).get("loggedIn")
+        ),
         headed=True,
         timeout_s=timeout_s,
     )

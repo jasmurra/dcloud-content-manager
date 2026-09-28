@@ -198,14 +198,23 @@ def _auth_error(message: str) -> dict[str, Any]:
     }
 
 
-def probe_camgr_login(cookie_header: str, *, allow_tab: bool = True) -> dict[str, Any]:
+def probe_camgr_login(
+    cookie_header: str,
+    *,
+    allow_tab: bool = True,
+    timeout: float = 30,
+) -> dict[str, Any]:
     header = (cookie_header or "").strip()
     if using_chrome_tab(header):
         return probe_camgr_via_chrome_tab() if allow_tab else _auth_error(CAMGR_LOGIN_HINT)
     if header:
         sess = _session(header)
         try:
-            resp = sess.get(f"{CAMGR_API}/users/current", timeout=30, allow_redirects=True)
+            resp = sess.get(
+                f"{CAMGR_API}/users/current",
+                timeout=max(3.0, timeout),
+                allow_redirects=True,
+            )
         except requests.RequestException as exc:
             return _auth_error(describe_request_error(exc, "CAMGR") or "Could not reach CAMGR.")
         if "dcloud-camgr.cisco.com" in str(resp.url or "").lower():

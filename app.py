@@ -207,7 +207,9 @@ from camgr_browser import capture_camgr_session
 from net_errors import host_resolves, off_network_message
 from tool_browser import (
     capture_dcloud_tokens,
+    headed_is_open,
     profile_exists as tool_browser_profile_exists,
+    request_sign_in_window,
     take_hub_cookies,
 )
 
@@ -560,7 +562,11 @@ def _camgr_public_status(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         payload["openRunning"] = bool(_camgr_open.get("running"))
         open_error = str(_camgr_open.get("error") or "")
     if payload["openRunning"] and not payload.get("loggedIn"):
-        payload["message"] = "Sign in in the CAMGR window if asked. This tool will connect when it is ready."
+        payload["message"] = (
+            "Sign in in the CAMGR window if asked. This tool will connect when it is ready."
+            if headed_is_open()
+            else "Opening the CAMGR window…"
+        )
     elif open_error and not payload.get("loggedIn"):
         payload["openError"] = open_error
         payload["message"] = open_error
@@ -2059,34 +2065,12 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
     replaces = _cai_replace_map(job)
     transfers = _camgr_transfer_map(job)
     integrates = _cai_integrate_map(job)
-    for item in list(integrates.values()):
-        if not isinstance(item, dict):
-            continue
-        chips = list(item.get("dcTasks") or [])
-        if chips and _attach_tbv3_chip_links(chips):
-            item["dcTasks"] = chips
-            _upsert_cai_integrate(job, item)
     hidden = _saved_id_hidden_set(job)
     seen: set[str] = set()
     auto_add: list[dict[str, Any]] = []
-    backfill: list[dict[str, Any]] = []
-    for raw in _managed_saved_state().get("rows") or []:
-        norm = _normalize_saved_id_row(raw)
-        if not norm:
-            continue
-        if norm.get("publishedId") or norm.get("publishedLookupDone"):
-            continue
-        found = _ensure_published_id(norm["site"], norm["savedId"], "")
-        backfill.append(
-            {
-                **norm,
-                "publishedId": found,
-                "parentId": found or str(norm.get("parentId") or ""),
-                "publishedLookupDone": True,
-            }
-        )
-    if backfill:
-        _upsert_managed_saved_rows(backfill)
+    # Parent and topology lookups stay on Recheck / integrate refresh. Doing them
+    # here blocked the job poll, so a finished save kept showing as "saving"
+    # and never appeared in the hub.
 
     for dc in (job or {}).get("dcs") or []:
         if str(dc.get("phase") or "") != "saved" or not dc.get("saveConfirmed"):
@@ -3870,6 +3854,9 @@ def _start_camgr_open() -> dict[str, Any]:
 
 def _connect_camgr(cookie: str = "") -> dict[str, Any]:
     """Use a saved session, the tool browser, then a live CAMGR Chrome tab."""
+    # A weekend-old SSO often has a headless refresh sitting on the login page.
+    # Ask it to quit before this click waits on the same Chromium profile.
+    request_sign_in_window()
     with _camgr_open_lock:
         _camgr_open["running"] = True
     try:
@@ -3885,7 +3872,7 @@ def _connect_camgr_body(cookie: str = "") -> dict[str, Any]:
         _camgr_mark_unverified(reason)
         raise HTTPException(400, reason)
     header = (cookie or "").strip()
-    probed = probe_camgr_login(header, allow_tab=False)
+    probed = probe_camgr_login(header, allow_tab=False, timeout=8)
     tool_message = ""
     if not probed.get("loggedIn"):
         tool_header, tool_message = capture_camgr_session()

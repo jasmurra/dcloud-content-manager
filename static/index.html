@@ -451,9 +451,11 @@
       flex: 0 1 auto;
       min-width: 0;
     }
-    /* Token / paste fields need the leftover row width. */
-    .row > div:has(#token-source),
-    .row > div:has(#dtoken) {
+    /* Token source and the token box share one baseline. Status text sits under both. */
+    .auth-fields {
+      align-items: flex-end;
+    }
+    .auth-fields > div {
       flex: 1 1 16rem;
     }
     .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.85rem; align-items: center; }
@@ -2610,20 +2612,20 @@
         <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate Token</button>
         <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear Login Session</button>
       </div>
-      <div class="row" style="margin-top:0.85rem">
+      <div class="row auth-fields" style="margin-top:0.85rem">
         <div>
           <label for="token-source">Token Source</label>
           <select id="token-source">
             <option value="browser" selected>Browser / SSO login (auto-refresh)</option>
             <option value="paste">Paste my token</option>
           </select>
-          <p id="auth-status" class="hint"></p>
         </div>
         <div>
           <label for="dtoken">dCloud API Token</label>
           <input id="dtoken" type="text" placeholder="Log in — token appears here for copy/paste" autocomplete="off" spellcheck="false" />
         </div>
       </div>
+      <p id="auth-status" class="hint"></p>
       </div>
     </details>
 
@@ -3791,6 +3793,27 @@
       return sortByDatacenter((job?.dcs || []).filter(
         (dc) => !["saved", "ended"].includes(dc.phase) && !isMonitorDc(dc),
       ), (dc) => dc.site);
+    }
+
+    function hubRowsForJob(job) {
+      const rows = [...(job?.savedIds?.rows || [])];
+      const seen = new Set(rows.map((row) => `${String(row.site || "").toLowerCase()}:${row.savedId}`));
+      for (const dc of job?.dcs || []) {
+        if (dc.phase !== "saved" || !dc.saveConfirmed || !dc.savedId) continue;
+        const key = `${String(dc.site || "").toLowerCase()}:${dc.savedId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({
+          site: dc.site,
+          savedId: dc.savedId,
+          publishedId: dc.savedParentId || dc.demoId || "",
+          parentId: dc.savedParentId || dc.demoId || "",
+          name: dc.savedName || dc.name || "",
+          sessionId: dc.sessionId || "",
+          contentViewUrl: dc.contentViewUrl || "",
+        });
+      }
+      return rows;
     }
 
     function visibleMonitorDcs(job) {
@@ -9382,7 +9405,7 @@
 
     function renderSavedIds(job) {
       if (!job || !job.savedIds) return;
-      renderSavedIdRows(job.savedIds.rows || []);
+      renderSavedIdRows(hubRowsForJob(job));
       refreshRootIds().catch(() => {});
     }
 

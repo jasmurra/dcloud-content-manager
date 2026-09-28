@@ -23,6 +23,11 @@ BROWSERS_DIR = APP_DIR / ".playwright-browsers"
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(BROWSERS_DIR))
 
 _launch_lock = threading.Lock()
+# Set while a person is waiting for the visible sign-in window, so a background
+# refresh lets go of the profile instead of hiding that window.
+_user_needs_window = threading.Event()
+_headed_open_lock = threading.Lock()
+_headed_open = False
 _playwright_ready = False
 _hub_cookies_lock = threading.Lock()
 _hub_cookies: dict[str, str] = {}
@@ -35,7 +40,14 @@ HUB_SITES = (
 )
 
 # Hosts that mean "a person has to type something": Cisco's Okta tenant and Duo.
-IDP_HOSTS = ("id.cisco.com", "login.okta.com", "duosecurity.com", "cloudsso.cisco.com")
+IDP_HOSTS = (
+    "id.cisco.com",
+    "login.cisco.com",
+    "sso.cisco.com",
+    "login.okta.com",
+    "duosecurity.com",
+    "cloudsso.cisco.com",
+)
 IDP_SETTLE_SECONDS = 6.0
 DCLOUD_SIGN_IN_NEEDED = (
     "dCloud needs a sign-in in the tool browser — click Log in to dCloud."
@@ -186,6 +198,56 @@ def _cookie_header(raw: list[dict[str, Any]], hosts: tuple[str, ...]) -> str:
     return "; ".join(f"{name}={value}" for name, value in cookies.items())
 
 
+def request_sign_in_window() -> None:
+    """Ask a background browser to close so a visible sign-in window can open."""
+    _user_needs_window.set()
+
+
+def headed_is_open() -> bool:
+    with _headed_open_lock:
+        return _headed_open
+
+
+def _set_headed_open(value: bool) -> None:
+    global _headed_open
+    with _headed_open_lock:
+        _headed_open = value
+
+
+class _BrowserTurn:
+    """One Chromium profile at a time. A visible sign-in preempts a silent refresh."""
+
+    def __init__(self, headed: bool):
+        self.headed = headed
+        self.held = False
+
+    def __enter__(self) -> "_BrowserTurn":
+        if self.headed:
+            _user_needs_window.set()
+            try:
+                _launch_lock.acquire()
+            except BaseException:
+                _user_needs_window.clear()
+                raise
+            self.held = True
+            _user_needs_window.clear()
+            return self
+        if _user_needs_window.is_set() or not _launch_lock.acquire(blocking=False):
+            return self
+        self.held = True
+        if _user_needs_window.is_set():
+            self.release()
+        return self
+
+    def release(self) -> None:
+        if self.held:
+            _launch_lock.release()
+            self.held = False
+
+    def __exit__(self, *_args: object) -> None:
+        self.release()
+
+
 def _launch(playwright: Any, *, headed: bool):
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     return playwright.chromium.launch_persistent_context(
@@ -212,18 +274,33 @@ def capture_site_cookies(
     from playwright.sync_api import sync_playwright
 
     deadline = time.time() + max(20.0, timeout_s)
-    with _launch_lock:
+    with _BrowserTurn(headed) as turn:
+        if not turn.held:
+            return None, "The sign-in browser is already open."
         with sync_playwright() as playwright:
             try:
                 context = _launch(playwright, headed=headed)
             except Exception as exc:
                 return None, f"Could not open the sign-in browser ({exc})."
+            if headed:
+                _set_headed_open(True)
             try:
                 page = context.pages[0] if context.pages else context.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                try:
+                    page.goto(
+                        url,
+                        wait_until="domcontentloaded",
+                        timeout=15_000 if not headed else 60_000,
+                    )
+                except Exception as exc:
+                    if not headed:
+                        return None, "A sign-in is needed in the tool browser."
+                    return None, f"Could not open the sign-in page ({exc})."
                 last_header = ""
                 started = time.time()
                 while time.time() < deadline:
+                    if not headed and _user_needs_window.is_set():
+                        return None, "A sign-in window was requested."
                     if headed and not context.pages:
                         return None, "The sign-in window was closed before login finished."
                     last_header = _cookie_header(context.cookies(), hosts)
@@ -244,6 +321,7 @@ def capture_site_cookies(
                     "Finish Duo if a prompt is showing, then click Connect again."
                 )
             finally:
+                _set_headed_open(False)
                 try:
                     context.close()
                 except Exception:
@@ -271,12 +349,16 @@ def capture_dcloud_tokens(
     # and an SSO session already in this profile makes that hop silent.
     login_url, _state = build_dcloud_login_url(site_code)
     deadline = time.time() + max(20.0, timeout_s)
-    with _launch_lock:
+    with _BrowserTurn(headed) as turn:
+        if not turn.held:
+            return "", "", site_code, "The sign-in browser is already open."
         with sync_playwright() as playwright:
             try:
                 context = _launch(playwright, headed=headed)
             except Exception as exc:
                 return "", "", site_code, f"Could not open the sign-in browser ({exc})."
+            if headed:
+                _set_headed_open(True)
             try:
                 # The dCloud app consumes the code and navigates on within a few
                 # hundred ms, so watch navigations instead of only sampling page.url.
@@ -293,7 +375,16 @@ def capture_dcloud_tokens(
                 page = context.pages[0] if context.pages else context.new_page()
                 attach(page)
                 context.on("page", attach)
-                page.goto(login_url, wait_until="domcontentloaded", timeout=60_000)
+                try:
+                    page.goto(
+                        login_url,
+                        wait_until="domcontentloaded",
+                        timeout=15_000 if not headed else 60_000,
+                    )
+                except Exception as exc:
+                    if not headed:
+                        return "", "", site_code, DCLOUD_SIGN_IN_NEEDED
+                    return "", "", site_code, f"Could not open the sign-in page ({exc})."
                 last_err = "Waiting for dCloud sign-in in the tool browser."
                 started = time.time()
 
@@ -308,6 +399,8 @@ def capture_dcloud_tokens(
                     return access, refresh, found_site, "Signed in with the tool browser."
 
                 while time.time() < deadline:
+                    if not headed and _user_needs_window.is_set():
+                        return "", "", site_code, "A sign-in window was requested."
                     if headed and not context.pages:
                         return "", "", site_code, "The sign-in window was closed before login finished."
                     # Silent callers must not sit here: once the redirects settle on an
@@ -333,6 +426,7 @@ def capture_dcloud_tokens(
                     time.sleep(0.6)
                 return "", "", site_code, last_err
             finally:
+                _set_headed_open(False)
                 try:
                     context.close()
                 except Exception:

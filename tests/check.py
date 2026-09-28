@@ -192,6 +192,10 @@ def test_root_id_is_not_the_target() -> None:
         < body.index("for row in auto_add:"),
     )
     check("a job copy only fills an ID with no stored row", "not in stored_keys" in body)
+    check(
+        "the hub list does not call dCloud while the workspace is refreshing",
+        "_attach_tbv3_chip_links" not in body and "_ensure_published_id" not in body,
+    )
 
     payload = {"parentId": "222", "fkrootDemoId": 111}
     check(
@@ -2553,6 +2557,11 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "import-from-browser" not in page,
     )
     check(
+        "sign-in status sits under both token fields so they share a row",
+        page.index('id="dtoken"') < page.index('id="auth-status"')
+        and "auth-fields" in page,
+    )
+    check(
         "Log in also connects CAI and CAMGR without extra Connect clicks",
         "connectHubAfterLogin" in page
         and "_warm_hub_sessions" in browser
@@ -2597,6 +2606,12 @@ def test_tool_owned_browser_avoids_keychain() -> None:
     check(
         "Connect to CAMGR prefers the tool browser",
         "capture_camgr_session()" in connect_fn,
+    )
+    check(
+        "Connect to CAMGR asks a background browser to step aside",
+        "request_sign_in_window()" in connect_fn
+        and "def request_sign_in_window(" in (ROOT / "tool_browser.py").read_text(encoding="utf-8")
+        and "_user_needs_window.is_set()" in (ROOT / "tool_browser.py").read_text(encoding="utf-8"),
     )
     check(
         "Connect to CAMGR does not spawn extra Chrome tabs",
