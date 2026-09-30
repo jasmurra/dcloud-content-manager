@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.8** | Sign-in keeps the dCloud token. An expired token left in the sign-in browser is not treated as a new login |
 | **2.0.7** | A refused extend shows dCloud’s resource limit; a removed hub row stays removed; each datacenter links to its dCloud sessions or saved content |
 | **2.0.6** | Sign-in window stays open through Duo, and CAMGR reuses that login |
 | **2.0.5** | Job workspace bulk end, reset, save, and extend stay off until a card is checked; a batch of 10 or more lists every item a second time |

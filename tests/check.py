@@ -865,6 +865,14 @@ def test_token_refresh_is_not_raced() -> None:
     )
     later = time.time() + 20 * 60
     check("a token with plenty of life is reused", app._access_token_is_usable("t", later) is True)
+    check(
+        "a token inside the refresh window is still a login",
+        app._access_token_still_valid("t", soon) is True,
+    )
+    check(
+        "an expired token is not still a login",
+        app._access_token_still_valid("t", time.time() - 60) is False,
+    )
     keepalive = source[
         source.index("def _auth_keepalive_loop(") : source.index("def _start_auth_keepalive(")
     ]
@@ -2659,6 +2667,11 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "_close_extra_idp_tabs" not in warm
         and "reopened_login" in browser
         and "reopened_blank" in browser,
+    )
+    check(
+        "an expired saved dCloud token is not treated as a new login",
+        "def _access_is_live(" in browser
+        and browser.count("_access_is_live(access)") >= 2,
     )
     release = browser[browser.index("def _release_profile_lock(") : browser.index("def _hold_window_open(")]
     check(

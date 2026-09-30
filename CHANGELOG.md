@@ -1,3 +1,7 @@
+## 2.0.8 — 2026-09-30
+
+- **Sign-in no longer drops the token right after it appears.** An expired token left in the sign-in browser is not treated as a new login. A token that still has time left stays signed in when a refresh fails
+
 ## 2.0.7 — 2026-09-28
 
 - **A refused extend is not reported as done.** If dCloud says resources are only available for part of the time you asked for, the tool offers that shorter end and waits for you to confirm. If the extend does not happen, you see dCloud’s message

@@ -686,14 +686,29 @@ def _read_user_session() -> tuple[str, float, str, str]:
         )
 
 
+def _access_token_deadline(token: str, expires_at: float) -> float:
+    if not expires_at:
+        expires_at = float(jwt_expires_at(token) or 0)
+    return expires_at
+
+
 def _access_token_is_usable(token: str, expires_at: float) -> bool:
     if not token:
         return False
-    if not expires_at:
-        expires_at = float(jwt_expires_at(token) or 0)
+    expires_at = _access_token_deadline(token, expires_at)
     if not expires_at:
         return True
     return time.time() < expires_at - DCLOUD_REFRESH_BEFORE_SECONDS
+
+
+def _access_token_still_valid(token: str, expires_at: float) -> bool:
+    """True until the JWT is actually expired. The 5-minute window only means try a refresh."""
+    if not token:
+        return False
+    expires_at = _access_token_deadline(token, expires_at)
+    if not expires_at:
+        return True
+    return time.time() < expires_at - 30
 
 
 def _ensure_user_access_token(
@@ -715,21 +730,23 @@ def _ensure_user_access_token(
             token, expires_at, refresh, site = _read_user_session()
             if not force and _access_token_is_usable(token, expires_at):
                 return token
-            if not refresh:
-                return token if _access_token_is_usable(token, expires_at) else ""
-            access = _refresh_with_any_site(refresh, site, progress)
-            if access:
-                return access
+            if refresh:
+                access = _refresh_with_any_site(refresh, site, progress)
+                if access:
+                    return access
     if tool_browser_profile_exists() and not headed_is_open() and _playwright_refresh_allowed("dcloud"):
         access, new_refresh, found_site, _message = capture_dcloud_tokens(
             site or "rtp",
             headed=False,
             timeout_s=25,
         )
-        if access:
+        if access and _access_token_still_valid(access, jwt_expires_at(access)):
             _apply_user_session(access, new_refresh, found_site or site or "rtp", "browser")
             return access
-    return token if (not force and _access_token_is_usable(token, expires_at)) else ""
+    token, expires_at, _refresh, _site = _read_user_session()
+    # Refresh can fail while the access token still has a few minutes left.
+    # Dropping it here is what blanks the token field and looks like a logout.
+    return token if (not force and _access_token_still_valid(token, expires_at)) else ""
 
 
 def _refresh_with_any_site(
@@ -5160,9 +5177,7 @@ def api_auth_status() -> dict[str, Any]:
         expires_at = float(_user_auth.get("expires_at") or 0)
         has_refresh = bool(_user_auth.get("refresh_token"))
         access_token = (_user_auth.get("access_token") or "").strip()
-        logged_in = bool(access_token) and (
-            not expires_at or time.time() < expires_at - 30
-        )
+        logged_in = _access_token_still_valid(access_token, expires_at)
     return {
         "dcloudOauthConfigured": dcloud["oauth_configured"],
         "dcloudTokenConfigured": bool(effective_dcloud_token()),

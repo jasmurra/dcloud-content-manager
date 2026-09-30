@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from browser_auth.dcloud_token import jwt_expires_at
+
 APP_DIR = Path(__file__).resolve().parent
 PROFILE_DIR = APP_DIR / ".dcloud-tool-chrome"
 BROWSERS_DIR = APP_DIR / ".playwright-browsers"
@@ -1004,15 +1006,21 @@ def capture_dcloud_tokens(
                         if code_landed_at <= 0 and (seen or on_authenticate):
                             code_landed_at = time.time()
                         access, refresh, found_site = _read_dcloud_storage(dcloud, site_code)
-                        if access:
-                            return finish(access, refresh, found_site)
                         pending_code = _oauth_code_from_pages(context) or (seen[-1] if seen else "")
+                        # An expired dc_p_a is the previous login. Accepting it
+                        # shows a token and then the next status check wipes it.
+                        # On the authenticate page, wait for the new login to
+                        # replace that saved token before trusting it.
+                        if _access_is_live(access) and not (pending_code or on_authenticate):
+                            return finish(access, refresh, found_site)
                         if (
                             pending_code
                             and pending_code not in tried_codes
                             and code_landed_at > 0
                             and time.time() - code_landed_at >= 4
                         ):
+                            if _access_is_live(access):
+                                return finish(access, refresh, found_site)
                             tried_codes.add(pending_code)
                             access, refresh, _expires, err = exchange_dcloud_access_code(
                                 site_code, pending_code
@@ -1043,7 +1051,7 @@ def capture_dcloud_tokens(
                     # The app may also have exchanged the code itself by now.
                     storage_page = _dcloud_page(context) or page
                     access, refresh, found_site = _read_dcloud_storage(storage_page, site_code)
-                    if access:
+                    if _access_is_live(access):
                         return finish(access, refresh, found_site)
                     time.sleep(0.6)
                 return "", "", site_code, last_err
@@ -1103,6 +1111,17 @@ def _oauth_code_from_pages(context: Any) -> str:
         if code:
             return code
     return ""
+
+
+def _access_is_live(access: str) -> bool:
+    """A stored dc_p_a from an earlier login is not a new sign-in once it has expired."""
+    text = (access or "").strip()
+    if not text:
+        return False
+    exp = jwt_expires_at(text)
+    if not exp:
+        return True
+    return time.time() < exp - 30
 
 
 def _read_dcloud_storage(page: Any, site: str) -> tuple[str, str, str]:
