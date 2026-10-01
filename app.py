@@ -6483,6 +6483,9 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
     else:
         job["phase"] = "error"
         job["error"] = "No sessions were ended."
+    # End and cancel already marked the card finished. Take it off the workspace
+    # now so it does not sit there as deleted or cancelled until someone clicks X.
+    _retire_ended_cards(job)
     _persist_job(job)
 
 

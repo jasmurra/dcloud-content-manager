@@ -1,3 +1,8 @@
+## 2.0.9 — 2026-10-01
+
+- **A finished session leaves the workspace.** When dCloud reports the session deleted or cancelled, or you end or cancel it from the tool, the card is removed. You do not have to click the X. Saved cards stay
+- **The virtual center sits next to the session id** on the collapsed card, for example 1361162 (4)
+
 ## 2.0.8 — 2026-09-30
 
 - **Sign-in no longer drops the token right after it appears.** An expired token left in the sign-in browser is not treated as a new login. A token that still has time left stays signed in when a refresh fails

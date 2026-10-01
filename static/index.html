@@ -7448,8 +7448,11 @@
       const cardKey = sessionKey(dc.site, dc.sessionId || dc.demoId);
       const vmsHtml = renderVmGroups(dc, cardKey, openVmMore);
       const demoName = String(dc.name || "").trim();
-      const sess = dc.sessionId ? `<div class="mono">session ${escapeHtml(dc.sessionId)}</div>` : "";
       const virtualCenter = String(dc.virtualCenter || "").trim();
+      const vcMark = virtualCenter ? ` (${virtualCenter})` : "";
+      const sess = dc.sessionId
+        ? `<div class="mono">session ${escapeHtml(dc.sessionId)}${escapeHtml(vcMark)}</div>`
+        : "";
       const vcLine = virtualCenter
         ? `<div class="hint">Virtual Center ${escapeHtml(virtualCenter)}</div>`
         : "";
@@ -7534,7 +7537,9 @@
             </div>`
         : "";
       const summaryName = displayName || `Demo ${dc.demoId || "session"}`;
-      const summarySession = dc.sessionId ? String(dc.sessionId) : `demo ${dc.demoId || "—"}`;
+      const summarySession = dc.sessionId
+        ? `${dc.sessionId}${vcMark}`
+        : `demo ${dc.demoId || "—"}`;
       const openSession = dc.viewUrl
         ? `<a class="card-open-session" href="${escapeHtml(dc.viewUrl)}" target="_blank" rel="noopener noreferrer">Open Session</a>`
         : "";

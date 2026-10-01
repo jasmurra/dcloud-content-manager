@@ -664,6 +664,11 @@ def test_session_card_shows_virtual_center() -> None:
     fields = app._dc_ids_from_session({"virtualCenter": 5, "parentId": "1376509"})
     check("a payload with VC stamps the card", fields.get("virtualCenter") == "5")
     check("the card template shows Virtual Center", "Virtual Center ${escapeHtml(virtualCenter)}" in INDEX)
+    check(
+        "the collapsed session id includes the virtual center",
+        "const vcMark = virtualCenter ? ` (${virtualCenter})` : \"\";" in INDEX
+        and "${dc.sessionId}${vcMark}" in INDEX,
+    )
 
 
 def test_shutdown_save_waits_for_vms_to_power_off() -> None:
@@ -1321,6 +1326,46 @@ def test_ended_card_is_not_a_dead_end() -> None:
                 app._drop_ended_card(job, "sjc", "492702") and job["dcs"] == [],
                 str(job["dcs"]),
             )
+
+            from dcloud_client import is_failed_status
+
+            check("numeric deleted is a finished session", is_failed_status(9) and is_failed_status("9"))
+            check("numeric cancelled is a finished session", is_failed_status(7) and is_failed_status("7"))
+            check("a combined deleted status is finished", is_failed_status("9 / Deleted"))
+            check("starting is not a finished session", not is_failed_status("2") and not is_failed_status(4))
+
+            stuck = {
+                "id": "j-deleted",
+                "phase": "waiting_active",
+                "log": [],
+                "error": "",
+                "dcs": [{
+                    "site": "rtp",
+                    "sessionId": "1360826",
+                    "phase": "waiting",
+                    "status": "Deleted",
+                    "message": "Waiting for dCloud to bring this session up.",
+                }],
+            }
+            held_fetch = app.fetch_session
+            held_public = app.check_public_session_status
+            held_token = app._refresh_job_token
+            try:
+                app.fetch_session = lambda *a, **k: ({"status": 9}, None)
+                app.check_public_session_status = lambda *a, **k: ("", None)
+                app._refresh_job_token = lambda *a, **k: ("", "")
+                app._refresh_dc_from_dcloud(stuck, stuck["dcs"][0], "token")
+                check(
+                    "a deleted session is marked finished instead of still starting",
+                    stuck["dcs"][0]["phase"] == "ended",
+                    str(stuck["dcs"][0]),
+                )
+                app._retire_ended_cards(stuck)
+                check("that deleted card leaves the workspace", stuck["dcs"] == [], str(stuck["dcs"]))
+            finally:
+                app.fetch_session = held_fetch
+                app.check_public_session_status = held_public
+                app._refresh_job_token = held_token
         finally:
             app.LAST_JOB_FILE = real_last_job
 
@@ -1334,6 +1379,8 @@ def test_ended_card_is_not_a_dead_end() -> None:
     )
     check("a failed read is retried on a fresh token", refresh.count("_refresh_job_token(") == 1)
     check("every ended card says why in the log", "def retire(" in refresh)
+    end_job = source[source.index("def _end_job(") : source.index("def _reset_job(")]
+    check("ending a session takes the card off the workspace", "_retire_ended_cards(job)" in end_job)
     check(
         "a stopping card is still refreshed",
         "_SKIP_REFRESH_DC_PHASES = _TERMINAL_DC_PHASES" in source
@@ -2845,7 +2892,7 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         and 'class="card-open-session"' in page
         and 'class="card-summary-end"' not in page
         and 'dc.sessionId ? `#${dc.sessionId}`' not in page
-        and 'dc.sessionId ? String(dc.sessionId)' in page,
+        and "dc.sessionId\n        ? `${dc.sessionId}${vcMark}`" in page,
     )
     check(
         "card Actions is on the collapsed row, not buried in the expanded body",

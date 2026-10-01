@@ -579,8 +579,26 @@ def is_active_status(raw: Any) -> bool:
 
 
 def is_failed_status(raw: Any) -> bool:
-    key = _status_key(raw)
-    return key in FAILED_STATUSES or key.startswith("fail")
+    """True once dCloud has deleted, cancelled, or otherwise finished the session.
+
+    The session API often sends the number (9 Deleted, 7 Cancelled, 99 Error)
+    or "9 / Deleted". The word is what the card shows, so the number has to
+    count too — otherwise the card sits on "waiting" after the session is gone.
+    """
+    if isinstance(raw, bool):
+        return False
+    text = _status_text(raw)
+    if not text:
+        return False
+    parts = [part.strip() for part in text.split("/") if part.strip()] or [text]
+    for part in parts:
+        key = _status_key(part)
+        label = _status_key(_status_label(part))
+        if key in FAILED_STATUSES or key.startswith("fail"):
+            return True
+        if label in FAILED_STATUSES or label.startswith("fail"):
+            return True
+    return False
 
 
 def is_stopping_status(raw: Any) -> bool:
