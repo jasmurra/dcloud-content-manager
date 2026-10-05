@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.10** | The sign-in browser updates to current Chrome so Duo does not block Log in |
 | **2.0.9** | A deleted or cancelled session leaves the workspace on its own; the virtual center shows next to the session id |
 | **2.0.8** | Sign-in keeps the dCloud token. An expired token left in the sign-in browser is not treated as a new login |
 | **2.0.7** | A refused extend shows dCloud’s resource limit; a removed hub row stays removed; each datacenter links to its dCloud sessions or saved content |

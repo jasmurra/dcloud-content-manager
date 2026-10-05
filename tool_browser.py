@@ -7,12 +7,19 @@ Refresh happens by loading the site in this profile, not by decrypting Chrome Sa
 
 from __future__ import annotations
 
+import json
 import os
+import platform
+import plistlib
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+import urllib.request
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -88,6 +95,278 @@ def _chromium_on_disk() -> bool:
     return False
 
 
+# Duo compares the sign-in browser with current Chrome Stable. Playwright's
+# copy only changes when Playwright is released, so a build one version behind
+# (Chrome 153 while Stable is 154) is refused as "Chrome update required".
+CFT_VERSIONS_URL = (
+    "https://googlechromelabs.github.io/chrome-for-testing/"
+    "last-known-good-versions-with-downloads.json"
+)
+CFT_DOWNLOAD_HOST = "storage.googleapis.com"
+CFT_DOWNLOAD_PREFIX = "/chrome-for-testing-public/"
+CFT_DIR = BROWSERS_DIR / "chrome-for-testing"
+CFT_STATE_FILE = CFT_DIR / "last-check.json"
+# Ask Google which Stable build is current at most this often, once we already
+# have that build. A browser we know is behind is retried on the next sign-in.
+CFT_CHECK_SECONDS = 12 * 60 * 60
+CFT_FAIL_BACKOFF_SECONDS = 10 * 60
+
+
+def _version_tuple(text: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for piece in str(text or "").split("."):
+        digits = ""
+        for char in piece:
+            if not char.isdigit():
+                break
+            digits += char
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
+
+
+def _cft_platform() -> str | None:
+    machine = platform.machine().lower()
+    arm = machine in {"arm64", "aarch64"}
+    system = platform.system()
+    if system == "Darwin":
+        return "mac-arm64" if arm else "mac-x64"
+    if system == "Linux":
+        return "linux-arm64" if arm else "linux64"
+    if system == "Windows":
+        return "win64" if machine in {"amd64", "x86_64"} else "win32"
+    return None
+
+
+def _trusted_cft_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc == CFT_DOWNLOAD_HOST
+        and parsed.path.startswith(CFT_DOWNLOAD_PREFIX)
+    )
+
+
+def _stable_chrome_download(catalog: dict[str, Any]) -> tuple[str, str] | None:
+    """Stable version and this machine's Chrome for Testing zip, or None."""
+    stable = (catalog.get("channels") or {}).get("Stable") or {}
+    version = str(stable.get("version") or "").strip()
+    platform_name = _cft_platform()
+    if not version or not platform_name:
+        return None
+    for item in (stable.get("downloads") or {}).get("chrome") or []:
+        url = str(item.get("url") or "")
+        if item.get("platform") == platform_name and _trusted_cft_url(url):
+            return version, url
+    return None
+
+
+def _chrome_app_version(app: Path) -> str:
+    plist_path = app / "Contents" / "Info.plist"
+    if not plist_path.is_file():
+        return ""
+    try:
+        with plist_path.open("rb") as handle:
+            info = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException):
+        return ""
+    return str(info.get("CFBundleShortVersionString") or "").strip()
+
+
+def _chrome_testing_apps() -> list[Path]:
+    if not BROWSERS_DIR.is_dir():
+        return []
+    found: list[Path] = []
+    for pattern in (
+        "chrome-for-testing/**/Google Chrome for Testing.app",
+        "chromium-*/chrome-mac*/Google Chrome for Testing.app",
+    ):
+        found.extend(path for path in BROWSERS_DIR.glob(pattern) if path.is_dir())
+    return found
+
+
+def _tool_chrome_app() -> Path | None:
+    """The sign-in app is Google Chrome for Testing, newest copy we have."""
+    apps = _chrome_testing_apps()
+    if not apps:
+        return None
+    return max(apps, key=lambda app: _version_tuple(_chrome_app_version(app)))
+
+
+def _sign_in_chrome_executable() -> str | None:
+    app = _tool_chrome_app()
+    if app is None:
+        return None
+    binary = app / "Contents" / "MacOS" / "Google Chrome for Testing"
+    if binary.is_file():
+        return str(binary)
+    return None
+
+
+def _local_sign_in_chrome_version() -> str:
+    app = _tool_chrome_app()
+    return _chrome_app_version(app) if app else ""
+
+
+def _read_cft_state() -> dict[str, Any]:
+    try:
+        data = json.loads(CFT_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_cft_state(**fields: Any) -> None:
+    CFT_DIR.mkdir(parents=True, exist_ok=True)
+    state = _read_cft_state()
+    state.update(fields)
+    CFT_STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
+
+
+def _fetch_cft_catalog() -> tuple[dict[str, Any] | None, str | None]:
+    request = urllib.request.Request(CFT_VERSIONS_URL, headers={"User-Agent": "dcloud-content-manager"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        return None, f"Could not check the current Chrome version ({exc})."
+    if not isinstance(payload, dict):
+        return None, "Chrome version list was not usable."
+    return payload, None
+
+
+def _safe_extract(archive: zipfile.ZipFile, dest: Path) -> None:
+    root = dest.resolve()
+    for member in archive.infolist():
+        target = (dest / member.filename).resolve()
+        if target != root and root not in target.parents:
+            raise RuntimeError("Chrome download had an unexpected path.")
+        archive.extract(member, dest)
+        # ZipInfo keeps the executable bit in the upper half of external_attr.
+        # extract() drops it, and Duo's browser then cannot be started.
+        mode = (member.external_attr >> 16) & 0o777
+        if mode and target.is_file():
+            os.chmod(target, mode)
+
+
+def _install_stable_chrome(version: str, url: str) -> None:
+    """Download Chrome for Testing Stable into this install."""
+    dest = CFT_DIR / version
+    if any(_chrome_app_version(app) == version for app in _chrome_testing_apps()):
+        return
+    CFT_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="chrome-for-testing-") as tmp:
+        zip_path = Path(tmp) / "chrome.zip"
+        request = urllib.request.Request(url, headers={"User-Agent": "dcloud-content-manager"})
+        with urllib.request.urlopen(request, timeout=120) as response, zip_path.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+        staging = Path(tmp) / "unpack"
+        staging.mkdir()
+        with zipfile.ZipFile(zip_path) as archive:
+            _safe_extract(archive, staging)
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.move(str(staging), str(dest))
+    app = next((path for path in dest.glob("**/Google Chrome for Testing.app") if path.is_dir()), None)
+    if app is None:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise RuntimeError("Chrome download had no browser app.")
+    if platform.system() == "Darwin":
+        subprocess.run(
+            ["xattr", "-dr", "com.apple.quarantine", str(app)],
+            check=False,
+            capture_output=True,
+        )
+    for old in CFT_DIR.iterdir():
+        if old.name in {version, CFT_STATE_FILE.name}:
+            continue
+        if old.is_dir():
+            shutil.rmtree(old, ignore_errors=True)
+
+
+def ensure_sign_in_chrome() -> str | None:
+    """Download Chrome Stable when the sign-in browser has fallen behind.
+
+    Returns an error string when the update fails. The caller still uses the
+    browser already on disk when there is one.
+    """
+    installed = _local_sign_in_chrome_version()
+    state = _read_cft_state()
+    known_stable = str(state.get("stable") or "")
+    behind = bool(known_stable) and _version_tuple(installed) < _version_tuple(known_stable)
+    checked_at = float(state.get("checked_at") or 0)
+    failed_at = float(state.get("failed_at") or 0)
+    if installed and not behind and time.time() - checked_at < CFT_CHECK_SECONDS:
+        return None
+    if behind and time.time() - failed_at < CFT_FAIL_BACKOFF_SECONDS:
+        return None
+    catalog, err = _fetch_cft_catalog()
+    if catalog is None:
+        return err if behind or not installed else None
+    found = _stable_chrome_download(catalog)
+    if not found:
+        return "Chrome Stable has no download for this Mac." if not installed else None
+    version, url = found
+    _write_cft_state(stable=version, checked_at=time.time(), installed=installed)
+    if installed and _version_tuple(installed) >= _version_tuple(version):
+        return None
+    print(f"Updating the sign-in browser to Chrome {version} so Duo will accept it...", flush=True)
+    try:
+        _install_stable_chrome(version, url)
+    except Exception as exc:
+        _write_cft_state(failed_at=time.time())
+        return f"Could not update the sign-in browser to Chrome {version} ({exc})."
+    _write_cft_state(installed=version, failed_at=0)
+    print(f"Sign-in browser is Chrome {version}.", flush=True)
+    return None
+
+
+def _chrome_brand_script() -> str:
+    """Duo looks up the Google Chrome name and treats a reduced version as old.
+
+    Chrome for Testing reports its real build only under the Chromium name, and
+    the ordinary user agent is frozen at '154.0.0.0'. Copy the real version
+    onto the Google Chrome name so Duo sees the build that is actually running.
+    """
+    return """
+(() => {
+  const native = navigator.userAgentData;
+  if (!native || typeof native.getHighEntropyValues !== "function") return;
+  const withBrand = (list, item) => {
+    const brands = Array.isArray(list) ? list.slice() : [];
+    if (!brands.some((brand) => brand && brand.brand === "Google Chrome")) brands.unshift(item);
+    return brands;
+  };
+  const data = {
+    get brands() {
+      const major = (native.brands || []).find((brand) => brand && brand.brand === "Chromium");
+      return withBrand(native.brands, { brand: "Google Chrome", version: major ? major.version : "" });
+    },
+    get mobile() { return native.mobile; },
+    get platform() { return native.platform; },
+    toJSON() { return { brands: this.brands, mobile: this.mobile, platform: this.platform }; },
+    getHighEntropyValues(hints) {
+      const wanted = Array.isArray(hints) ? hints.slice() : [];
+      for (const hint of ["uaFullVersion", "fullVersionList"]) {
+        if (!wanted.includes(hint)) wanted.push(hint);
+      }
+      return native.getHighEntropyValues(wanted).then((values) => {
+        const full = String(values.uaFullVersion || "");
+        const out = Object.assign({}, values);
+        out.brands = withBrand(values.brands, { brand: "Google Chrome", version: full.split(".")[0] || "" });
+        out.fullVersionList = withBrand(values.fullVersionList, { brand: "Google Chrome", version: full });
+        return out;
+      });
+    },
+  };
+  try {
+    Object.defineProperty(Navigator.prototype, "userAgentData", { configurable: true, get: () => data });
+  } catch (error) {}
+})();
+"""
+
+
 def _install_playwright_package() -> str | None:
     """Install the Playwright Python package into this app's venv."""
     try:
@@ -114,8 +393,23 @@ def _install_playwright_package() -> str | None:
     return None
 
 
+def _install_playwright_chromium() -> str | None:
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env={**os.environ, "PLAYWRIGHT_BROWSERS_PATH": str(BROWSERS_DIR)},
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"Could not download Chromium for sign-in ({exc})."
+    return None
+
+
 def ensure_playwright() -> str | None:
-    """Install Playwright's Chromium once if needed. Returns an error or None."""
+    """Install Playwright and a current Chrome for Testing. Returns an error or None."""
     global _playwright_ready
     if _playwright_ready:
         return None
@@ -132,26 +426,18 @@ def ensure_playwright() -> str | None:
         except ImportError:
             return (
                 "Playwright is not installed yet. Quit and double-click start.command "
-                "so it can download Chromium (one time)."
+                "so it can download the sign-in browser."
             )
     # Do not start the Playwright driver just to ask where Chromium is — that
     # adds several seconds before the sign-in window can open.
-    if _chromium_on_disk():
+    fallback_err = None
+    if not _chromium_on_disk() and _sign_in_chrome_executable() is None:
+        fallback_err = _install_playwright_chromium()
+    message = ensure_sign_in_chrome()
+    if _sign_in_chrome_executable() or _chromium_on_disk():
         _playwright_ready = True
         return None
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            env={**os.environ, "PLAYWRIGHT_BROWSERS_PATH": str(BROWSERS_DIR)},
-        )
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return f"Could not download Chromium for sign-in ({exc})."
-    _playwright_ready = True
-    return None
+    return message or fallback_err or "Could not download the sign-in browser."
 
 
 def _store_hub_cookies(cookies: dict[str, str]) -> None:
@@ -481,12 +767,6 @@ def _stop_hidden_profile_browsers() -> None:
         time.sleep(0.1)
 
 
-def _tool_chrome_app() -> Path | None:
-    """Playwright's window is Google Chrome for Testing, not the Chromium menu name."""
-    apps = sorted(BROWSERS_DIR.glob("chromium-*/chrome-mac*/Google Chrome for Testing.app"))
-    return apps[-1] if apps else None
-
-
 def _raise_tool_window() -> None:
     """Put the sign-in window in front. System Events is blocked on this Mac."""
     app = _tool_chrome_app()
@@ -720,13 +1000,18 @@ def _launch(playwright: Any, *, headed: bool):
     if not headed:
         # A background refresh must not pop a window the person then sees close.
         args.append("--headless=new")
-    return playwright.chromium.launch_persistent_context(
-        str(PROFILE_DIR),
-        headless=not headed,
-        viewport={"width": 1200, "height": 860},
-        ignore_default_args=["--enable-automation"],
-        args=args,
-    )
+    launch_args: dict[str, Any] = {
+        "headless": not headed,
+        "viewport": {"width": 1200, "height": 860},
+        "ignore_default_args": ["--enable-automation"],
+        "args": args,
+    }
+    executable = _sign_in_chrome_executable()
+    if executable:
+        launch_args["executable_path"] = executable
+    context = playwright.chromium.launch_persistent_context(str(PROFILE_DIR), **launch_args)
+    context.add_init_script(_chrome_brand_script())
+    return context
 
 
 def capture_site_cookies(
@@ -869,8 +1154,14 @@ def capture_dcloud_tokens(
     *,
     headed: bool = True,
     timeout_s: float = 180,
+    warm_hub: bool = True,
 ) -> tuple[str, str, str, str]:
-    """Return (access, refresh, site, message) from the tool Chromium dCloud session."""
+    """Return (access, refresh, site, message) from the tool Chromium dCloud session.
+
+    warm_hub: after SSO, also visit CAI/CAMGR so Content Manager Connect buttons
+    are already signed in. Demo Usage passes False so dCloud login does not
+    open a second CAMGR Duo prompt.
+    """
     missing = ensure_playwright()
     if missing:
         return "", "", site, missing
@@ -931,14 +1222,14 @@ def capture_dcloud_tokens(
                 started = time.time()
 
                 def finish(access: str, refresh: str, found_site: str) -> tuple[str, str, str, str]:
-                    # One Log in click also lands CAI and CAMGR cookies in this
-                    # profile. Silent refresh skips the extra hops. Drop the
-                    # leftover Duo tab first so CAMGR is not a second sign-in.
+                    # Content Manager wants CAI/CAMGR cookies in this same window.
+                    # Demo Usage passes warm_hub=False so dCloud SSO is one login.
                     if headed:
-                        try:
-                            _store_hub_cookies(_warm_hub_sessions(page, context, deadline=deadline))
-                        except Exception:
-                            pass
+                        if warm_hub:
+                            try:
+                                _store_hub_cookies(_warm_hub_sessions(page, context, deadline=deadline))
+                            except Exception:
+                                pass
                     return access, refresh, found_site, "Signed in with the tool browser."
 
                 saw_idp = False

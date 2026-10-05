@@ -187,14 +187,15 @@ if [ -f "package.json" ] && command -v npm >/dev/null 2>&1; then
   fi
 fi
 
-# Tool-owned Chromium for Cisco SSO (CAMGR/CAI/dCloud). Lives in this folder so a
-# GitHub update does not require a new zip, and Chrome Keychain is never opened.
+# Tool-owned Chrome for Testing for Cisco SSO (CAMGR/CAI/dCloud). Lives in this
+# folder so a GitHub update does not require a new zip, and Chrome Keychain is
+# never opened. Duo rejects a build that has fallen behind Chrome Stable, so
+# this replaces that browser when Stable is newer.
 export PLAYWRIGHT_BROWSERS_PATH="$(pwd)/.playwright-browsers"
-if ! .venv/bin/python -c "from playwright.sync_api import sync_playwright as S
-p=S().start(); path=p.chromium.executable_path; p.stop(); raise SystemExit(0 if path else 1)" >/dev/null 2>&1; then
-  echo "Downloading Chromium for sign-in (one time; this is not Google Chrome)..."
-  .venv/bin/python -m playwright install chromium || echo "Chromium download failed — Connect to CAMGR/CAI can still try your Chrome tab."
-fi
+echo "Checking the sign-in browser is a current Chrome..."
+.venv/bin/python -c "import tool_browser; err = tool_browser.ensure_playwright();
+import sys
+sys.exit(1 if err else 0)" || echo "Sign-in browser update failed — Log in will use the copy already here."
 
 if [ ! -f ".env" ]; then
   if [ -f ".env.example" ]; then

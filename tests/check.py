@@ -2583,14 +2583,125 @@ def test_event_management_section() -> None:
         dcloud_client.fetch_admin_records = real_fetch
 
 
+def test_sign_in_browser_follows_chrome_stable() -> None:
+    import tool_browser
+
+    check(
+        "chrome 153 is behind stable 154",
+        tool_browser._version_tuple("153.0.8010.12") < tool_browser._version_tuple("154.0.8037.92"),
+    )
+    check(
+        "a newer build is not replaced with an older stable",
+        not (
+            tool_browser._version_tuple("154.0.8037.93")
+            < tool_browser._version_tuple("154.0.8037.92")
+        ),
+    )
+    arm_url = (
+        "https://storage.googleapis.com/chrome-for-testing-public/"
+        "154.0.8037.92/mac-arm64/chrome-mac-arm64.zip"
+    )
+    catalog = {
+        "channels": {
+            "Stable": {
+                "version": "154.0.8037.92",
+                "downloads": {
+                    "chrome": [
+                        {"platform": "mac-arm64", "url": arm_url},
+                        {"platform": "mac-x64", "url": "https://evil.example/chrome.zip"},
+                    ]
+                },
+            }
+        }
+    }
+    real_platform = tool_browser._cft_platform
+    tool_browser._cft_platform = lambda: "mac-arm64"
+    try:
+        check(
+            "stable chrome download is the official mac zip",
+            tool_browser._stable_chrome_download(catalog) == ("154.0.8037.92", arm_url),
+        )
+        tool_browser._cft_platform = lambda: "mac-x64"
+        check(
+            "a non-google chrome url is ignored",
+            tool_browser._stable_chrome_download(catalog) is None,
+        )
+    finally:
+        tool_browser._cft_platform = real_platform
+
+    calls: list[tuple[str, str]] = []
+    state: dict[str, object] = {}
+    installed = {"version": "153.0.8010.12"}
+    real_fetch = tool_browser._fetch_cft_catalog
+    real_local = tool_browser._local_sign_in_chrome_version
+    real_install = tool_browser._install_stable_chrome
+    real_read = tool_browser._read_cft_state
+    real_write = tool_browser._write_cft_state
+    real_platform_again = tool_browser._cft_platform
+    tool_browser._cft_platform = lambda: "mac-arm64"
+    tool_browser._fetch_cft_catalog = lambda: (catalog, None)
+    tool_browser._local_sign_in_chrome_version = lambda: installed["version"]
+    tool_browser._install_stable_chrome = lambda version, url: calls.append((version, url))
+    tool_browser._read_cft_state = lambda: dict(state)
+    def _write(**fields: object) -> None:
+        state.update(fields)
+    tool_browser._write_cft_state = _write
+    try:
+        message = tool_browser.ensure_sign_in_chrome()
+        check("an older sign-in browser is updated to stable", calls == [("154.0.8037.92", arm_url)] and message is None, str(calls))
+        calls.clear()
+        installed["version"] = "154.0.8037.92"
+        state["checked_at"] = tool_browser.time.time()
+        message = tool_browser.ensure_sign_in_chrome()
+        check("the current stable browser is not downloaded again", calls == [] and message is None, str(calls))
+    finally:
+        tool_browser._fetch_cft_catalog = real_fetch
+        tool_browser._local_sign_in_chrome_version = real_local
+        tool_browser._install_stable_chrome = real_install
+        tool_browser._read_cft_state = real_read
+        tool_browser._write_cft_state = real_write
+        tool_browser._cft_platform = real_platform_again
+
+    import stat as stat_mod
+    import tempfile
+    import zipfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp) / "unpack"
+        dest.mkdir()
+        zip_path = Path(tmp) / "chrome.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            info = zipfile.ZipInfo("Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing")
+            info.external_attr = 0o100755 << 16
+            archive.writestr(info, "#!/bin/sh\n")
+        with zipfile.ZipFile(zip_path) as archive:
+            tool_browser._safe_extract(archive, dest)
+        binary = dest / "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        check(
+            "a chrome download keeps the executable bit",
+            binary.is_file() and bool(binary.stat().st_mode & stat_mod.S_IXUSR),
+            oct(binary.stat().st_mode),
+        )
+
+    browser = (ROOT / "tool_browser.py").read_text(encoding="utf-8")
+    launch = browser[browser.index("def _launch(") : browser.index("def capture_site_cookies(")]
+    check(
+        "the sign-in window launches that Chrome and tells Duo its real version",
+        'launch_args["executable_path"] = executable' in launch
+        and "context.add_init_script(_chrome_brand_script())" in launch
+        and 'brand: "Google Chrome"' in browser,
+    )
+
+
 def test_tool_owned_browser_avoids_keychain() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     start = (ROOT / "start.command").read_text(encoding="utf-8")
     reqs = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     check("Playwright is a runtime dependency", "playwright>=" in reqs)
     check(
-        "start.command downloads Chromium once into this install",
-        "playwright install chromium" in start
+        "start.command keeps the sign-in browser on current Chrome",
+        "tool_browser.ensure_playwright()" in start
         and "PLAYWRIGHT_BROWSERS_PATH" in start,
     )
     check(

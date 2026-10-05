@@ -1,3 +1,7 @@
+## 2.0.10 — 2026-10-05
+
+- **The sign-in browser stays on current Chrome.** Duo was refusing the old copy with "Chrome update required". Startup and Log in download Chrome Stable when this install has fallen behind. It still uses the tool's own browser, not the Chrome you use day to day
+
 ## 2.0.9 — 2026-10-01
 
 - **A finished session leaves the workspace.** When dCloud reports the session deleted or cancelled, or you end or cancel it from the tool, the card is removed. You do not have to click the X. Saved cards stay
