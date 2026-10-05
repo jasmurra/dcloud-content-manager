@@ -2485,7 +2485,7 @@ def _job_identities(job: dict[str, Any]) -> set[str]:
 
 
 def _annotate_dc_ownership(job: dict[str, Any]) -> None:
-    """Tell the UI which cards are mine so it can gate save and warn before end."""
+    """Tell the UI which cards are mine so it can gate save, end, reset, and delete."""
     identities = _job_identities(job)
     for dc in job.get("dcs") or []:
         owned = owner_is_me(str(dc.get("owner") or ""), identities)
@@ -5600,6 +5600,54 @@ def _schedule_one_dc(
     return True
 
 
+def _staggered_schedule_order(pending: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """Sessions whose starts are spread out, earliest first.
+
+    A nearby-slot search has to run in this order. In parallel, every session
+    asks for the same first open time and the delay is lost.
+    """
+    if len(pending) < 2:
+        return None
+    ordered = sorted(pending, key=lambda dc: int(dc.get("scheduleOffsetMinutes") or 0))
+    first = int(ordered[0].get("scheduleOffsetMinutes") or 0)
+    last = int(ordered[-1].get("scheduleOffsetMinutes") or 0)
+    if last == first:
+        return None
+    return ordered
+
+
+def _follow_scheduled_start(dc: dict[str, Any], anchor_start: datetime, gap_minutes: int) -> None:
+    """Point this card at the previous session's real start, plus the delay."""
+    new_start = anchor_start + timedelta(minutes=max(0, int(gap_minutes)))
+    old_start = parse_schedule_datetime(str(dc.get("requestedStart") or ""))
+    old_stop = parse_schedule_datetime(str(dc.get("requestedStop") or ""))
+    dc["requestedStart"] = _dcloud_timestamp(new_start)
+    if old_start and old_stop and old_stop > old_start:
+        dc["requestedStop"] = _dcloud_timestamp(new_start + (old_stop - old_start))
+
+
+def _schedule_in_delay_order(
+    cards: list[dict[str, Any]],
+    schedule_one: Callable[[dict[str, Any]], bool],
+) -> list[dict[str, Any]]:
+    """Schedule earliest first. Each later start is the previous real start plus its delay."""
+    scheduled: list[dict[str, Any]] = []
+    anchor_start: datetime | None = None
+    anchor_offset: int | None = None
+    for dc in cards:
+        offset = int(dc.get("scheduleOffsetMinutes") or 0)
+        if anchor_start is not None and anchor_offset is not None:
+            _follow_scheduled_start(dc, anchor_start, offset - anchor_offset)
+        if not schedule_one(dc):
+            continue
+        scheduled.append(dc)
+        actual = parse_schedule_datetime(str(dc.get("scheduleStart") or ""))
+        if actual is not None:
+            anchor_start = actual
+            anchor_offset = offset
+    return scheduled
+
+
 def _parallel_schedule_pending(
     job: dict[str, Any],
     payload: RunPayload,
@@ -5627,23 +5675,30 @@ def _parallel_schedule_pending(
     scheduled_lock = threading.Lock()
 
     try:
-        def _one(dc: dict[str, Any]) -> None:
-            if _schedule_one_dc(
+        def _one(dc: dict[str, Any]) -> bool:
+            return _schedule_one_dc(
                 job,
                 dc,
                 payload,
                 progress=progress,
                 current_token=current_token,
                 recover=recover,
-            ):
-                with scheduled_lock:
-                    scheduled.append(dc)
+            )
 
-        workers = max(len(pending), 1)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_one, dc) for dc in pending]
-            for future in as_completed(futures):
-                future.result()
+        ordered = _staggered_schedule_order(pending)
+        if ordered is not None:
+            scheduled.extend(_schedule_in_delay_order(ordered, _one))
+        else:
+            def _parallel(dc: dict[str, Any]) -> None:
+                if _one(dc):
+                    with scheduled_lock:
+                        scheduled.append(dc)
+
+            workers = max(len(pending), 1)
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(_parallel, dc) for dc in pending]
+                for future in as_completed(futures):
+                    future.result()
     finally:
         with schedule_lock:
             job["_schedule_in_progress"] = False
@@ -6437,6 +6492,11 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
         if dc.get("phase") in {"saving", "shutting_down"} or dc.get("_save_claimed"):
             progress(f"{site.upper()}: skip end (save is already in progress).")
             continue
+        if _dc_owned_by_me(job, dc) is False:
+            progress(
+                f"{site.upper()}: skip end — session belongs to {dc.get('owner') or 'someone else'}."
+            )
+            continue
         _set_dc(job, site, match_session=session_id, phase="ending", message="Ending session (no save)…")
         result = end_session(token, site, session_id)
         if result.get("ok"):
@@ -6521,6 +6581,11 @@ def _reset_job(job: dict[str, Any], payload: "ResetPayload") -> None:
             continue
         if dc.get("phase") in _TERMINAL_DC_PHASES:
             progress(f"{site.upper()}: skip reset ({dc.get('phase')}).")
+            continue
+        if _dc_owned_by_me(job, dc) is False:
+            progress(
+                f"{site.upper()}: skip reset — session belongs to {dc.get('owner') or 'someone else'}."
+            )
             continue
         attempted += 1
         result = reset_session(token, site, session_id)

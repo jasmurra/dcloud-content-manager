@@ -11,6 +11,7 @@ breaking. Run it before a push:
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import subprocess
@@ -800,8 +801,11 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     for gone in ("Share session…", ">Reset session<"):
         check(f"card menu no longer says {gone}", gone not in INDEX)
     check(
-        "end and cancel labels lose the word session",
-        '"Cancel (not yours)" : "Cancel"' in INDEX and '"End (not yours)" : "End"' in INDEX,
+        "end and cancel stay off for a session you do not own",
+        'const endLabel = notStarted ? "Cancel" : "End"' in INDEX
+        and "This tool will not end or cancel it." in INDEX
+        and "Yes, end it anyway" not in INDEX
+        and "Yes, cancel it anyway" not in INDEX,
     )
 
     seen: list[tuple[int, int]] = []
@@ -1796,6 +1800,60 @@ def test_staggered_session_copies_cards() -> None:
     )
     check("a single session still waits out the delay", lone[0]["scheduleOffsetMinutes"] == 30)
 
+    # Mario: the nearby slot moved the first session to tonight, then the other
+    # two were booked at that same instant instead of 30 and 60 minutes later.
+    slipped = [
+        {
+            "scheduleOffsetMinutes": 0,
+            "requestedStart": "2026-10-05T16:00:00.000Z",
+            "requestedStop": "2026-10-06T16:00:00.000Z",
+        },
+        {
+            "scheduleOffsetMinutes": 30,
+            "requestedStart": "2026-10-05T16:30:00.000Z",
+            "requestedStop": "2026-10-06T16:30:00.000Z",
+        },
+        {
+            "scheduleOffsetMinutes": 60,
+            "requestedStart": "2026-10-05T17:00:00.000Z",
+            "requestedStop": "2026-10-06T17:00:00.000Z",
+        },
+    ]
+    seen: list[str] = []
+
+    def book(dc: dict) -> bool:
+        seen.append(str(dc.get("requestedStart") or ""))
+        if len(seen) == 1:
+            dc["scheduleStart"] = "2026-10-05T22:00:00.000Z"
+            dc["scheduleStop"] = "2026-10-06T22:00:00.000Z"
+        else:
+            dc["scheduleStart"] = dc["requestedStart"]
+            dc["scheduleStop"] = dc["requestedStop"]
+        return True
+
+    app._schedule_in_delay_order(slipped, book)
+    check(
+        "a nearby slot keeps the 30 minute delay for the sessions after it",
+        seen == [
+            "2026-10-05T16:00:00.000Z",
+            "2026-10-05T22:30:00.000Z",
+            "2026-10-05T23:00:00.000Z",
+        ],
+        str(seen),
+    )
+    check(
+        "the later session keeps the same length",
+        slipped[1]["requestedStop"] == "2026-10-06T22:30:00.000Z",
+        slipped[1]["requestedStop"],
+    )
+    check(
+        "sessions with no delay still schedule together",
+        app._staggered_schedule_order([
+            {"scheduleOffsetMinutes": 0},
+            {"scheduleOffsetMinutes": 0},
+        ]) is None,
+    )
+
     now = datetime(2026, 9, 19, 17, 30, tzinfo=timezone.utc)
     stale = now - timedelta(minutes=20)
     mario = payload.model_copy(
@@ -2445,14 +2503,22 @@ def test_event_management_section() -> None:
         and 'id="event-action-delay"' in INDEX,
     )
 
+    client_source = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     check(
-        "a session you do not own falls back to the admin route for reset and end",
-        "def _session_action(" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
-        and 'f"/api/admin/sessions/{sid}/{action}"' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
-        and "_looks_like_permission_error" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
+        "end and reset never fall back to the admin session route",
+        "def _session_action(" in client_source
+        and "/api/admin/sessions/" not in client_source
+        and "_looks_like_permission_error" not in client_source
+        and "def refuse_not_owned(" in client_source,
     )
 
-    client_source = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    def owner_token(ccoid: str) -> str:
+        header = base64.urlsafe_b64encode(b'{"alg":"none"}').decode().rstrip("=")
+        payload = base64.urlsafe_b64encode(
+            json.dumps({"ccoid": ccoid}).encode()
+        ).decode().rstrip("=")
+        return f"{header}.{payload}.sig"
+
     real_request = dcloud_client._request
 
     class FakeResponse:
@@ -2465,53 +2531,110 @@ def test_event_management_section() -> None:
 
     try:
         calls: list[str] = []
+        script = {"owner": "someoneelse", "readable": True}
 
         def fake_request(method, url, token, **kwargs):
-            calls.append(url)
-            if "/api/admin/sessions/" in url:
+            calls.append(f"{method} {url}")
+            if "/api/admin/" in url:
+                return FakeResponse(200, {"success": True, "message": "admin must not run"})
+            if not script["readable"]:
+                return FakeResponse(404, {"message": "Session not found."})
+            if method == "GET":
+                return FakeResponse(200, {"owner": script["owner"], "uid": "491872"})
+            if method in {"PUT", "DELETE"}:
                 return FakeResponse(200, {"success": True, "message": []})
-            return FakeResponse(400, {
-                "message": "The content you are trying to access has either been "
-                           "removed or you do not have the permission required to view it."
-            })
+            return FakeResponse(400, {"message": "unexpected"})
 
         dcloud_client._request = fake_request
-        result = dcloud_client.reset_session("token", "sjc", "491872")
+        mine = owner_token("jasmurra")
+
+        end_other = dcloud_client.end_session(mine, "sjc", "491872")
         check(
-            "the admin route is used after a permission error",
-            result["ok"] is True
+            "end refuses a session owned by someone else before any destructive call",
+            end_other["ok"] is False
+            and end_other.get("notOwner") is True
+            and not any(call.startswith("PUT ") for call in calls)
+            and not any("/api/admin/" in call for call in calls),
+            str(end_other) + " " + str(calls),
+        )
+
+        calls.clear()
+        reset_other = dcloud_client.reset_session(mine, "sjc", "491872")
+        check(
+            "reset refuses a session owned by someone else before any destructive call",
+            reset_other["ok"] is False
+            and reset_other.get("notOwner") is True
+            and not any(call.startswith("PUT ") for call in calls),
+            str(calls),
+        )
+
+        calls.clear()
+        script["readable"] = False
+        unread = dcloud_client.end_session(mine, "sjc", "491872")
+        check(
+            "end refuses when ownership cannot be confirmed",
+            unread["ok"] is False
+            and unread.get("notOwner") is True
+            and calls == ["GET https://dcloud2-sjc.cisco.com/api/sessions/491872?expand=server"],
+            str(unread) + " " + str(calls),
+        )
+
+        calls.clear()
+        script["readable"] = True
+        script["owner"] = ""
+        unknown = dcloud_client.end_session(mine, "sjc", "491872")
+        check(
+            "end refuses when the session has no owner to compare",
+            unknown["ok"] is False and not any(call.startswith("PUT ") for call in calls),
+            str(unknown),
+        )
+
+        calls.clear()
+        script["owner"] = "jasmurra"
+        end_mine = dcloud_client.end_session(mine, "sjc", "491872")
+        check(
+            "end of your own session uses the plain route only",
+            end_mine["ok"] is True
+            and end_mine["message"] == "Session 491872 ended."
             and calls == [
-                "https://dcloud2-sjc.cisco.com/api/sessions/491872/reset",
-                "https://dcloud2-sjc.cisco.com/api/admin/sessions/491872/reset",
+                "GET https://dcloud2-sjc.cisco.com/api/sessions/491872?expand=server",
+                "PUT https://dcloud2-sjc.cisco.com/api/sessions/491872/end",
+            ],
+            str(end_mine) + " " + str(calls),
+        )
+
+        calls.clear()
+        reset_mine = dcloud_client.reset_session(mine, "sjc", "123")
+        check(
+            "reset of your own session uses the plain route only",
+            reset_mine["ok"] is True
+            and calls == [
+                "GET https://dcloud2-sjc.cisco.com/api/sessions/123?expand=server",
+                "PUT https://dcloud2-sjc.cisco.com/api/sessions/123/reset",
             ],
             str(calls),
         )
 
         calls.clear()
-        end_result = dcloud_client.end_session("token", "sjc", "491872")
+        script["owner"] = "someoneelse"
+        deleted = dcloud_client.delete_saved_content(mine, "sjc", "555")
         check(
-            "End falls back the same way",
-            end_result["ok"] is True and calls[-1].endswith("/api/admin/sessions/491872/end"),
-            str(calls),
-        )
-        check(
-            "a successful End names the session instead of HTTP 200",
-            end_result["message"] == "Session 491872 ended.",
-            str(end_result.get("message")),
+            "delete refuses saved content owned by someone else",
+            deleted["ok"] is False
+            and deleted.get("notOwner") is True
+            and not any(call.startswith("DELETE ") for call in calls),
+            str(deleted) + " " + str(calls),
         )
 
         calls.clear()
-
-        def owner_ok(method, url, token, **kwargs):
-            calls.append(url)
-            return FakeResponse(200, {"success": True, "message": []})
-
-        dcloud_client._request = owner_ok
-        dcloud_client.reset_session("token", "sjc", "123")
+        script["owner"] = "jasmurra"
+        deleted_mine = dcloud_client.delete_saved_content(mine, "sjc", "555")
         check(
-            "a session you own still uses the plain route only",
-            calls == ["https://dcloud2-sjc.cisco.com/api/sessions/123/reset"],
-            str(calls),
+            "delete of your own saved content still calls DELETE",
+            deleted_mine["ok"] is True
+            and any(call.startswith("DELETE ") and call.endswith("/api/contents/555") for call in calls)
+            and not any("/api/admin/" in call for call in calls),
+            str(deleted_mine) + " " + str(calls),
         )
     finally:
         dcloud_client._request = real_request

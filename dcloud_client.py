@@ -4027,14 +4027,6 @@ def update_session_name(
     }
 
 
-def _looks_like_permission_error(status_code: int, message: str) -> bool:
-    """dCloud answers a session you do not own with 403, or a 400 carrying this text."""
-    if status_code in {401, 403}:
-        return True
-    lowered = (message or "").lower()
-    return "permission" in lowered or "has either been removed" in lowered
-
-
 def _session_action(
     token: str,
     site: str,
@@ -4043,36 +4035,40 @@ def _session_action(
     *,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> tuple[bool, Any, int, str, list[str]]:
-    """PUT a session action, falling back to the admin route for someone else's session.
+    """PUT /api/sessions/{id}/{action} for a session this user owns.
 
-    The plain /api/sessions route only acts on sessions you own — an admin acting on
-    another user's session gets "removed or you do not have the permission" from it,
-    even though the same admin can read that session. Returns the attempted paths so
-    a failure can say which ones were tried.
+    There is no admin-route fallback. That route can end or reset someone
+    else's session, and this tool is not allowed to do that.
     """
     sid = (session_id or "").strip()
-    paths = [f"/api/sessions/{sid}/{action}", f"/api/admin/sessions/{sid}/{action}"]
-    tried: list[str] = []
-    ok = False
-    body: Any = ""
-    status = 0
-    message = ""
-    for path in paths:
-        tried.append(path)
-        try:
-            response = _request("PUT", f"{site_base(site)}{path}", token, timeout=timeout)
-        except requests.RequestException as exc:
-            ok, body, status, message = False, "", 0, str(exc)
-            continue
-        body = _json_or_text(response)
-        status = response.status_code
-        ok = status < 400
-        if isinstance(body, dict) and "success" in body:
-            ok = body.get("success") is True
-        message = api_message(body)
-        if ok or not _looks_like_permission_error(status, message):
-            break
-    return ok, body, status, message, tried
+    path = f"/api/sessions/{sid}/{action}"
+    try:
+        response = _request("PUT", f"{site_base(site)}{path}", token, timeout=timeout)
+    except requests.RequestException as exc:
+        return False, "", 0, str(exc), [path]
+    body = _json_or_text(response)
+    status = response.status_code
+    ok = status < 400
+    if isinstance(body, dict) and "success" in body:
+        ok = body.get("success") is True
+    return ok, body, status, api_message(body), [path]
+
+
+def _confirm_session_owner(token: str, site: str, session_id: str) -> str | None:
+    """Read the session and refuse unless the signed-in user owns it.
+
+    This runs before end or reset. The returned string is the reason to stop;
+    None means the destructive call may proceed.
+    """
+    details, err = fetch_session(token, site, session_id)
+    if err or not isinstance(details, dict):
+        return err or (
+            f"Could not read {site.upper()} session {session_id} to confirm you own it, "
+            "so it was left alone."
+        )
+    return refuse_not_owned(
+        token, details, kind="session", site=site, record_id=session_id
+    )
 
 
 def end_session(token: str, site: str, session_id: str) -> dict[str, Any]:
@@ -4080,6 +4076,9 @@ def end_session(token: str, site: str, session_id: str) -> dict[str, Any]:
     sid = (session_id or "").strip()
     if not sid:
         return {"ok": False, "message": "Session ID is required."}
+    blocked = _confirm_session_owner(token, site, sid)
+    if blocked:
+        return {"ok": False, "sessionId": sid, "notOwner": True, "message": blocked}
     ok, _body, status, detail, tried = _session_action(token, site, sid, "end")
     if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
@@ -4101,6 +4100,9 @@ def reset_session(token: str, site: str, session_id: str) -> dict[str, Any]:
     sid = (session_id or "").strip()
     if not sid:
         return {"ok": False, "message": "Session ID is required."}
+    blocked = _confirm_session_owner(token, site, sid)
+    if blocked:
+        return {"ok": False, "sessionId": sid, "notOwner": True, "message": blocked}
     ok, body, status, detail, tried = _session_action(token, site, sid, "reset", timeout=60)
     if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
@@ -4592,7 +4594,29 @@ def delete_saved_content(token: str, site: str, content_id: str) -> dict[str, An
     if not cid:
         return {"ok": False, "site": site_code, "contentId": cid, "message": "Content ID is required."}
     details = fetch_content(token, site_code, cid)
-    topology_uid = extract_content_topology_uid(details or {}, site_code)
+    if not isinstance(details, dict):
+        return {
+            "ok": False,
+            "site": site_code,
+            "contentId": cid,
+            "notOwner": True,
+            "message": (
+                f"Could not read {site_code.upper()} content {cid} to confirm you own it, "
+                "so it was not deleted."
+            ),
+        }
+    blocked = refuse_not_owned(
+        token, details, kind="content", site=site_code, record_id=cid
+    )
+    if blocked:
+        return {
+            "ok": False,
+            "site": site_code,
+            "contentId": cid,
+            "notOwner": True,
+            "message": blocked,
+        }
+    topology_uid = extract_content_topology_uid(details, site_code)
     if _content_is_promoted(details) and not topology_uid:
         return {
             "ok": False,
@@ -4917,6 +4941,14 @@ def save_session(
 ) -> dict[str, Any]:
     details, err = fetch_session(token, site, session_id, expand="all")
     session = details if not err else None
+    if session is not None and owner_is_me(session_owner(session), token_identities(token)) is False:
+        return {
+            "ok": False,
+            "notOwner": True,
+            "message": refuse_not_owned(
+                token, session, kind="save", site=site, record_id=session_id
+            ),
+        }
     save_name = (name or "").strip() or str((session or {}).get("name") or "").strip()
     payload = _save_payload(save_name, description)
     if progress and save_name:
@@ -5079,6 +5111,32 @@ def owner_is_me(owner: str, identities: set[str] | None) -> bool | None:
     if "@" in name and name.split("@", 1)[0] in identities:
         return True
     return False
+
+
+def refuse_not_owned(
+    token: str,
+    record: dict[str, Any] | None,
+    *,
+    kind: str,
+    site: str,
+    record_id: str,
+) -> str | None:
+    """Block end, reset, and delete unless this record belongs to the signed-in user.
+
+    Returns None when the owner matches the dCloud token. Anything else — a
+    different owner, or an owner we could not read — is a refusal. The tool
+    does not call the destructive API in that case, and it does not use the
+    admin route to do it anyway.
+    """
+    owner = session_owner(record)
+    if owner_is_me(owner, token_identities(token)) is True:
+        return None
+    who = owner or "an unknown owner"
+    action = {"content": "delete", "save": "save"}.get(kind, "end or reset")
+    return (
+        f"{(site or '').upper()} {kind} {record_id} belongs to {who}. "
+        f"This tool will not {action} it. Do that in dCloud if you mean to."
+    )
 
 
 def shared_with_from_details(details: dict[str, Any] | None) -> list[dict[str, str]]:

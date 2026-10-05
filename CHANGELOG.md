@@ -1,3 +1,8 @@
+## 2.0.11 — 2026-10-05
+
+- **End, cancel, reset, and delete only act on your own sessions and content.** Before any of those calls, the tool reads the record and compares the owner to the signed-in account. A different owner, or an owner it cannot read, is refused. There is no admin-route fallback, and the page no longer offers to end someone else's session anyway
+- **A delayed schedule keeps the gap after a busy slot.** If the first session has to move to a later open time, each session after it starts at that real time plus the delay
+
 ## 2.0.10 — 2026-10-05
 
 - **The sign-in browser stays on current Chrome.** Duo was refusing the old copy with "Chrome update required". Startup and Log in download Chrome Stable when this install has fallen behind. It still uses the tool's own browser, not the Chrome you use day to day

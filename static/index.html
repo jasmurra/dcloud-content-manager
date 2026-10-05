@@ -7463,16 +7463,16 @@
       const saved = dc.savedId
         ? `<div class="mono">saved ID ${escapeHtml(dc.savedId)}${dc.contentViewUrl ? ` · <a href="${dc.contentViewUrl}" target="_blank" rel="noopener noreferrer">Edit Topology</a>` : ""}</div>`
         : "";
-      const canEnd = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase);
-      const notStarted = isScheduledNotStarted(dc);
       const notMine = dc.ownedByMe === false;
+      const canEnd = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase) && !notMine;
+      const notStarted = isScheduledNotStarted(dc);
       const ownerLine = notMine
-        ? `<div class="hint" style="color:var(--warn)" data-tip="Guest shutdown &amp; save is not available on someone else's session. End still works, with a warning.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
+        ? `<div class="hint" style="color:var(--warn)" data-tip="End, reset, and save are not available on someone else's session. Do those in dCloud.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
         : "";
       const canReset = canResetSession(dc);
       // dCloud reports canReset on healthy sessions too, so only a failed card
       // gets the loud button; everything else keeps Reset in Card actions.
-      const showResetInline = canReset && ["error", "cancelled"].includes(dc.phase);
+      const showResetInline = canReset && !notMine && ["error", "cancelled"].includes(dc.phase);
       const resetTip = canReset
         ? "Same as Reset in the dCloud dashboard — rebuilds this session under the same demo and session ID."
         : "Reset is offered when dCloud says the session failed or can be reset.";
@@ -7490,13 +7490,9 @@
       const saveTip = dc.ownedByMe === false
         ? `Only ${escapeHtml(dc.owner || "the owner")} can shut down and save this session.`
         : "Guest-shuts down this session's VMs, waits for them to power off, then saves.";
-      const endLabel = notStarted
-        ? (notMine ? "Cancel (not yours)" : "Cancel")
-        : (notMine ? "End (not yours)" : "End");
+      const endLabel = notStarted ? "Cancel" : "End";
       const endTip = notMine
-        ? (notStarted
-          ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. Cancelling it drops their scheduled session.`
-          : `This is ${escapeHtml(dc.owner || "someone else")}'s session. Ending it discards their work with no save.`)
+        ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. This tool will not end or cancel it.`
         : (notStarted
           ? "Cancels this scheduled session in dCloud before it starts. Nothing is running yet, so there is nothing to save."
           : "Ends this session in dCloud without saving.");
@@ -7556,7 +7552,7 @@
                     ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest Shutdown All Powered-On VMs</button>`}
                     ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                     <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
-                    <button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>
+                    <button type="button" class="btn-dc-reset" ${cardData} ${canReset && !notMine ? "" : "disabled"} data-tip="${notMine ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. This tool will not reset it.` : resetTip}">Reset</button>
                     <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
                   </div>
                 </details>`;
@@ -10938,29 +10934,24 @@
         showError("Check the sessions to end. An empty selection does not end every session.");
         return;
       }
-      const summary = bulkSessionLabels(targets).join("; ");
-      const theirs = splitOwnedTargets(targets).theirs;
+      const { mine: owned, theirs } = splitOwnedTargets(targets);
+      if (theirs.length) {
+        showActionAlert(
+          `Skipping sessions you do not own:\n${ownerLabels(theirs).join("\n")}\n\n`
+          + "This tool will not end or cancel someone else's session. Do that in dCloud if you mean to.",
+          { title: "Not Your Session" }
+        );
+      }
+      if (!owned.length) return;
+      const summary = bulkSessionLabels(owned).join("; ");
       // Nothing here has started yet, so call it cancelling in the prompts too.
-      const notStarted = targets.every(
+      const notStarted = owned.every(
         (row) => isScheduledNotStarted(findDcCard(row.site, row.session_id))
       );
-      const one = targets.length === 1;
-      if (theirs.length && !await confirmAction(
-        `STOP — this is not your session.\n\n${ownerLabels(theirs).join("\n")}\n\n`
-        + (notStarted
-          ? "Cancelling it drops someone else's scheduled session. Are you sure?"
-          : "Ending it destroys someone else's running work with no save. Are you sure?"),
-        {
-          title: "Not Your Session",
-          okLabel: notStarted ? "Yes, cancel it anyway" : "Yes, end it anyway",
-          cancelLabel: notStarted ? "Keep it" : "Cancel",
-        }
-      )) {
-        return;
-      }
-      const endLines = bulkSessionLabels(targets);
+      const one = owned.length === 1;
+      const endLines = bulkSessionLabels(owned);
       if (!await confirmListedBatch(endLines, {
-        count: targets.length,
+        count: owned.length,
         title: notStarted ? (one ? "Cancel Session" : "Cancel Sessions") : "End Sessions",
         okLabel: notStarted ? (one ? "Cancel Session" : "Cancel Sessions") : "End Sessions",
         detail: notStarted
@@ -10982,7 +10973,7 @@
             ...tokenPayload(),
             sites: [],
             session_id: "",
-            sessions: targets,
+            sessions: owned,
             single_card: singleCard,
           }),
         });
@@ -11003,9 +10994,18 @@
         showError("Check the sessions to reset. An empty selection does not reset every session.");
         return;
       }
-      const summary = bulkSessionLabels(targets).join("; ");
-      if (!await confirmListedBatch(bulkSessionLabels(targets), {
-        count: targets.length,
+      const { mine: owned, theirs } = splitOwnedTargets(targets);
+      if (theirs.length) {
+        showActionAlert(
+          `Skipping sessions you do not own:\n${ownerLabels(theirs).join("\n")}\n\n`
+          + "This tool will not reset someone else's session. Do that in dCloud if you mean to.",
+          { title: "Not Your Session" }
+        );
+      }
+      if (!owned.length) return;
+      const summary = bulkSessionLabels(owned).join("; ");
+      if (!await confirmListedBatch(bulkSessionLabels(owned), {
+        count: owned.length,
         title: "Reset Session",
         okLabel: "Reset Session",
         detail: "Reset in dCloud? Same as the Reset button in the dCloud dashboard: the session is torn down and rebuilt with the same demo and session ID. It disappears for a while before it comes back.",
@@ -11021,7 +11021,7 @@
             ...tokenPayload(),
             sites: [],
             session_id: "",
-            sessions: targets,
+            sessions: owned,
           }),
         });
         renderJob(job);
