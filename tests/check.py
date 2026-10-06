@@ -2472,9 +2472,10 @@ def test_event_management_section() -> None:
         "_read_admin_cache" not in sessions_fn and "_read_admin_cache" not in saved_fn,
     )
     check(
-        "full Content and Sessions lists are kept for 5 minutes",
-        "_ADMIN_SEARCH_CACHE_SECONDS = 5 * 60" in client_source
-        and "kept for 5 minutes" in INDEX
+        "full Content and Sessions lists stay until Refresh Loaded Data",
+        "_ADMIN_SEARCH_CACHE_SECONDS = 10 * 60" in client_source
+        and "waits 10 minutes between downloads" in INDEX
+        and "if cached:" in client_source[client_source.index("def fetch_admin_records("):client_source.index("def list_event_sessions(")]
         and "data-unified-age" in INDEX
         and 'id="my-content-activity"' in INDEX,
     )
@@ -2512,7 +2513,12 @@ def test_event_management_section() -> None:
         and 'id="btn-shutdown" disabled' in INDEX
         and 'id="btn-extend-checked" disabled' in INDEX
         and "function syncWorkspaceBulkButtons(" in INDEX
-        and "function confirmListedBatch(" in INDEX,
+        and "function confirmListedBatch(" in INDEX
+        and 'min="1" max="30"' in INDEX
+        and "X-DCM-Launch" in INDEX
+        and "SESSION_FILE.chmod(0o600)" in source
+        and "def earlier_stop_reason(" in client_source
+        and "class LocalGuardMiddleware(" in source,
     )
     import app
     check(
@@ -2521,7 +2527,8 @@ def test_event_management_section() -> None:
     )
     check(
         "bulk event actions are paced one at a time instead of fired in parallel",
-        "delay_seconds: float = Field(default=1.0, ge=0, le=30)" in source
+        "delay_seconds: float = Field(default=1.0, ge=1, le=30)" in source
+        and "len(session_ids) > 100" in source
         and "time.sleep(body.delay_seconds)" in source
         and "ThreadPoolExecutor" not in source[source.index('@app.post("/api/events/session-action")'):]
         .split("@app.post", 2)[1],

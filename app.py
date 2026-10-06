@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 import threading
@@ -42,6 +43,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -79,6 +81,7 @@ from dcloud_client import (
     delete_saved_content,
     decline_surveys,
     edit_topology_url,
+    earlier_stop_reason,
     end_session,
     extend_session,
     probe_max_extend_stop,
@@ -253,6 +256,37 @@ _WATCHED_DC_PHASES = frozenset(
 RESET_GRACE_SECONDS = 30 * 60
 
 app = FastAPI(title="dCloud Content Manager", version=APP_VERSION)
+# New secret every time this process starts. The page served below receives it.
+# Another website cannot read it, so it cannot drive the local API.
+LAUNCH_SECRET = secrets.token_urlsafe(32)
+
+
+class LocalGuardMiddleware(BaseHTTPMiddleware):
+    """Only this computer, and only this tool's page, may call the local API."""
+
+    async def dispatch(self, request: Request, call_next):
+        host = (request.headers.get("host") or "").split(",")[0].strip().lower()
+        hostname = host.split(":")[0].strip("[]")
+        if hostname not in {"127.0.0.1", "localhost"}:
+            return JSONResponse(
+                {"detail": "This tool only answers on this computer."},
+                status_code=403,
+            )
+        if request.url.path.startswith("/api/"):
+            if request.headers.get("x-dcm-launch") != LAUNCH_SECRET:
+                return JSONResponse(
+                    {
+                        "detail": (
+                            "Refresh this page. The local app restarted and this tab "
+                            "is from the previous open."
+                        )
+                    },
+                    status_code=403,
+                )
+        return await call_next(request)
+
+
+app.add_middleware(LocalGuardMiddleware)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 _HARBOR_DIR = STATIC_DIR / "vendor" / "harbor-elements"
 _VENDOR_DIR = STATIC_DIR / "vendor"
@@ -631,6 +665,7 @@ def _persist_user_session() -> None:
         return
     try:
         SESSION_FILE.write_text(json.dumps(snap, indent=2), encoding="utf-8")
+        SESSION_FILE.chmod(0o600)
     except OSError:
         pass
 
@@ -638,6 +673,10 @@ def _persist_user_session() -> None:
 def _load_persisted_session() -> None:
     if not SESSION_FILE.is_file():
         return
+    try:
+        SESSION_FILE.chmod(0o600)
+    except OSError:
+        pass
     try:
         data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
@@ -1213,7 +1252,7 @@ class EventSessionActionPayload(TokenPayload):
     site: str
     session_ids: list[str] = Field(default_factory=list)
     action: str
-    delay_seconds: float = Field(default=1.0, ge=0, le=30)
+    delay_seconds: float = Field(default=1.0, ge=1, le=30)
 
 
 class CatalogIdsPayload(TokenPayload):
@@ -5035,6 +5074,7 @@ def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     # The file keeps a placeholder so a failed sign-in status call cannot leave "1.0" up.
     html = html.replace("Version 1.0", f"Version {_read_app_version()}", 1)
+    html = html.replace("__DCM_LAUNCH__", LAUNCH_SECRET, 1)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
@@ -6658,18 +6698,31 @@ def _requested_extend_stop(dc: dict[str, Any], payload: ExtendPayload, override:
         parsed = parse_schedule_datetime(chosen)
         if parsed is None:
             return "", "Could not read the new end time."
-        return _dcloud_timestamp(parsed), None
+        return _guard_extend_stop(parsed, str(dc.get("scheduleStop") or ""))
     extra = int(payload.extra_minutes or 0)
     current_stop = str(dc.get("scheduleStop") or "").strip()
     if extra >= 30:
-        return resolve_extended_stop_by_minutes(
+        stamp, error = resolve_extended_stop_by_minutes(
             current_stop=current_stop,
             extra_minutes=extra,
             session_start=str(dc.get("scheduleStart") or ""),
         )
+        if error or not stamp:
+            return "", error or "Could not read the new end time."
+        return _guard_extend_stop(parse_schedule_datetime(stamp), current_stop)
     stop = parse_schedule_datetime(payload.stop_at)
     if stop is None:
         return "", "Pick a new end date and time for the extension."
+    return _guard_extend_stop(stop, current_stop)
+
+
+def _guard_extend_stop(stop: datetime | None, current_stop: str) -> tuple[str, str | None]:
+    """Extend may only move the end later. A stop of now would end the session."""
+    if stop is None:
+        return "", "Could not read the new end time."
+    reason = earlier_stop_reason(stop, parse_schedule_datetime(current_stop))
+    if reason:
+        return "", reason
     return _dcloud_timestamp(stop), None
 
 
@@ -8150,6 +8203,11 @@ def api_event_session_action(body: EventSessionActionPayload) -> dict[str, Any]:
         raise HTTPException(400, "Event session action must be Reset or End.")
     if not session_ids:
         raise HTTPException(400, "Choose at least one event session.")
+    if len(session_ids) > 100:
+        raise HTTPException(
+            400,
+            "Reset or end up to 100 event sessions at a time. Run the rest as the next batch.",
+        )
     token = _resolve_token(body)
     # Event reset is the one action allowed on someone else's session. The page
     # has already asked them to confirm that it cannot be undone. End stays
@@ -8235,6 +8293,19 @@ def api_unified_dc_data(body: UnifiedSearchPayload) -> dict[str, Any]:
     token = _resolve_token(body)
     records: dict[tuple[str, str], list[dict[str, Any]]] = {}
     errors: dict[str, str] = {}
+    refresh_limited = False
+    now = time.time()
+
+    def _allow_refresh(site: str, resource: str) -> bool:
+        nonlocal refresh_limited
+        if not body.refresh_data:
+            return False
+        fetched = admin_records_cached_at(site, resource=resource)
+        if fetched is not None and now - fetched < _ADMIN_SEARCH_CACHE_SECONDS:
+            refresh_limited = True
+            return False
+        return True
+
     with ThreadPoolExecutor(max_workers=len(sites) * len(sources)) as pool:
         futures = {
             pool.submit(
@@ -8242,7 +8313,10 @@ def api_unified_dc_data(body: UnifiedSearchPayload) -> dict[str, Any]:
                 token,
                 site,
                 resource="demos" if source == "content" else "sessions",
-                refresh=body.refresh_data,
+                refresh=_allow_refresh(
+                    site,
+                    "demos" if source == "content" else "sessions",
+                ),
             ): (source, site)
             for site in sites
             for source in sources
@@ -8277,6 +8351,13 @@ def api_unified_dc_data(body: UnifiedSearchPayload) -> dict[str, Any]:
             if not errors.get(f"{source}:{site}")
         },
         "cacheSeconds": _ADMIN_SEARCH_CACHE_SECONDS,
+        "refreshLimited": refresh_limited,
+        "message": (
+            "This list was downloaded less than 10 minutes ago. "
+            "The copy already here is still showing."
+            if refresh_limited
+            else ""
+        ),
     }
 
 

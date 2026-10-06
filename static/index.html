@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>dCloud Content Manager</title>
+  <meta name="dcm-launch" content="__DCM_LAUNCH__">
   <link rel="icon" href="/static/app-icon.png?v=2" type="image/png">
   <style>
     :root {
@@ -2339,6 +2340,18 @@
         var s = JSON.parse(localStorage.getItem("dcloud-content-manager-settings-v1") || "{}");
         if (s.theme === "light") document.documentElement.classList.remove("hbr-mode-dark");
       } catch (e) {}
+      var launch = document.querySelector('meta[name="dcm-launch"]');
+      var secret = launch ? launch.getAttribute("content") || "" : "";
+      var nativeFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        var url = typeof input === "string" ? input : (input && input.url) || "";
+        if (url.indexOf("/api/") !== -1) {
+          var headers = new Headers((init && init.headers) || (input && input.headers) || {});
+          if (!headers.has("X-DCM-Launch")) headers.set("X-DCM-Launch", secret);
+          init = Object.assign({}, init || {}, { headers: headers });
+        }
+        return nativeFetch(input, init);
+      };
     })();
   </script>
 </head>
@@ -3567,7 +3580,7 @@
           <button type="button" class="secondary" id="btn-events-collapse">Collapse All</button>
           <label class="check-line" for="event-action-delay" data-tip="Reset and End go out one session at a time. dCloud rejects a burst against one event, so this pause sits between each one.">
             <span>Seconds between bulk actions</span>
-            <input id="event-action-delay" type="number" min="0" max="30" step="1" value="1" />
+            <input id="event-action-delay" type="number" min="1" max="30" step="1" value="1" />
           </label>
         </div>
         <div class="list-toolbar">
@@ -3605,9 +3618,9 @@
           <button type="button" id="btn-unified-load-content">Load Content</button>
           <button type="button" id="btn-unified-load-sessions">Load Sessions</button>
           <button type="button" class="secondary" id="btn-unified-load-both">Load Both</button>
-          <button type="button" class="secondary" id="btn-unified-search-refresh" data-tip="Downloads a new copy from dCloud before the 5-minute wait is over.">Refresh Loaded Data</button>
+          <button type="button" class="secondary" id="btn-unified-search-refresh" data-tip="Downloads a new copy from dCloud. Available 10 minutes after the last download. Load uses the copy already here.">Refresh Loaded Data</button>
         </div>
-        <p class="hint">A full Content or Sessions download is kept for 5 minutes. Another Load in that window uses the copy already here, so it comes back right away. Refresh Loaded Data downloads a new copy from dCloud.</p>
+        <p class="hint">Content and Sessions stay on this computer after you load them. Load again uses that copy and does not call dCloud. The time under each list is when it was downloaded. Refresh Loaded Data gets a new copy, and it waits 10 minutes between downloads.</p>
         <p id="unified-search-status" class="hint" aria-live="polite"></p>
         <div class="unified-search-filters" style="margin-top:0.7rem">
           <label style="flex:1;min-width:16rem">
@@ -5091,11 +5104,18 @@
 
     function eventActionDelaySeconds() {
       const value = Number.parseFloat($("event-action-delay")?.value);
-      return Number.isFinite(value) ? Math.min(30, Math.max(0, value)) : 1;
+      return Number.isFinite(value) ? Math.min(30, Math.max(1, value)) : 1;
     }
 
     async function runEventSessionAction(site, eventId, sessionIds, action) {
       if (!sessionIds.length) return;
+      if (sessionIds.length > 100) {
+        showActionAlert(
+          "Reset or end up to 100 event sessions at a time. Leave the rest checked and run them as the next batch.",
+          { title: action === "reset" ? "Reset These Event Sessions?" : "End These Event Sessions?" },
+        );
+        return;
+      }
       const verb = action === "reset" ? "Reset" : "End";
       const delay = eventActionDelaySeconds();
       const detail = action === "reset"
@@ -5893,6 +5913,15 @@
         $("session-edit-status").textContent = "End time must be after the start time.";
         return;
       }
+      if (stop && stop.getTime() <= Date.now()) {
+        $("session-edit-status").textContent = "The new end time has to be in the future. Extend cannot end a session.";
+        return;
+      }
+      const originalStopPreview = row.stop ? new Date(row.stop) : null;
+      if (stop && originalStopPreview && !Number.isNaN(originalStopPreview.getTime()) && stop <= originalStopPreview) {
+        $("session-edit-status").textContent = "The new end time has to be later than this session's current end.";
+        return;
+      }
       const originalStart = row.start ? new Date(row.start) : null;
       const originalStop = row.stop ? new Date(row.stop) : null;
       const payload = {
@@ -5918,8 +5947,7 @@
         });
         $("session-edit-modal").classList.add("hidden");
         sessionEditRow = null;
-        $("unified-search-status").textContent = result.message || `Session ${row.id} updated.`;
-        await loadUnifiedDcData(["sessions"], { refreshData: true });
+        $("unified-search-status").textContent = result.message || `Session ${row.id} updated. The loaded list stays as it is until you click Refresh Loaded Data.`;
       } catch (err) {
         $("session-edit-status").textContent = err.message;
       } finally {
@@ -6008,8 +6036,7 @@
         const message = result.message || `${doneLabels[action] || "Updated"} session ${row.id}.`;
         $("unified-search-status").textContent = message;
         showToast(message, { kind: "ok" });
-        await loadUnifiedDcData(["sessions"], { refreshData: true });
-        $("unified-search-status").textContent = message;
+        $("unified-search-status").textContent = `${message} The loaded list stays as it is until you click Refresh Loaded Data.`;
       } catch (err) {
         $("unified-search-status").textContent = err.message;
         showToast(err.message, { kind: "err" });
@@ -6063,12 +6090,52 @@
       panel?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
+    const ADMIN_LIST_REFRESH_MS = 10 * 60 * 1000;
+
+    function unifiedListFetchedAt(sources, sites) {
+      let newest = 0;
+      for (const source of sources) {
+        for (const site of sites) {
+          newest = Math.max(newest, Number(unifiedSearchDcData.fetchedAt[source]?.[site]) || 0);
+        }
+      }
+      return newest;
+    }
+
     async function loadUnifiedDcData(sources, { refreshData = false, sites: only = null } = {}) {
       await unifiedSavedDataReady;
-      const sites = only && only.length ? only : selectedUnifiedSearchDcs();
+      let sites = only && only.length ? only : selectedUnifiedSearchDcs();
       if (!sites.length) {
         $("unified-search-status").textContent = "Select at least one datacenter.";
         return;
+      }
+      if (!refreshData) {
+        const missing = sites.filter((site) => sources.some(
+          (source) => !(Number(unifiedSearchDcData.fetchedAt[source]?.[site]) > 0),
+        ));
+        if (!missing.length) {
+          renderUnifiedDcData();
+          updateUnifiedCacheStatus();
+          const line = sources.map((source) => {
+            const ages = sites
+              .map((site) => `${site.toUpperCase()} ${formatUnifiedDataAge(unifiedSearchDcData.fetchedAt[source][site])}`)
+              .join(", ");
+            return `${source === "content" ? "Content" : "Sessions"}: ${ages}`;
+          }).join(". ");
+          $("unified-search-status").textContent =
+            `Showing the last download. ${line}. Click Refresh Loaded Data for a new copy.`;
+          return;
+        }
+        sites = missing;
+      } else {
+        const fetchedAt = unifiedListFetchedAt(sources, sites);
+        const wait = ADMIN_LIST_REFRESH_MS - (Date.now() - fetchedAt);
+        if (fetchedAt && wait > 0) {
+          const minutes = Math.max(1, Math.ceil(wait / 60000));
+          $("unified-search-status").textContent =
+            `This list was downloaded ${formatUnifiedDataAge(fetchedAt)}. Refresh is available in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+          return;
+        }
       }
       if (!ensureTokenReady("loading dCloud data")) return;
       const buttons = [
@@ -6130,8 +6197,9 @@
         renderUnifiedDcData();
         updateUnifiedCacheStatus();
         const count = sources.reduce((total, source) => total + (data[source] || []).length, 0);
-        $("unified-search-status").textContent =
-          `Loaded ${count} record(s) from ${sites.map((site) => site.toUpperCase()).join(", ")}. Type in the filter box to narrow the results instantly.`;
+        $("unified-search-status").textContent = data.refreshLimited
+          ? (data.message || "This list was downloaded less than 10 minutes ago. The copy already here is still showing.")
+          : `Loaded ${count} record(s) from ${sites.map((site) => site.toUpperCase()).join(", ")}. Type in the filter box to narrow the results instantly.`;
         const loadedBits = [];
         if (sources.includes("content")) {
           const contentCount = (data.content || []).length;
@@ -11159,6 +11227,10 @@
       }
       if (extraMinutes < 30 && extraMinutes > 0) {
         showError("Extend by at least 1 hour, or set days and hours to 0 and pick an until time.");
+        return;
+      }
+      if (extraMinutes < 30 && stopDate.getTime() <= Date.now()) {
+        showError("The new end time has to be in the future. Extend cannot end a session.");
         return;
       }
       const stopAt = Number.isNaN(stopDate.getTime()) ? "" : stopDate.toISOString();

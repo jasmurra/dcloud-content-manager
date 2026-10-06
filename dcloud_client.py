@@ -30,7 +30,7 @@ SITES = ("sjc", "rtp", "lon", "sng", "syd")
 KNOWN_SITES = frozenset(SITES)
 # Full admin Content and Sessions lists only. A person's own sessions and
 # saved content are small, so those downloads are never served from this cache.
-_ADMIN_SEARCH_CACHE_SECONDS = 5 * 60
+_ADMIN_SEARCH_CACHE_SECONDS = 10 * 60
 _admin_search_cache_lock = threading.Lock()
 _admin_search_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 
@@ -474,6 +474,20 @@ def parse_schedule_datetime(raw: str) -> datetime | None:
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     return when.astimezone(timezone.utc)
+
+
+def earlier_stop_reason(
+    new_stop: datetime | None,
+    current_stop: datetime | None = None,
+) -> str | None:
+    """Refuse a stop of now or earlier. That ends the session without using End."""
+    if new_stop is None:
+        return "Could not read the new end time."
+    if new_stop <= datetime.now(timezone.utc):
+        return "The new end time has to be in the future. Extend cannot end a session."
+    if current_stop is not None and new_stop <= current_stop:
+        return "The new end time has to be later than this session's current end."
+    return None
 
 
 def resolve_schedule_window(
@@ -1749,13 +1763,17 @@ def fetch_admin_records(
     resource: str,
     refresh: bool = False,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Load one complete DC-local admin list, with a short server cache."""
+    """Load one complete DC-local admin list.
+
+    A list already downloaded is reused until the caller asks to refresh.
+    Nothing here downloads again just because the copy is old.
+    """
     if resource not in {"demos", "events", "sessions"}:
         return [], "Unsupported dCloud admin search resource."
     now = time.time()
     if not refresh:
         cached = _read_admin_cache(str(site or "").lower(), resource)
-        if cached and now - cached[0] < _ADMIN_SEARCH_CACHE_SECONDS:
+        if cached:
             return list(cached[1]), None
     try:
         response = _request(
@@ -3934,6 +3952,16 @@ def update_session_schedule(
         return {"ok": False, "message": "End time could not be read."}
     if start and stop and stop <= start:
         return {"ok": False, "message": "End time must be after the start time."}
+    if stop:
+        details, err = fetch_session(token, site_code, sid)
+        current = None
+        if isinstance(details, dict):
+            current = parse_schedule_datetime(str(details.get("stop") or ""))
+        elif err:
+            return {"ok": False, "sessionId": sid, "message": err}
+        reason = earlier_stop_reason(stop, current)
+        if reason:
+            return {"ok": False, "sessionId": sid, "message": reason}
     if start:
         body["start"] = _dcloud_timestamp(start)
     if stop:
