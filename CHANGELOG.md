@@ -1,6 +1,7 @@
 ## 2.0.15 — 2026-10-06
 
-- **Mark a VM as a favorite.** It shows under the WebRDP links on monitoring cards and job workspace cards, with Actions beside it, including VM Console. Move Up and Move Down set the order. The same VM name stays marked on other cards
+- **Mark a VM as a favorite.** It shows under the WebRDP links on that session only, on a monitoring card or a job workspace card, with Actions beside it, including VM Console. The same VM name on another session stays unmarked
+- **Up and down arrows reorder the VM list on that session.** They sit on every VM in Powered on and Powered off. The favorite rows under WebRDP have their own arrows
 
 ## 2.0.14 — 2026-10-06
 

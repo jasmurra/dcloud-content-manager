@@ -628,7 +628,8 @@
     button.linkish,
     button.clear-demo-id,
     .section-order-controls button,
-    .dc-order-item button {
+    .dc-order-item button,
+    .vm-fav-order button {
       min-height: 0;
     }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -960,6 +961,13 @@
     }
     .vm-favorites .webrdp-label { display: block; margin-bottom: 0.15rem; }
     .vm-favorites .vm-line { margin-top: 0.35rem; padding-top: 0.35rem; }
+    .vm-fav-order {
+      display: inline-flex;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    .vm-fav-order button { padding: 0.25rem 0.55rem; }
+    .vm-fav-order button:disabled { opacity: 0.45; cursor: not-allowed; }
     .vm-menu { position: relative; flex-shrink: 0; }
     .card-actions-menu { display: inline-block; }
     .found-sessions-panel {
@@ -6853,45 +6861,183 @@
       return { on, off };
     }
 
-    const VM_FAVORITES_KEY = "dcloud-content-manager-vm-favorites-v1";
+    const VM_FAVORITES_KEY = "dcloud-content-manager-vm-favorites-v2";
 
-    function vmFavoriteKey(vm) {
-      return vmDisplayName(vm).trim().toLowerCase();
+    function vmFavoriteRecord(site, sessionId, vmOrName) {
+      const name = (typeof vmOrName === "string" ? vmOrName : vmDisplayName(vmOrName)).trim().toLowerCase();
+      const siteKey = String(site || "").trim().toLowerCase();
+      const session = String(sessionId || "").trim();
+      if (!siteKey || !session || !name) return null;
+      return { site: siteKey, sessionId: session, name };
+    }
+
+    function sameFavorite(left, right) {
+      return Boolean(left && right && left.site === right.site && left.sessionId === right.sessionId && left.name === right.name);
     }
 
     function readVmFavorites() {
       try {
         const saved = JSON.parse(localStorage.getItem(VM_FAVORITES_KEY) || "[]");
         if (!Array.isArray(saved)) return [];
-        return saved.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean);
+        const seen = new Set();
+        const records = [];
+        for (const item of saved) {
+          const record = item && typeof item === "object"
+            ? vmFavoriteRecord(item.site, item.sessionId, item.name)
+            : null;
+          if (!record) continue;
+          const id = `${record.site}\n${record.sessionId}\n${record.name}`;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          records.push(record);
+        }
+        return records;
       } catch {
         return [];
       }
     }
 
-    function writeVmFavorites(names) {
-      try { localStorage.setItem(VM_FAVORITES_KEY, JSON.stringify(names)); } catch {}
+    function writeVmFavorites(records) {
+      try { localStorage.setItem(VM_FAVORITES_KEY, JSON.stringify(records)); } catch {}
     }
 
-    function toggleVmFavorite(name) {
-      const key = String(name || "").trim().toLowerCase();
-      if (!key) return;
-      const names = readVmFavorites();
-      const index = names.indexOf(key);
-      if (index >= 0) names.splice(index, 1);
-      else names.unshift(key);
-      writeVmFavorites(names);
+    function favoritesForCard(site, sessionId) {
+      const needle = vmFavoriteRecord(site, sessionId, "vm");
+      if (!needle) return [];
+      return readVmFavorites().filter((item) => item.site === needle.site && item.sessionId === needle.sessionId);
     }
 
-    function moveVmFavorite(name, direction) {
+    function toggleVmFavorite(site, sessionId, name) {
+      const record = vmFavoriteRecord(site, sessionId, name);
+      if (!record) return;
+      const records = readVmFavorites();
+      const index = records.findIndex((item) => sameFavorite(item, record));
+      if (index >= 0) records.splice(index, 1);
+      else {
+        const first = records.findIndex((item) => item.site === record.site && item.sessionId === record.sessionId);
+        if (first < 0) records.unshift(record);
+        else records.splice(first, 0, record);
+      }
+      writeVmFavorites(records);
+    }
+
+    function moveVmFavorite(site, sessionId, name, direction) {
+      const record = vmFavoriteRecord(site, sessionId, name);
+      if (!record) return;
+      const records = readVmFavorites();
+      const indexes = [];
+      records.forEach((item, index) => {
+        if (item.site === record.site && item.sessionId === record.sessionId) indexes.push(index);
+      });
+      const local = indexes.map((index) => records[index]);
+      const index = local.findIndex((item) => sameFavorite(item, record));
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= local.length) return;
+      const [item] = local.splice(index, 1);
+      local.splice(next, 0, item);
+      indexes.forEach((slot, position) => { records[slot] = local[position]; });
+      writeVmFavorites(records);
+    }
+
+    const VM_LIST_ORDER_KEY = "dcloud-content-manager-vm-list-order-v1";
+
+    function readVmListOrders() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(VM_LIST_ORDER_KEY) || "[]");
+        if (!Array.isArray(saved)) return [];
+        return saved.map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const site = String(item.site || "").trim().toLowerCase();
+          const sessionId = String(item.sessionId || "").trim();
+          const group = item.group === "off" ? "off" : (item.group === "on" ? "on" : "");
+          const names = Array.isArray(item.names)
+            ? item.names.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean)
+            : [];
+          if (!site || !sessionId || !group) return null;
+          return { site, sessionId, group, names };
+        }).filter(Boolean);
+      } catch {
+        return [];
+      }
+    }
+
+    function writeVmListOrders(records) {
+      try { localStorage.setItem(VM_LIST_ORDER_KEY, JSON.stringify(records)); } catch {}
+    }
+
+    function vmListOrder(site, sessionId, group) {
+      const needle = vmFavoriteRecord(site, sessionId, "vm");
+      if (!needle) return [];
+      const groupKey = group === "off" ? "off" : "on";
+      const found = readVmListOrders().find((item) => item.site === needle.site && item.sessionId === needle.sessionId && item.group === groupKey);
+      return found ? found.names.slice() : [];
+    }
+
+    function writeVmListOrder(site, sessionId, group, names) {
+      const record = vmFavoriteRecord(site, sessionId, "vm");
+      if (!record) return;
+      const groupKey = group === "off" ? "off" : "on";
+      const records = readVmListOrders().filter((item) => !(item.site === record.site && item.sessionId === record.sessionId && item.group === groupKey));
+      records.push({ site: record.site, sessionId: record.sessionId, group: groupKey, names });
+      writeVmListOrders(records);
+    }
+
+    function moveVmInList(site, sessionId, group, name, direction, orderedNames) {
       const key = String(name || "").trim().toLowerCase();
-      const names = readVmFavorites();
+      const names = (orderedNames || []).map((item) => String(item || "").trim().toLowerCase()).filter(Boolean);
       const index = names.indexOf(key);
       const next = index + direction;
       if (index < 0 || next < 0 || next >= names.length) return;
       const [item] = names.splice(index, 1);
       names.splice(next, 0, item);
-      writeVmFavorites(names);
+      writeVmListOrder(site, sessionId, group, names);
+    }
+
+    function orderVmsForGroup(dc, vms, groupKey) {
+      const saved = vmListOrder(dc?.site, dc?.sessionId, groupKey);
+      const list = [...(vms || [])];
+      if (!saved.length) return list;
+      const byName = new Map(list.map((vm) => [vmDisplayName(vm).trim().toLowerCase(), vm]));
+      const used = new Set();
+      const ordered = [];
+      for (const name of saved) {
+        const vm = byName.get(name);
+        if (!vm || used.has(name)) continue;
+        ordered.push(vm);
+        used.add(name);
+      }
+      for (const vm of list) {
+        const name = vmDisplayName(vm).trim().toLowerCase();
+        if (!used.has(name)) ordered.push(vm);
+      }
+      return ordered;
+    }
+
+    function groupNamesForCard(dc, groupKey) {
+      const { on, off } = groupVmsByPower(dc?.vms || []);
+      const vms = groupKey === "off" ? off : on;
+      return orderVmsForGroup(dc, vms, groupKey).map((vm) => vmDisplayName(vm).trim().toLowerCase());
+    }
+
+    function handleVmListOrderClick(ev) {
+      const button = ev.target.closest?.(".btn-vm-order-up, .btn-vm-order-down");
+      if (!button) return false;
+      ev.preventDefault();
+      const site = button.dataset.site || "";
+      const sessionId = button.dataset.session || "";
+      const name = button.dataset.name || "";
+      const groupKey = button.dataset.group === "off" ? "off" : "on";
+      const foundCard = button.closest?.("#found-sessions details.found-session-card");
+      const dc = foundCard
+        ? foundSessionCards.get(foundCard.dataset.cardKey)
+        : findDcCard(site, sessionId);
+      if (dc) {
+        const direction = button.classList.contains("btn-vm-order-up") ? -1 : 1;
+        moveVmInList(site, sessionId, groupKey, name, direction, groupNamesForCard(dc, groupKey));
+        closeVmMenuFrom(button);
+        redrawVmFavorites(button);
+      }
+      return true;
     }
 
     function redrawVmFavorites(el) {
@@ -6909,36 +7055,29 @@
       const button = ev.target.closest?.(".btn-vm-favorite, .btn-vm-fav-up, .btn-vm-fav-down");
       if (!button) return false;
       ev.preventDefault();
+      const site = button.dataset.site || "";
+      const sessionId = button.dataset.session || "";
       const name = button.dataset.name || "";
-      if (button.classList.contains("btn-vm-fav-up")) moveVmFavorite(name, -1);
-      else if (button.classList.contains("btn-vm-fav-down")) moveVmFavorite(name, 1);
-      else toggleVmFavorite(name);
+      if (button.classList.contains("btn-vm-fav-up")) moveVmFavorite(site, sessionId, name, -1);
+      else if (button.classList.contains("btn-vm-fav-down")) moveVmFavorite(site, sessionId, name, 1);
+      else toggleVmFavorite(site, sessionId, name);
       closeVmMenuFrom(button);
       redrawVmFavorites(button);
       return true;
-    }
-
-    function orderVmsByFavorite(vms) {
-      const rank = new Map(readVmFavorites().map((name, index) => [name, index]));
-      return [...(vms || [])].sort((left, right) => {
-        const leftRank = rank.has(vmFavoriteKey(left)) ? rank.get(vmFavoriteKey(left)) : 10000;
-        const rightRank = rank.has(vmFavoriteKey(right)) ? rank.get(vmFavoriteKey(right)) : 10000;
-        return leftRank - rightRank;
-      });
     }
 
     function renderVmGroups(dc, cardKey, openVmMore) {
       const list = dc.vms || [];
       if (!list.length) return "";
       const { on, off } = groupVmsByPower(list);
-      on.splice(0, on.length, ...orderVmsByFavorite(on));
-      off.splice(0, off.length, ...orderVmsByFavorite(off));
+      on.splice(0, on.length, ...orderVmsForGroup(dc, on, "on"));
+      off.splice(0, off.length, ...orderVmsForGroup(dc, off, "off"));
       const renderGroup = (label, vms, groupKey) => {
         if (!vms.length) return "";
         const key = `${cardKey}:${groupKey}`;
         return `<details class="vm-more" data-key="${escapeHtml(key)}" ${openVmMore.has(key) ? "open" : ""}>
           <summary>${escapeHtml(label)} (${vms.length})</summary>
-          ${vms.map((vm) => renderVmRow(dc, cardKey, vm, groupKey)).join("")}
+          ${vms.map((vm, index) => renderVmRow(dc, cardKey, vm, groupKey, { orderIndex: index, orderCount: vms.length })).join("")}
         </details>`;
       };
       return renderGroup("Powered on", on, "on") + renderGroup("Powered off", off, "off");
@@ -6963,10 +7102,10 @@
     }
 
     function renderVmFavoriteStrip(dc) {
-      const wanted = readVmFavorites();
+      const wanted = favoritesForCard(dc.site, dc.sessionId);
       if (!wanted.length) return "";
-      const byName = new Map((dc.vms || []).map((vm) => [vmFavoriteKey(vm), vm]));
-      const picked = wanted.map((name) => byName.get(name)).filter(Boolean);
+      const byName = new Map((dc.vms || []).map((vm) => [vmDisplayName(vm).trim().toLowerCase(), vm]));
+      const picked = wanted.map((item) => byName.get(item.name)).filter(Boolean);
       if (!picked.length) return "";
       const cardKey = sessionKey(dc.site, dc.sessionId);
       return `<div class="vm-favorites"><span class="webrdp-label">Favorites</span>${
@@ -6981,7 +7120,7 @@
       return end.getTime() - Date.now() <= 3 * 24 * 60 * 60 * 1000;
     }
 
-    function renderVmRow(dc, cardKey, vm, groupKey, { strip = false } = {}) {
+    function renderVmRow(dc, cardKey, vm, groupKey, { strip = false, orderIndex = 0, orderCount = 0 } = {}) {
       const links = [];
       const rdpOff = vm.rdpEnabled === false || vm.rdpEnabled === "false";
       const canAct = Boolean(dc.sessionId)
@@ -7004,15 +7143,26 @@
         ? `<span class="badge ok vm-selected" data-tip="Checked in Load VMs when this session was scheduled">${titleChip("selected")}</span>`
         : "";
       const powerHint = groupKey && !strip ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
-      const favorite = readVmFavorites().includes(vmFavoriteKey(vm));
+      const favorites = favoritesForCard(dc.site, dc.sessionId);
+      const favoriteIndex = favorites.findIndex((item) => item.name === label.trim().toLowerCase());
+      const favorite = favoriteIndex >= 0;
       const favoriteBadge = favorite
-        ? `<span class="badge neutral" data-tip="This VM is marked so it stays under WebRDP.">${titleChip("favorite")}</span>`
+        ? `<span class="badge neutral" data-tip="This VM is marked so it stays under WebRDP on this session.">${titleChip("favorite")}</span>`
         : "";
-      const favoriteBtn = `<button type="button" class="btn-vm-favorite" ${vmData} data-tip="Keeps this VM under the WebRDP links, with Actions beside it. The same name stays marked on other cards.">${favorite ? "Remove Favorite" : "Favorite"}</button>`;
-      const moveBtns = strip
-        ? `<button type="button" class="btn-vm-fav-up" ${vmData} data-tip="Move this favorite up.">Move Up</button>
-           <button type="button" class="btn-vm-fav-down" ${vmData} data-tip="Move this favorite down.">Move Down</button>`
-        : "";
+      const favoriteBtn = `<button type="button" class="btn-vm-favorite" ${vmData} data-tip="Keeps this VM under the WebRDP links on this session, with Actions beside it.">${favorite ? "Remove Favorite" : "Favorite"}</button>`;
+      const listCount = Number(orderCount) || 0;
+      const listIndex = Number(orderIndex) || 0;
+      const moveBtns = strip && favorite
+        ? `<span class="vm-fav-order">
+             <button type="button" class="secondary btn-vm-fav-up" ${vmData} aria-label="Move ${escapeHtml(label)} up" data-tip="Moves this favorite up on this session." ${favoriteIndex === 0 ? "disabled" : ""}>↑</button>
+             <button type="button" class="secondary btn-vm-fav-down" ${vmData} aria-label="Move ${escapeHtml(label)} down" data-tip="Moves this favorite down on this session." ${favoriteIndex === favorites.length - 1 ? "disabled" : ""}>↓</button>
+           </span>`
+        : (!strip && listCount > 1
+          ? `<span class="vm-fav-order">
+               <button type="button" class="secondary btn-vm-order-up" ${vmData} data-group="${escapeHtml(groupKey || "on")}" aria-label="Move ${escapeHtml(label)} up" data-tip="Moves this VM up in this list on this session." ${listIndex === 0 ? "disabled" : ""}>↑</button>
+               <button type="button" class="secondary btn-vm-order-down" ${vmData} data-group="${escapeHtml(groupKey || "on")}" aria-label="Move ${escapeHtml(label)} down" data-tip="Moves this VM down in this list on this session." ${listIndex === listCount - 1 ? "disabled" : ""}>↓</button>
+             </span>`
+          : "");
       return `
             <div class="vm-line${strip ? " vm-favorite" : ""}">
               <div class="vm-meta">
@@ -7022,11 +7172,11 @@
                 ${powerHint}
                 ${note}
               </div>
+              ${moveBtns}
               <details class="vm-menu">
                 <summary>Actions</summary>
                 <div class="vm-menu-list">
                   ${favoriteBtn}
-                  ${moveBtns}
                   ${links.join("")}
                   <button type="button" class="btn-vm-on" ${vmData} ${canAct ? "" : "disabled"} data-tip="Powers on this VM in dCloud.">Power On</button>
                   <button type="button" class="btn-vm-hard-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Hard power off this VM (not a graceful guest shutdown).">Power Off</button>
@@ -15319,6 +15469,7 @@
     }
 
     function handleCardGridClick(ev) {
+      if (handleVmListOrderClick(ev)) return;
       if (handleVmFavoriteClick(ev)) return;
       if (ev.target.closest("summary .card-open-session, summary .card-select, summary .card-select-wrap, summary .card-actions-menu")) {
         ev.stopPropagation();
@@ -15905,6 +16056,7 @@
       });
     }, true);
     $("found-sessions").addEventListener("click", (ev) => {
+      if (handleVmListOrderClick(ev)) return;
       if (handleVmFavoriteClick(ev)) return;
       const webrdpBtn = ev.target.closest(".btn-vm-webrdp");
       if (webrdpBtn) {

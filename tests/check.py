@@ -813,8 +813,77 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
         and 'class="webrdp-jumps"' in INDEX
         and "function renderVmFavoriteStrip(" in INDEX
         and "btn-vm-favorite" in INDEX
-        and "dcloud-content-manager-vm-favorites-v1" in INDEX
+        and "dcloud-content-manager-vm-favorites-v2" in INDEX
+        and "function favoritesForCard(" in INDEX
+        and "const moveBtns = strip && favorite" in INDEX
+        and 'class="vm-fav-order"' in INDEX
+        and 'class="secondary btn-vm-fav-up"' in INDEX
+        and "btn-vm-order-up" in INDEX
+        and "function moveVmInList(" in INDEX
         and "titleChip(cardStatusLabel(dc))" in INDEX,
+    )
+    run_node(
+        'const VM_FAVORITES_KEY = "dcloud-content-manager-vm-favorites-v2";\n'
+        + "\n".join(
+            js_function(name)
+            for name in (
+                "vmFavoriteRecord",
+                "sameFavorite",
+                "readVmFavorites",
+                "writeVmFavorites",
+                "favoritesForCard",
+                "toggleVmFavorite",
+                "moveVmFavorite",
+            )
+        )
+        + """
+const store = {};
+globalThis.localStorage = {
+  getItem(key) { return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
+  setItem(key, value) { store[key] = String(value); },
+};
+toggleVmFavorite("lon", "885638", "rwkst1");
+toggleVmFavorite("sjc", "492427", "Jumphost");
+toggleVmFavorite("lon", "885638", "ad");
+moveVmFavorite("lon", "885638", "ad", 1);
+const lon = favoritesForCard("lon", "885638").map((item) => item.name).join(",");
+const sjc = favoritesForCard("sjc", "492427").map((item) => item.name).join(",");
+if (lon !== "rwkst1,ad") throw new Error("lon order " + lon);
+if (sjc !== "jumphost") throw new Error("sjc favorites " + sjc);
+if (favoritesForCard("sjc", "492427").some((item) => item.name === "rwkst1")) {
+  throw new Error("rwkst1 leaked onto the other session");
+}
+""",
+        "a favorite stays on the session where it was marked",
+    )
+    run_node(
+        'const VM_LIST_ORDER_KEY = "dcloud-content-manager-vm-list-order-v1";\n'
+        + "\n".join(
+            js_function(name)
+            for name in (
+                "vmFavoriteRecord",
+                "readVmListOrders",
+                "writeVmListOrders",
+                "vmListOrder",
+                "writeVmListOrder",
+                "moveVmInList",
+            )
+        )
+        + """
+const store = {};
+globalThis.localStorage = {
+  getItem(key) { return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
+  setItem(key, value) { store[key] = String(value); },
+};
+moveVmInList("sjc", "492427", "on", "ad", -1, ["br1", "ad", "rwkst1"]);
+moveVmInList("lon", "885638", "on", "jumphost", 1, ["jumphost", "ad"]);
+const sjc = vmListOrder("sjc", "492427", "on").join(",");
+const lon = vmListOrder("lon", "885638", "on").join(",");
+if (sjc !== "ad,br1,rwkst1") throw new Error("sjc order " + sjc);
+if (lon !== "ad,jumphost") throw new Error("lon order " + lon);
+if (vmListOrder("sjc", "492427", "off").length) throw new Error("powered off picked up the powered on order");
+""",
+        "vm list order stays on that session",
     )
     run_node(
         js_function("titleChip")
