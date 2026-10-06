@@ -205,10 +205,18 @@ def vm_console_url(site: str, session_id: str, vm_uid: str) -> str:
 
 
 def webrdp_connect_url(site: str, session_id: str, vm_uid: str, credentials: str) -> str:
-    return (
-        f"http://dcloud-{site}-web-4.cisco.com/dCloudConnect"
-        f"?s={vm_uid}&ss={session_id}&p=rdp#/client/{credentials}"
-    )
+    """dCloud's Remote Desktop route, the same link the session Servers page uses.
+
+    That page runs on dcloud2, sets the WebRDP cookie for .cisco.com, then
+    redirects to the gateway. Opening the gateway host directly (the old
+    http://dcloud-*-web-4/dCloudConnect URL) lands on that host's 404,
+    because the gateway sends you to / when the cookie is missing.
+    """
+    del credentials  # the dCloud page fetches these; they do not belong in the URL
+    site_code = (site or "").strip().lower()
+    sid = quote(str(session_id or "").strip(), safe="")
+    uid = quote(str(vm_uid or "").strip(), safe="")
+    return f"{site_base(site_code)}/sessions/{sid}/servers/{uid}/rdp"
 
 
 def _webrdp_server_ident(ident: str) -> str:

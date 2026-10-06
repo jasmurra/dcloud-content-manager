@@ -802,10 +802,41 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     for gone in ("Share session…", ">Reset session<"):
         check(f"card menu no longer says {gone}", gone not in INDEX)
     check(
-        "monitoring does not offer reset or end",
-        "const showSessionDanger = !monitor && !notMine;" in INDEX
-        and "This page does not offer Reset or End." in INDEX
-        and "Yes, Reset It" in INDEX,
+        "monitoring keeps End on your own session and leaves Reset off",
+        "const showReset = !monitor && !notMine;" in INDEX
+        and "End is on your own session. Reset is not on this page." in INDEX
+        and "Yes, Reset It" in INDEX
+        and "function sessionEndingSoon(" in INDEX
+        and "Ending Soon" in INDEX
+        and "3 * 24 * 60 * 60 * 1000" in INDEX
+        and "function renderWebrdpJumps(" in INDEX
+        and 'class="webrdp-jumps"' in INDEX
+        and "titleChip(cardStatusLabel(dc))" in INDEX,
+    )
+    run_node(
+        js_function("titleChip")
+        + """
+const cases = [
+  ["active", "Active"],
+  ["scheduled", "Scheduled"],
+  ["starting up", "Starting Up"],
+  ["shutting down", "Shutting Down"],
+  ["ending", "Ending"],
+  ["save_failed", "Save Failed"],
+  ["Ending Soon", "Ending Soon"],
+  ["monitor", "Monitor"],
+  ["selected", "Selected"],
+  ["EOL only", "EOL Only"],
+];
+for (const [raw, want] of cases) {
+  const got = titleChip(raw);
+  if (got !== want) {
+    console.error(raw + " -> " + got + ", expected " + want);
+    process.exit(1);
+  }
+}
+""",
+        "status chips are title case",
     )
     check(
         "end and cancel stay off for a session you do not own",
@@ -3202,7 +3233,7 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
     )
     check(
         "card Actions is on the collapsed row, not buried in the expanded body",
-        'summary data-tip="${monitor ? "Session info, share, extend, or move this card." : "Save, extend, end, or move this card."}">Actions</summary>' in page
+        'summary data-tip="${monitor ? "Session info, share, extend, end, or move this card." : "Save, extend, reset, end, or move this card."}">Actions</summary>' in page
         and "${openSession}\n                ${actionsMenu}" in page
         and "card-actions-row" not in page
         and "Card actions</summary>" not in page
@@ -3450,10 +3481,13 @@ def test_webrdp_is_on_demand() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     webrdp_api = source[source.index("def api_webrdp(") :]
     check(
-        "WebRDP is fetched when the user clicks it",
+        "WebRDP opens dCloud's Remote Desktop route, not the gateway host",
         'class="btn-vm-webrdp"' in page
         and "function openWebrdp(" in page
-        and 'api("/api/webrdp"' in page
+        and "https://dcloud2-${site}.cisco.com/sessions/" in page
+        and "/servers/${encodeURIComponent(uid)}/rdp`" in page
+        and "dcloud-${site}-web-4" not in page
+        and "http://dcloud-" not in page
         and "@app.post(\"/api/webrdp\")" in source
         and "fetch_webrdp_credentials(token, site, session_id, uid)" in webrdp_api,
     )

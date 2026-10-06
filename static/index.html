@@ -931,6 +931,24 @@
       font-size: 0.65rem;
       padding: 0.05rem 0.35rem;
     }
+    .webrdp-jumps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+      margin: 0.15rem 0 0.65rem;
+    }
+    .webrdp-jumps .webrdp-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-right: 0.15rem;
+    }
+    .webrdp-jumps .webrdp-jump {
+      min-height: 1.75rem;
+      padding: 0 0.7rem;
+      font-size: 0.78rem;
+    }
     .vm-menu { position: relative; flex-shrink: 0; }
     .card-actions-menu { display: inline-block; }
     .found-sessions-panel {
@@ -1046,16 +1064,25 @@
     }
     .vm-menu-list button:disabled { opacity: 0.45; cursor: not-allowed; }
     .badge {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      box-sizing: border-box;
       padding: 0.1rem 0.45rem;
       border-radius: 999px;
+      border: 1px solid transparent;
       font-size: 0.72rem;
       font-weight: 600;
+      line-height: 1.2;
+      vertical-align: middle;
     }
     .badge.ok { background: rgba(61, 214, 140, 0.15); color: var(--ok); }
     .badge.warn { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
     .badge.stopping { background: rgba(251, 146, 60, 0.18); color: var(--stopping); }
     .badge.err { background: rgba(248, 113, 113, 0.15); color: var(--err); }
+    .badge.ending-soon {
+      background: rgba(248, 113, 113, 0.22);
+      color: var(--err);
+    }
     .badge.neutral { background: rgba(139, 156, 179, 0.15); color: var(--muted); }
     .modal {
       position: fixed;
@@ -3130,10 +3157,10 @@
       <div class="panel-collapse-body">
       <p class="hint">
         Watch running sessions across all DCs, including sessions that are not yours.
-        This page does not offer Reset or End.
+        End is on your own session. Reset is not on this page.
         Find them on <strong>My Content</strong>, then add the ones you want to watch.
         You can also enter an ID below.
-        Move a card to the job workspace to reset or end your own session. That asks you to confirm first.
+        Move a card to the job workspace to reset your own session. That asks you to confirm first.
         Someone else's session has to be reset or ended in dCloud.
       </p>
       <p class="step-label">Monitor by ID</p>
@@ -6587,6 +6614,12 @@
       return "neutral";
     }
 
+    function titleChip(text) {
+      return String(text || "")
+        .replace(/_/g, " ")
+        .replace(/(^|[^A-Za-z])([a-z])/g, (_, lead, letter) => lead + letter.toUpperCase());
+    }
+
     function phaseLabel(phase) {
       const labels = {
         ready: "active",
@@ -6726,6 +6759,31 @@
       return renderGroup("Powered on", on, "on") + renderGroup("Powered off", off, "off");
     }
 
+    function vmWebrdpReady(vm) {
+      if (!vm || vm.shutdownPending || !vmIsPoweredOn(vm)) return false;
+      if (vm.rdpEnabled === false || vm.rdpEnabled === "false") return false;
+      return Boolean(vm.webRdp || vm.webRdpUrl || vm.rdpEnabled === true || vm.rdpEnabled === "true");
+    }
+
+    function renderWebrdpJumps(dc) {
+      const ready = (dc.vms || []).filter(vmWebrdpReady);
+      if (!ready.length) return "";
+      const jumps = ready.map((vm) => {
+        const label = vmDisplayName(vm);
+        const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+        const tip = `Opens dCloud Remote Desktop for ${label}.`;
+        return `<button type="button" class="btn-vm-webrdp webrdp-jump" ${vmData} data-tip="${escapeHtml(tip)}">${escapeHtml(label)}</button>`;
+      }).join("");
+      return `<div class="webrdp-jumps"><span class="webrdp-label">WebRDP</span>${jumps}</div>`;
+    }
+
+    function sessionEndingSoon(dc) {
+      if (!dc?.scheduleStop || ["ended", "saved", "cancelled"].includes(dc.phase)) return false;
+      const end = new Date(dc.scheduleStop);
+      if (Number.isNaN(end.getTime())) return false;
+      return end.getTime() - Date.now() <= 3 * 24 * 60 * 60 * 1000;
+    }
+
     function renderVmRow(dc, cardKey, vm, groupKey) {
       const links = [];
       const rdpOff = vm.rdpEnabled === false || vm.rdpEnabled === "false";
@@ -6739,16 +6797,14 @@
       // Long display names get clipped by CSS — hover shows the full name plus the VM name.
       const tip = short && short !== label ? `${label} · ${short}` : label;
       const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
-      if (!rdpOff && vm.webRdpUrl) {
-        links.push(`<a href="${vm.webRdpUrl}" target="_blank" rel="noopener noreferrer">WebRDP</a>`);
-      } else if (!rdpOff && vm.webRdp) {
-        links.push(`<button type="button" class="btn-vm-webrdp" ${vmData} data-tip="Opens WebRDP for this VM. dCloud is contacted only when you click.">WebRDP</button>`);
+      if (!rdpOff && vm.webRdp) {
+        links.push(`<button type="button" class="btn-vm-webrdp" ${vmData} data-tip="Opens dCloud Remote Desktop for this VM.">WebRDP</button>`);
       } else if (!rdpOff && vm.rdpUrl) {
         links.push(`<a href="${vm.rdpUrl}" target="_blank" rel="noopener noreferrer">RDP</a>`);
       }
       if (vm.consoleUrl) links.push(`<a href="${vm.consoleUrl}" target="_blank" rel="noopener noreferrer">VM Console</a>`);
       const selectedBadge = vm.selected && (dc.powerOnTargets || []).length
-        ? `<span class="badge ok vm-selected" data-tip="Checked in Load VMs when this session was scheduled">selected</span>`
+        ? `<span class="badge ok vm-selected" data-tip="Checked in Load VMs when this session was scheduled">${titleChip("selected")}</span>`
         : "";
       const powerHint = groupKey ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
       return `
@@ -7519,8 +7575,8 @@
             </label>`;
       const moveLabel = monitor ? "Move to job workspace" : "Move to monitoring";
       const moveTip = monitor
-        ? "Move this card to the job workspace to reset or end your own session. Monitoring does not offer those."
-        : "Move this card to monitoring (removed from bulk save/end).";
+        ? "Move this card to the job workspace to reset your own session. End stays here when the session is yours."
+        : "Move this card to monitoring. Reset stays on the workspace. End stays available here when the session is yours.";
       const moveMonitorVal = monitor ? "0" : "1";
       const shareKind = shareKindForDc(dc);
       const shareLabel = shareKind === "content" ? "Share saved content…" : "Share…";
@@ -7549,12 +7605,16 @@
       const renameBtn = canRename
         ? `<button type="button" class="card-rename-btn" ${cardData} data-tip="Rename this session in dCloud" aria-label="Rename session">✎</button>`
         : "";
-      // Monitoring is for watching, including someone else's session. Reset and
-      // End stay on the job workspace, and only for a session this user owns.
-      const showSessionDanger = !monitor && !notMine;
+      // Reset stays off monitoring. End stays on a session this user owns,
+      // including a monitoring card, so their own sessions can still be stopped.
+      const showReset = !monitor && !notMine;
+      const endingSoon = sessionEndingSoon(dc);
+      const endingSoonChip = endingSoon
+        ? `<span class="badge ending-soon" data-tip="Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}">Ending Soon</span>`
+        : "";
       const actionsMenu = `
                 <details class="vm-menu card-actions-menu">
-                  <summary data-tip="${monitor ? "Session info, share, extend, or move this card." : "Save, extend, end, or move this card."}">Actions</summary>
+                  <summary data-tip="${monitor ? "Session info, share, extend, end, or move this card." : "Save, extend, reset, end, or move this card."}">Actions</summary>
                   <div class="vm-menu-list">
                     ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session Info</button>` : ""}
                     ${shareBtn}
@@ -7562,8 +7622,8 @@
                     ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest Shutdown All Powered-On VMs</button>`}
                     ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                     <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
-                    ${showSessionDanger ? `<button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>` : ""}
-                    ${showSessionDanger ? `<button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>` : ""}
+                    ${showReset ? `<button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>` : ""}
+                    ${canEnd ? `<button type="button" class="btn-dc-end" ${cardData} data-tip="${endTip}">${endLabel}</button>` : ""}
                   </div>
                 </details>`;
       return `
@@ -7573,7 +7633,8 @@
               ${selectWrap}
               <span class="card-summary-name" title="${escapeHtml(summaryName)}">${escapeHtml(summaryName)}</span>
               <span class="card-summary-right">
-                <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(cardStatusLabel(dc))}</span>
+                <span class="badge ${badgeClass(dc.phase)}" title="${escapeHtml(dc.status || "")}">${escapeHtml(titleChip(cardStatusLabel(dc)))}</span>
+                ${endingSoonChip}
                 <span class="card-summary-meta">${escapeHtml(summarySession)}</span>
                 ${openSession}
                 ${actionsMenu}
@@ -7587,7 +7648,8 @@
                   <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
                 </div>
               </div>
-              ${monitor ? '<span class="badge neutral">monitor</span>' : ""}
+              ${renderWebrdpJumps(dc)}
+              ${monitor ? '<span class="badge neutral">' + titleChip("monitor") + "</span>" : ""}
               ${nameLine}
               <div class="hint">demo ${escapeHtml(dc.demoId || "")}${dc.pool ? " · " + escapeHtml(dc.pool) : ""} · ${dc.contentExport === false ? "regular" : "export"}</div>
               ${sess}
@@ -8618,7 +8680,7 @@
           const label = String(chip.label || chip.dc || "").toUpperCase();
           const newId = String(chip.newId || "").trim();
           const done = status === "completed" ? " done" : "";
-          const text = newId ? `${label} ${newId}` : `${label} ${status}`;
+          const text = newId ? `${label} ${newId}` : `${label} ${titleChip(status)}`;
           return `<span class="camgr-dc-chip ${escapeHtml(status)}${done}" data-tip="${escapeHtml(`${label}: ${status}${newId ? ` · new ID ${newId}` : ""}`)}">${escapeHtml(text)}</span>`;
         }).join("");
         const vpod = row.sourcePath
@@ -11171,8 +11233,7 @@
       }
     }
 
-    async function openWebrdp(btn) {
-      if (!ensureTokenReady("opening WebRDP")) return;
+    function openWebrdp(btn) {
       const uid = btn.dataset.uid || "";
       const sessionId = btn.dataset.session || "";
       const site = (btn.dataset.site || "").toLowerCase();
@@ -11180,25 +11241,16 @@
         showError("WebRDP needs a running session and a VM id.");
         return;
       }
-      closeVmMenuFrom(btn);
-      btn.disabled = true;
-      try {
-        const data = await api("/api/webrdp", {
-          method: "POST",
-          body: JSON.stringify({
-            ...tokenPayload(),
-            site,
-            session_id: sessionId,
-            uid,
-          }),
-        });
-        if (data.url) window.open(data.url, "_blank", "noopener,noreferrer");
-        else showError("WebRDP did not return a link.");
-      } catch (err) {
-        notifyRequestError(err);
-      } finally {
-        btn.disabled = false;
+      if (uid.toLowerCase().startsWith("vm-")) {
+        showError("WebRDP needs this VM's dCloud id. Refresh the card and try again.");
+        return;
       }
+      closeVmMenuFrom(btn);
+      // Same route as dCloud's Servers "Remote Desktop" link. That page sets
+      // the gateway cookie, then redirects. The gateway host itself 404s
+      // when that cookie was never set.
+      const url = `https://dcloud2-${site}.cisco.com/sessions/${encodeURIComponent(sessionId)}/servers/${encodeURIComponent(uid)}/rdp`;
+      window.open(url, "_blank", "noopener,noreferrer");
     }
 
     async function runVmAction(btn, action, label) {
@@ -12905,7 +12957,7 @@
         ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.contentId)}</a>`
         : escapeHtml(row.contentId);
       const stateCell = row.eolOnly && showEolBadge
-        ? `<span class="badge eol">EOL only</span> <span class="hint">${escapeHtml(row.state || "")}</span>`
+        ? `<span class="badge eol">${titleChip("EOL only")}</span> <span class="hint">${escapeHtml(row.state || "")}</span>`
         // No TBv3 badge: nearly everything is v3 now, and the v2 items already sit
         // under their own "Topology Builder v2 promoted — EOL only" section.
         : escapeHtml(row.state || "");

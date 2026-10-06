@@ -1,3 +1,9 @@
+## 2.0.13 — 2026-10-06
+
+- **End is back on your own monitoring card.** Reset stays off monitoring. Someone else's session still has no End
+- **A session ending within 3 days shows Ending Soon.** The chip sits next to the status chip. Hover shows the end time. Status chips use the same title case as the buttons
+- **An expanded card lists WebRDP for powered-on VMs.** Each button opens dCloud's Remote Desktop page for that VM, the same link as Servers in dCloud. The old gateway address was opening a 404
+
 ## 2.0.12 — 2026-10-06
 
 - **Log in can stay on dCloud.** A box under Log in, on by default, also signs in to CAI and CAMGR. Uncheck it on home Wi-Fi. Those sites are skipped when this Mac cannot reach the Cisco network, so the sign-in window does not keep reopening them
