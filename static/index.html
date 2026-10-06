@@ -491,6 +491,11 @@
     button.is-busy:disabled { cursor: wait; }
     button.is-busy:not(:disabled) { opacity: 0.85; cursor: wait; }
     .found-session-attached td { color: var(--text); }
+    .found-session-cards { display: grid; gap: 0.45rem; margin-top: 0.35rem; }
+    .card.found-session-card > summary {
+      grid-template-columns: auto minmax(0, 1fr) max-content auto;
+    }
+    .found-session-card .card-body { padding: 0.35rem 0.75rem 0.75rem; }
     .found-session-attached .found-session:disabled { cursor: not-allowed; }
     button:disabled:active { transform: none; box-shadow: none; }
     button.secondary,
@@ -2522,10 +2527,11 @@
           <label for="session-edit-name">Session Name</label>
           <input id="session-edit-name" type="text" maxlength="255" autocomplete="off" />
         </div>
-        <div class="prompt-field">
+        <div class="prompt-field" id="session-edit-start-field">
           <label for="session-edit-start">Start</label>
           <input id="session-edit-start" type="datetime-local" autocomplete="off" />
         </div>
+        <p id="session-edit-running" class="hint hidden">This session is already running, so the start time stays as it is. Extend moves the end later.</p>
         <div class="prompt-field">
           <label for="session-edit-stop">End</label>
           <input id="session-edit-stop" type="datetime-local" autocomplete="off" />
@@ -2875,8 +2881,8 @@
       <div class="panel-collapse-body">
       <p class="hint">
         Find your active sessions and your saved content in one place.
-        On active sessions, Actions covers the same controls as elsewhere — info, edit, save, reset, logs, share, and end — plus add to monitoring or the job workspace.
-        Extend, guest shutdown, and VM power stay on the card after you add the session.
+        Expand an active session for WebRDP and VM power. Actions covers info, edit, extend, save, reset, logs, share, and end.
+        Add to monitoring or the job workspace is still there when you want those cards.
         On saved copies you can sort, schedule, share, edit, or delete.
         Duration, delay, start/stop, and the nearby-slot option stay in sync with the demo-ID scheduler.
         <strong>Which VMs power on</strong> comes from the checkboxes in Load VMs on Schedule sessions.
@@ -3753,6 +3759,8 @@
       "mine-sessions": { rows: [], fetchedAt: {}, errors: {} },
       "mine-content": { rows: [], fetchedAt: {}, errors: {} },
       events: { rows: [], fetchedAt: {}, errors: {} },
+      // One expanded session card, kept so a page refresh does not download it again.
+      "session-card": { rows: [], fetchedAt: {}, errors: {} },
     };
     const unifiedGroupOpen = new Map();
     const unifiedSectionOpen = new Map();
@@ -5253,6 +5261,24 @@
       }
     }
 
+    async function deleteUnifiedDataKeys(keys) {
+      const names = [...keys].filter(Boolean);
+      if (!names.length) return;
+      const db = await openUnifiedDataDb();
+      try {
+        await new Promise((resolve, reject) => {
+          const transaction = db.transaction(UNIFIED_DATA_STORE, "readwrite");
+          const store = transaction.objectStore(UNIFIED_DATA_STORE);
+          names.forEach((key) => store.delete(key));
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      } finally {
+        db.close();
+      }
+    }
+
     async function saveUnifiedDataEntries(entries) {
       if (!entries.length) return;
       const db = await openUnifiedDataDb();
@@ -5400,6 +5426,7 @@
       }
       renderUnifiedDcData();
       updateUnifiedCacheStatus();
+      applySavedSessionCards();
       restoreCachedSessionList();
       restoreCachedSavedContentList();
     }
@@ -5878,14 +5905,22 @@
       }
     }
 
+    function sessionIsRunning(row) {
+      const status = String(row?.status || "").toLowerCase();
+      return row?.active === true || status === "active" || row?.phase === "ready";
+    }
+
     function openSessionEditModal(row) {
       sessionEditRow = row;
+      const running = sessionIsRunning(row);
       const start = row.start ? new Date(row.start) : null;
       const stop = row.stop ? new Date(row.stop) : null;
       $("session-edit-demo").textContent = row.demoId || "—";
       $("session-edit-parent").textContent = row.name || "—";
       $("session-edit-name").value = row.name || "";
-      $("session-edit-start").value = start && !Number.isNaN(start.getTime()) ? toLocalInput(start) : "";
+      $("session-edit-start-field").classList.toggle("hidden", running);
+      $("session-edit-running").classList.toggle("hidden", !running);
+      $("session-edit-start").value = running || !start || Number.isNaN(start.getTime()) ? "" : toLocalInput(start);
       $("session-edit-stop").value = stop && !Number.isNaN(stop.getTime()) ? toLocalInput(stop) : "";
       $("session-edit-title").textContent = `Edit ${row.site} session ${row.id}`;
       $("session-edit-status").textContent = "";
@@ -5897,7 +5932,8 @@
       const row = sessionEditRow;
       if (!row) return;
       const name = $("session-edit-name").value.trim();
-      const startValue = $("session-edit-start").value;
+      const running = $("session-edit-start-field").classList.contains("hidden");
+      const startValue = running ? "" : $("session-edit-start").value;
       const stopValue = $("session-edit-stop").value;
       const start = parseLocalInput(startValue);
       const stop = parseLocalInput(stopValue);
@@ -7124,7 +7160,7 @@
       if (!boxes.length) return;
       boxes.forEach((box) => {
         const onCard = keys.has(sessionKey(box.dataset.site, box.dataset.session));
-        const row = box.closest("tr");
+        const row = box.closest("tr, details.found-session-card");
         const addBtns = [...(row?.querySelectorAll(".btn-add-found-session, .btn-add-workspace-session, .found-session-action[data-action='workspace']") || [])];
         const labelFor = (addBtn) => {
           if (addBtn.dataset.action === "workspace") return "Add to Job Workspace";
@@ -12509,6 +12545,7 @@
         input: "filter-found-sessions",
         container: "found-sessions",
         noun: "session",
+        rowSelector: "details.found-session-card",
         sync: () => syncFoundAll(),
       },
       {
@@ -12528,7 +12565,7 @@
     ];
 
     function rowIsFilteredOut(el) {
-      return !!el?.closest?.("tr.filtered-out");
+      return !!el?.closest?.("tr.filtered-out, .found-session-card.filtered-out");
     }
 
     // Check all means "check everything the filter is showing", so a narrowed list
@@ -12620,7 +12657,8 @@
       const parts = [];
       let hiddenChecked = 0;
       for (const [id, noun] of lists) {
-        const rows = [...($(id)?.querySelectorAll("table tbody tr") || [])];
+        const selector = id === "found-sessions" ? "details.found-session-card" : "table tbody tr";
+        const rows = [...($(id)?.querySelectorAll(selector) || [])];
         if (!rows.length) continue;
         const shown = rows.filter((row) => !row.classList.contains("filtered-out")).length;
         hiddenChecked += rows.filter((row) => (
@@ -12872,16 +12910,21 @@
         `data-raw-status="${escapeHtml(row.rawStatus ?? "")}"`,
         `data-demo-id="${escapeHtml(row.demoId || "")}"`,
         `data-view-url="${escapeHtml(row.viewUrl || "")}"`,
+        `data-start="${escapeHtml(row.start || "")}"`,
+        `data-stop="${escapeHtml(row.stop || "")}"`,
+        `data-active="${active ? "1" : ""}"`,
       ].join(" ");
       return `
         <details class="vm-menu search-actions-menu found-session-actions" ${attrs}>
-          <summary data-tip="Info, edit, save, reset, logs, share, end, or add this session.">Actions</summary>
+          <summary data-tip="Info, edit, extend, save, reset, logs, share, end, or add this session. Expand the card for WebRDP and VM power.">Actions</summary>
           <div class="vm-menu-list">
             <button type="button" class="found-session-action" data-action="info">Info</button>
             ${attachable ? `<button type="button" class="found-session-action btn-add-found-session" data-action="monitor" data-site="${site}" data-session="${sessionId}" data-tip="Add just this session as a monitoring card.">Add to Monitoring</button>` : ""}
             ${attachable ? `<button type="button" class="found-session-action" data-action="workspace" data-site="${site}" data-session="${sessionId}">Add to Job Workspace</button>` : ""}
             ${scheduled || active ? `<button type="button" class="found-session-action" data-action="edit">Edit…</button>` : ""}
+            ${active ? `<button type="button" class="found-session-action" data-action="extend" data-tip="Move this session's end later. A stop of now will not end it.">Extend…</button>` : ""}
             ${active ? `<button type="button" class="found-session-action" data-action="save">Save</button>` : ""}
+            ${active ? `<button type="button" class="found-session-action" data-action="shutdown-all" data-tip="Guest-shuts down every powered-on VM. Does not save or end the session. vCUBE is powered off.">Guest Shutdown All Powered-On VMs</button>` : ""}
             ${active || error ? `<button type="button" class="found-session-action" data-action="reset">Reset</button>` : ""}
             ${active || terminal || unavailable || error ? `<button type="button" class="found-session-action" data-action="logs">Logs</button>` : ""}
             ${active && row.viewUrl ? `<a href="${escapeHtml(row.viewUrl)}" target="_blank" rel="noopener noreferrer">View Session</a>` : ""}
@@ -12904,6 +12947,9 @@
         rawStatus: menu.dataset.rawStatus || "",
         demoId: menu.dataset.demoId || "",
         viewUrl: menu.dataset.viewUrl || "",
+        start: menu.dataset.start || "",
+        stop: menu.dataset.stop || "",
+        active: menu.dataset.active === "1",
       };
     }
 
@@ -12917,32 +12963,153 @@
       });
     }
 
+    const foundSessionCards = new Map();
+    const foundSessionOpen = new Set();
+    const foundVmMoreOpen = new Set();
+
+    function applySavedSessionCards() {
+      for (const dc of finderLists["session-card"]?.rows || []) {
+        const key = sessionKey(dc?.site, dc?.sessionId);
+        if (!key || key.endsWith(":") || foundSessionCards.has(key)) continue;
+        foundSessionCards.set(key, dc);
+      }
+    }
+
+    function persistFoundSessionCard(dc) {
+      const site = String(dc?.site || "").toLowerCase();
+      const sessionId = String(dc?.sessionId || "");
+      const key = sessionKey(site, sessionId);
+      if (!site || !sessionId) return;
+      const saved = { ...dc, fetchedAt: Date.now() };
+      finderLists["session-card"].rows = [
+        ...finderLists["session-card"].rows.filter((row) => sessionKey(row.site, row.sessionId) !== key),
+        saved,
+      ];
+      saveUnifiedDataEntries([{
+        key: `session-card:${key}`,
+        source: "session-card",
+        site,
+        fetchedAt: saved.fetchedAt,
+        rows: [saved],
+      }]).catch(() => {});
+    }
+
+    function forgetFoundSessionCards() {
+      const keys = (finderLists["session-card"]?.rows || [])
+        .map((row) => `session-card:${sessionKey(row.site, row.sessionId)}`);
+      finderLists["session-card"].rows = [];
+      foundSessionCards.clear();
+      deleteUnifiedDataKeys(keys).catch(() => {});
+    }
+
+    function foundRowAsDc(row) {
+      const status = String(row?.status || "");
+      const lower = status.toLowerCase();
+      const active = Boolean(row?.active) || lower === "active";
+      let phase = "waiting";
+      if (active) phase = "ready";
+      else if (lower === "error") phase = "error";
+      else if (["cancelled", "canceled", "deleted", "ended"].includes(lower)) phase = "ended";
+      else if (lower === "saved") phase = "saved";
+      const key = sessionKey(row?.site, row?.sessionId);
+      const loaded = foundSessionCards.get(key);
+      return {
+        site: String(row?.site || "").toLowerCase(),
+        sessionId: String(row?.sessionId || ""),
+        name: row?.name || "",
+        demoId: row?.demoId || "",
+        status,
+        phase,
+        scheduleStart: row?.start || "",
+        scheduleStop: row?.stop || "",
+        virtualCenter: row?.virtualCenter || "",
+        viewUrl: row?.viewUrl || "",
+        ownedByMe: true,
+        vms: [],
+        ...(loaded || {}),
+      };
+    }
+
+    function foundSessionDetailHtml(dc) {
+      const loaded = foundSessionCards.has(sessionKey(dc.site, dc.sessionId));
+      if (!loaded) {
+        return `<p class="hint">Loading VMs and WebRDP…</p>`;
+      }
+      const vcMark = dc.virtualCenter ? ` (${escapeHtml(dc.virtualCenter)})` : "";
+      const sessionLine = dc.sessionId
+        ? `<div class="mono">session ${escapeHtml(dc.sessionId)}${vcMark}</div>`
+        : "";
+      const vcLine = dc.virtualCenter
+        ? `<div class="hint">Virtual Center ${escapeHtml(dc.virtualCenter)}</div>`
+        : "";
+      return `
+        ${renderWebrdpJumps(dc)}
+        <div class="hint">demo ${escapeHtml(dc.demoId || "—")}</div>
+        ${sessionLine}
+        ${vcLine}
+        ${formatSessionStartLine(dc)}
+        ${dc.scheduleStop ? `<div class="hint">Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}</div>` : ""}
+        ${renderVmGroups(dc, sessionKey(dc.site, dc.sessionId), foundVmMoreOpen)}
+      `;
+    }
+
+    function foundSessionCardHtml(row, checkedKeys) {
+      const dc = foundRowAsDc(row);
+      const key = sessionKey(dc.site, dc.sessionId);
+      const checked = checkedKeys.has(key) ? " checked" : "";
+      const vcMark = dc.virtualCenter ? ` (${dc.virtualCenter})` : "";
+      const endingSoon = sessionEndingSoon(dc)
+        ? `<span class="badge ending-soon" data-tip="Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}">Ending Soon</span>`
+        : "";
+      const openSession = dc.viewUrl
+        ? `<a class="card-open-session" href="${escapeHtml(dc.viewUrl)}" target="_blank" rel="noopener noreferrer">Open Session</a>`
+        : "";
+      return `
+        <details class="card found-session-card" data-card-key="${escapeHtml(key)}" data-site="${escapeHtml(dc.site)}" data-session="${escapeHtml(dc.sessionId)}"${foundSessionOpen.has(key) ? " open" : ""}>
+          <summary>
+            <label class="card-select-wrap" title="Include in share or add to monitoring">
+              <input type="checkbox" class="found-session" data-site="${escapeHtml(dc.site)}" data-session="${escapeHtml(dc.sessionId)}" data-name="${escapeHtml(row.name || "")}"${checked} aria-label="Select ${escapeHtml(dc.site.toUpperCase())} session ${escapeHtml(dc.sessionId)}" />
+            </label>
+            <span class="card-summary-name" title="${escapeHtml(dc.name || dc.sessionId)}">${escapeHtml(dc.name || dc.sessionId)}</span>
+            <span class="card-summary-right">
+              <span class="badge ${badgeClass(dc.phase)}">${escapeHtml(titleChip(row.status || cardStatusLabel(dc)))}</span>
+              ${endingSoon}
+              <span class="card-summary-meta">${escapeHtml(dc.sessionId)}${escapeHtml(vcMark)}</span>
+              ${openSession}
+              ${foundSessionActionsMenu(row)}
+            </span>
+          </summary>
+          <div class="card-body found-session-detail">${foundSessionDetailHtml(dc)}</div>
+        </details>
+      `;
+    }
+
     function renderFoundSessions(data) {
+      applySavedSessionCards();
       const rows = data.sessions || [];
+      const checkedKeys = new Set(
+        [...document.querySelectorAll("#found-sessions .found-session:checked")].map(
+          (box) => sessionKey(box.dataset.site, box.dataset.session),
+        ),
+      );
+      document.querySelectorAll("#found-sessions details.found-session-card").forEach((card) => {
+        const key = card.dataset.cardKey;
+        if (!key) return;
+        if (card.open) foundSessionOpen.add(key);
+        else foundSessionOpen.delete(key);
+      });
       const groups = groupRowsBySite(rows, { includeEmpty: true });
       const body = renderDcGroupedList(
         groups,
         "No active sessions on your dCloud dashboard.",
         (site, siteRows) => `
-          <table class="dc-list">
-            <thead>
-              <tr>
-                <th><input type="checkbox" class="found-session-dc-head" data-site="${escapeHtml(site)}" title="Select all in ${escapeHtml(site.toUpperCase())}" /></th>
-                <th>Session</th><th>Name</th><th>Status</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${siteRows.map((row) => `
-                <tr>
-                  <td><input type="checkbox" class="found-session" data-site="${escapeHtml(row.site)}" data-session="${escapeHtml(row.sessionId)}" data-name="${escapeHtml(row.name || "")}" /></td>
-                  <td class="mono">${escapeHtml(row.sessionId)}</td>
-                  <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
-                  <td>${escapeHtml(row.status)}</td>
-                  <td class="saved-actions">${foundSessionActionsMenu(row)}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
+          <label class="check-line found-session-dc-line">
+            <input type="checkbox" class="found-session-dc-head" data-site="${escapeHtml(site)}" title="Select all in ${escapeHtml(site.toUpperCase())}" />
+            Select all in ${escapeHtml(site.toUpperCase())}
+          </label>
+          <div class="found-session-cards">
+            ${siteRows.map((row) => foundSessionCardHtml(row, checkedKeys)).join("")}
+          </div>
         `
         ,
         "found-sessions",
@@ -12956,6 +13123,160 @@
       markFoundSessionsOnCards(lastRenderedJob);
       bindFoundSessionActionMenus();
       applyListFilter(listFilterConfig("filter-found-sessions"));
+      document.querySelectorAll("#found-sessions details.found-session-card[open]").forEach((card) => {
+        if (!foundSessionCards.has(card.dataset.cardKey)) {
+          loadFoundSessionCard(card.dataset.site, card.dataset.session).catch((err) => {
+            const body = card.querySelector(".found-session-detail");
+            if (body) body.innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;
+          });
+        }
+      });
+    }
+
+    async function loadFoundSessionCard(site, sessionId) {
+      const key = sessionKey(site, sessionId);
+      const card = document.querySelector(`#found-sessions details.found-session-card[data-card-key="${CSS.escape(key)}"]`);
+      const body = card?.querySelector(".found-session-detail");
+      if (body && !foundSessionCards.has(key)) {
+        body.innerHTML = `<p class="hint">Loading VMs and WebRDP…</p>`;
+      }
+      const data = await api("/api/sessions/card", {
+        method: "POST",
+        quiet: true,
+        body: JSON.stringify({ ...tokenPayload(), site, session_id: sessionId }),
+      });
+      const dc = data.dc;
+      if (!dc) return null;
+      foundSessionCards.set(key, dc);
+      persistFoundSessionCard(dc);
+      const fresh = document.querySelector(`#found-sessions details.found-session-card[data-card-key="${CSS.escape(key)}"]`);
+      const freshBody = fresh?.querySelector(".found-session-detail");
+      if (freshBody) freshBody.innerHTML = foundSessionDetailHtml({ ...foundRowAsDc({ site, sessionId, status: "Active", active: true }), ...dc });
+      return dc;
+    }
+
+    function rememberFoundStop(site, sessionId, stop) {
+      if (!stop) return;
+      const key = sessionKey(site, sessionId);
+      for (const row of finderLists["mine-sessions"].rows) {
+        if (sessionKey(row.site, row.sessionId) === key) row.stop = stop;
+      }
+      const dc = foundSessionCards.get(key);
+      if (dc) {
+        dc.scheduleStop = stop;
+        persistFoundSessionCard(dc);
+      }
+      renderFoundSessions({
+        sessions: finderLists["mine-sessions"].rows,
+        errors: finderLists["mine-sessions"].errors,
+      });
+    }
+
+    async function extendFoundSession(row) {
+      if (!ensureTokenReady("extending the session")) return;
+      const entered = await promptText(
+        "How much longer should this session run?\n\nExamples: 5, 5d, 6h, or 5d 6h. A number by itself means days.",
+        { title: "Extend Session", name: "1d", inputLabel: "Extend By", okLabel: "Continue" },
+      );
+      if (entered === null) return;
+      const minutes = parseExtensionAmount(entered);
+      if (minutes < 60 || minutes > 30 * 24 * 60) {
+        showError("Enter 1 hour through 30 days, such as 5d, 6h, or 5d 6h.");
+        return;
+      }
+      const data = await api("/api/sessions/extend", {
+        method: "POST",
+        body: JSON.stringify({
+          ...tokenPayload(),
+          site: row.site,
+          session_id: row.id,
+          extra_minutes: minutes,
+        }),
+      });
+      if (data.offer && data.suggested_stop) {
+        const takeShorter = await confirmAction(
+          `${data.message || "That window is booked."}\n\nExtend until ${formatSessionWhen(data.suggested_stop)} instead?`,
+          { title: "Extend Session" },
+        );
+        if (!takeShorter) return;
+        const applied = await api("/api/sessions/extend", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site: row.site,
+            session_id: row.id,
+            stop_at: data.suggested_stop,
+            confirm_shorter: true,
+          }),
+        });
+        rememberFoundStop(row.site, row.id, applied.stop || data.suggested_stop);
+        showToast("Session extended.");
+        return;
+      }
+      rememberFoundStop(row.site, row.id, data.stop);
+      showToast("Session extended.");
+    }
+
+    async function runFoundVmAction(btn, action) {
+      if (!ensureTokenReady("changing VM power")) return;
+      closeVmMenuFrom(btn);
+      btn.disabled = true;
+      const site = btn.dataset.site;
+      const sessionId = btn.dataset.session;
+      try {
+        await api("/api/sessions/vm-action", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site,
+            session_id: sessionId,
+            name: btn.dataset.name || "",
+            mor: btn.dataset.mor || "",
+            uid: btn.dataset.uid || "",
+            action,
+          }),
+        });
+        foundSessionCards.delete(sessionKey(site, sessionId));
+        await loadFoundSessionCard(site, sessionId);
+        showToast("VM action submitted.");
+      } catch (err) {
+        btn.disabled = false;
+        showToast(err.message || "VM action failed.", { kind: "err" });
+      }
+    }
+
+    async function shutdownFoundSessionVms(row) {
+      if (!ensureTokenReady("shutting down VMs")) return;
+      const confirmed = await confirmAction(
+        `Guest-shut down every powered-on VM in ${String(row.site || "").toUpperCase()} session ${row.id}?\n\nThis does not save or end the session.`,
+        { title: "Guest Shutdown All Powered-On VMs" },
+      );
+      if (!confirmed) return;
+      const key = sessionKey(row.site, row.id);
+      let dc = foundSessionCards.get(key);
+      if (!dc) dc = await loadFoundSessionCard(row.site, row.id);
+      const vms = (dc?.vms || []).filter((vm) => vm.shutdownPending || vmIsPoweredOn(vm));
+      if (!vms.length) {
+        showToast("No powered-on VMs on this session.");
+        return;
+      }
+      for (const vm of vms) {
+        await api("/api/sessions/vm-action", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site: row.site,
+            session_id: row.id,
+            name: vmDisplayName(vm),
+            mor: vm.mor || "",
+            uid: vm.uid || "",
+            action: vmNeedsHardPowerOff(vm) ? "vmPowerOff" : "guestShutdown",
+          }),
+        });
+      }
+      foundSessionCards.delete(key);
+      await loadFoundSessionCard(row.site, row.id);
+      showToast("Guest shutdown submitted.");
     }
 
     function formatSavedAt(iso) {
@@ -13958,6 +14279,7 @@
     async function findSessions({ refresh = false, clearError = true } = {}) {
       if (clearError) showError("");
       try {
+        if (refresh) forgetFoundSessionCards();
         const data = await loadMineSessions({ refresh });
         if (!data) {
           setFinderCacheHint("found-sessions-cache-status", "mine-sessions", SITE_ORDER, { usedCache: true });
@@ -15454,7 +15776,44 @@
     $("btn-share-found-sessions")?.addEventListener("click", () => {
       openBulkShareModal(checkedFoundSessionTargets("found-session"));
     });
+    // toggle does not bubble, so this has to listen on the way down.
+    $("found-sessions").addEventListener("toggle", (ev) => {
+      const card = ev.target;
+      if (card?.matches?.("details.vm-more")) {
+        const key = card.dataset.key;
+        if (!key) return;
+        if (card.open) foundVmMoreOpen.add(key);
+        else foundVmMoreOpen.delete(key);
+        return;
+      }
+      if (!card?.matches?.("details.found-session-card")) return;
+      const key = card.dataset.cardKey;
+      if (card.open) foundSessionOpen.add(key);
+      else foundSessionOpen.delete(key);
+      if (!card.open || foundSessionCards.has(key)) return;
+      loadFoundSessionCard(card.dataset.site, card.dataset.session).catch((err) => {
+        const body = card.querySelector(".found-session-detail");
+        if (body) body.innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;
+      });
+    }, true);
     $("found-sessions").addEventListener("click", (ev) => {
+      const webrdpBtn = ev.target.closest(".btn-vm-webrdp");
+      if (webrdpBtn) {
+        ev.preventDefault();
+        if (webrdpBtn.disabled) return;
+        openWebrdp(webrdpBtn).catch((err) => showError(err.message));
+        return;
+      }
+      const powerBtn = ev.target.closest(".btn-vm-on, .btn-vm-hard-off, .btn-vm-off");
+      if (powerBtn) {
+        ev.preventDefault();
+        if (powerBtn.disabled) return;
+        const action = powerBtn.classList.contains("btn-vm-on")
+          ? "vmPowerOn"
+          : (powerBtn.classList.contains("btn-vm-hard-off") ? "vmPowerOff" : "guestShutdown");
+        runFoundVmAction(powerBtn, action).catch((err) => showError(err.message));
+        return;
+      }
       const actionBtn = ev.target.closest(".found-session-action");
       if (!actionBtn || actionBtn.disabled) return;
       const action = actionBtn.dataset.action || "";
@@ -15488,6 +15847,16 @@
       if (action === "edit") {
         if (!ensureTokenReady("editing the session")) return;
         openSessionEditModal(row);
+        return;
+      }
+      if (action === "extend") {
+        ev.preventDefault();
+        extendFoundSession(row).catch((err) => showToast(err.message || "Extend failed.", { kind: "err" }));
+        return;
+      }
+      if (action === "shutdown-all") {
+        ev.preventDefault();
+        shutdownFoundSessionVms(row).catch((err) => showToast(err.message || "Guest shutdown failed.", { kind: "err" }));
         return;
       }
       if (action === "logs") {

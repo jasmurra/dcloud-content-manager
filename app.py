@@ -1237,6 +1237,14 @@ class SearchItemPayload(TokenPayload):
     stop_at: str = ""
 
 
+class SessionExtendPayload(TokenPayload):
+    site: str
+    session_id: str
+    extra_minutes: int = 0
+    stop_at: str = ""
+    confirm_shorter: bool = False
+
+
 class EventLookupPayload(TokenPayload):
     site: str
     event_id: str
@@ -8485,6 +8493,116 @@ def api_my_sessions(body: RefreshListsPayload) -> dict[str, Any]:
     token = _resolve_token(body)
     result = list_dashboard_sessions_all_sites(token, refresh=body.refresh, sites=body.sites)
     return {"ok": True, **result}
+
+
+def _manage_phase(status: Any) -> str:
+    if is_active_status(status):
+        return "ready"
+    label = format_status(status).lower()
+    if label == "scheduled":
+        return "waiting"
+    if "error" in label:
+        return "error"
+    if label == "saved":
+        return "saved"
+    if label in {"cancelled", "canceled", "deleted", "ended"}:
+        return "ended"
+    return "waiting"
+
+
+@app.post("/api/sessions/card")
+def api_session_card(body: SearchItemPayload) -> dict[str, Any]:
+    """One session's VMs and end time, for a card on My Content. Not a job card."""
+    site = str(body.site or "").strip().lower()
+    session_id = str(body.session_id or "").strip()
+    if site not in SITES or not session_id:
+        raise HTTPException(400, "Datacenter and session ID are required.")
+    token = _resolve_token(body)
+    vms, details, err = list_session_vms(token, site, session_id)
+    if err or not isinstance(details, dict):
+        raise HTTPException(400, err or "Could not load session.")
+    live, _power_err = apply_tbv3_power_states(token, site, session_id, vms, details)
+    live = attach_vm_access_links(token, site, session_id, live)
+    status = details.get("status")
+    dc = {
+        "site": site,
+        "sessionId": session_id,
+        "demoId": str(details.get("demoId") or details.get("parentId") or "").strip(),
+        "phase": _manage_phase(status),
+        "status": format_status(status),
+        "canReset": bool(details.get("canReset")),
+        "viewUrl": session_view_url(site, session_id, session=details),
+        "vms": live,
+        "ownedByMe": True,
+        **_dc_ids_from_session(details),
+    }
+    return {"ok": True, "dc": dc}
+
+
+@app.post("/api/sessions/extend")
+def api_session_extend(body: SessionExtendPayload) -> dict[str, Any]:
+    """Extend one of your sessions without putting it on a job card first."""
+    site = str(body.site or "").strip().lower()
+    session_id = str(body.session_id or "").strip()
+    if site not in SITES or not session_id:
+        raise HTTPException(400, "Datacenter and session ID are required.")
+    token = _resolve_token(body)
+    details, err = fetch_session(token, site, session_id)
+    if err or not isinstance(details, dict):
+        raise HTTPException(400, err or "Could not load session.")
+    current_stop = str(details.get("stop") or "").strip()
+    if body.confirm_shorter:
+        stamp, reason = _guard_extend_stop(parse_schedule_datetime(body.stop_at), current_stop)
+        if reason:
+            raise HTTPException(400, reason)
+        result = extend_session(token, site, session_id, stop_at=stamp)
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("message") or "Extend failed.")
+        return {"ok": True, "applied": True, "offer": False, **result}
+    extra = int(body.extra_minutes or 0)
+    if extra < 60 or extra > 30 * 24 * 60:
+        raise HTTPException(400, "Enter 1 hour through 30 days, such as 5d, 6h, or 5d 6h.")
+    stamp, error = resolve_extended_stop_by_minutes(
+        current_stop=current_stop,
+        extra_minutes=extra,
+        session_start=str(details.get("start") or ""),
+    )
+    if error or not stamp:
+        raise HTTPException(400, error or "Could not read the new end time.")
+    guarded, reason = _guard_extend_stop(parse_schedule_datetime(stamp), current_stop)
+    if reason:
+        raise HTTPException(400, reason)
+    probe = probe_max_extend_stop(
+        token,
+        site,
+        session_id,
+        requested_stop=guarded,
+        current_stop=current_stop,
+    )
+    if not probe.get("ok") and not probe.get("offer"):
+        raise HTTPException(400, probe.get("message") or "Extend failed.")
+    return probe
+
+
+@app.post("/api/sessions/vm-action")
+def api_session_vm_action(body: VmActionPayload) -> dict[str, Any]:
+    """Power one VM on a My Content card. The session does not have to be on a job."""
+    site = (body.site or "").strip().lower()
+    session_id = str(body.session_id or "").strip()
+    action = (body.action or "guestShutdown").strip()
+    allowed = {"guestShutdown", "vmPowerOn", "vmPowerOff"}
+    if site not in SITES or not session_id:
+        raise HTTPException(400, "Datacenter and session ID are required.")
+    if action not in allowed:
+        raise HTTPException(400, "Supported VM actions: power on, power off, guest shutdown.")
+    token = _resolve_token(body)
+    target = {"name": body.name, "mor": body.mor, "uid": body.uid}
+    if action == "guestShutdown" and vm_needs_hard_power_off(target):
+        action = "vmPowerOff"
+    result = vm_action(token, site, session_id, target, action)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("message") or "VM action failed.")
+    return {"ok": True, "result": result}
 
 
 def _share_kind(body: ShareStatePayload | ShareUpdatePayload | ShareSearchPayload) -> str:

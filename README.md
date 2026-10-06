@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.14** | Your Active Sessions expand like monitoring cards, and that detail is kept after a refresh; extend can only move the end later; Content and Sessions download only when you click Refresh Loaded Data |
 | **2.0.13** | End is back on your own monitoring card; a session ending within 3 days shows Ending Soon; expanded cards open WebRDP through dCloud's Remote Desktop page |
 | **2.0.12** | Log in can skip CAI and CAMGR off the Cisco network; the sign-in window is named Chromium for DCM; monitoring cards do not offer Reset or End; event reset still covers attendee sessions after a confirmation |
 | **2.0.11** | End, cancel, reset, and delete refuse a session or saved content you do not own; a delayed schedule keeps that delay after a busy slot |

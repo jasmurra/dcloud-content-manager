@@ -2007,6 +2007,20 @@ def test_staggered_session_copies_cards() -> None:
         and 'id="btn-find-sessions"' not in monitor,
     )
     check(
+        "active sessions on My Content expand like monitoring cards",
+        'class="card found-session-card"' in INDEX
+        and 'data-action="extend"' in INDEX
+        and 'id="session-edit-start-field"' in INDEX
+        and "This session is already running" in INDEX
+        and 'rowSelector: "details.found-session-card"' in INDEX
+        and '@app.post("/api/sessions/card")' in (ROOT / "app.py").read_text(encoding="utf-8")
+        and '@app.post("/api/sessions/extend")' in (ROOT / "app.py").read_text(encoding="utf-8")
+        and '"virtualCenter": session_virtual_center(session)' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+        and 'source: "session-card"' in INDEX
+        and "function persistFoundSessionCard(" in INDEX
+        and "function applySavedSessionCards(" in INDEX,
+    )
+    check(
         "cleanup is surveys only",
         "Session Feedback Surveys" in INDEX
         and 'id="btn-decline-all-surveys"' in INDEX

@@ -3458,6 +3458,9 @@ def list_dashboard_sessions(token: str, site: str, *, refresh: bool = False) -> 
                 "rawStatus": status,
                 "active": is_active_status(status),
                 "demoId": str(session.get("demoId") or session.get("parentId") or "").strip(),
+                "virtualCenter": session_virtual_center(session),
+                "start": str(session.get("start") or "").strip(),
+                "stop": str(session.get("stop") or "").strip(),
                 "viewUrl": session_view_url(site_code, sid, session=session),
             }
         )

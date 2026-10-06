@@ -1,3 +1,11 @@
+## 2.0.14 — 2026-10-06
+
+- **Your Active Sessions expand like a monitoring card.** Open one for WebRDP, VM power, the end time, and the same actions you use on a card, including Extend. A session that is already running does not offer a new start time. The details stay in this browser, so a page refresh does not download them again. Refresh Sessions gets a new copy
+- **Extend and Edit can only move the end later.** The new time has to be in the future. Setting the end to now does not end the session
+- **Content and Sessions stay on the last download.** Load uses that copy. Refresh Loaded Data is the download, and it waits 10 minutes. Ending or editing a session from search does not pull the whole list again
+- **Event Reset and End wait 1 second between sessions and stop at 100.** Run the rest as the next batch
+- **The local app only answers this tool's page.** After a restart, refresh the tab. The saved sign-in file is readable only by you. Sign-in itself is unchanged
+
 ## 2.0.13 — 2026-10-06
 
 - **End is back on your own monitoring card.** Reset stays off monitoring. Someone else's session still has no End
