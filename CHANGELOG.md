@@ -1,3 +1,10 @@
+## 2.0.12 — 2026-10-06
+
+- **Log in can stay on dCloud.** A box under Log in, on by default, also signs in to CAI and CAMGR. Uncheck it on home Wi-Fi. Those sites are skipped when this Mac cannot reach the Cisco network, so the sign-in window does not keep reopening them
+- **The sign-in window is named Chromium for DCM.** The Dock and menu bar no longer say “for Testing”
+- **Monitoring does not offer Reset or End.** Those stay on the job workspace, for your own session, and reset asks you to confirm. Someone else's session is not offered those actions
+- **Event reset still covers attendee sessions.** Reset Checked on the Events page asks you to confirm that it cannot be undone, then resets the sessions you checked, including ones you do not own
+
 ## 2.0.11 — 2026-10-05
 
 - **End, cancel, reset, and delete only act on your own sessions and content.** Before any of those calls, the tool reads the record and compares the owner to the signed-in account. A different owner, or an owner it cannot read, is refused. There is no admin-route fallback, and the page no longer offers to end someone else's session anyway

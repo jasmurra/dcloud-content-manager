@@ -124,6 +124,7 @@ from dcloud_client import (
     match_selected_vms,
     parse_site_and_id,
     power_on_vms,
+    reset_event_session,
     reset_session,
     save_session,
     schedule_exported_session,
@@ -5281,6 +5282,7 @@ async def api_refresh_session() -> dict[str, Any]:
 async def api_dcloud_browser_login(
     site: str = "",
     allow_window: bool = True,
+    warm_hub: bool = True,
 ) -> dict[str, Any]:
     """Sign in to dCloud inside the tool-owned Chromium profile.
 
@@ -5300,7 +5302,13 @@ async def api_dcloud_browser_login(
         token, refresh, site_out, message = "", "", site_code, ""
         if allow_window:
             token, refresh, site_out, message = await run_in_threadpool(
-                partial(capture_dcloud_tokens, site_code, headed=True, timeout_s=300),
+                partial(
+                    capture_dcloud_tokens,
+                    site_code,
+                    headed=True,
+                    timeout_s=300,
+                    warm_hub=warm_hub,
+                ),
             )
         elif tool_browser_profile_exists():
             token, refresh, site_out, message = await run_in_threadpool(
@@ -5308,7 +5316,7 @@ async def api_dcloud_browser_login(
             )
         if token:
             _apply_user_session(token, refresh, site_out or site_code, "browser")
-            if allow_window:
+            if allow_window and warm_hub:
                 _apply_login_hub_cookies()
         return {
             "ok": bool(token),
@@ -8143,7 +8151,10 @@ def api_event_session_action(body: EventSessionActionPayload) -> dict[str, Any]:
     if not session_ids:
         raise HTTPException(400, "Choose at least one event session.")
     token = _resolve_token(body)
-    operation = reset_session if action == "reset" else end_session
+    # Event reset is the one action allowed on someone else's session. The page
+    # has already asked them to confirm that it cannot be undone. End stays
+    # limited to a session this user owns.
+    operation = reset_event_session if action == "reset" else end_session
     # dCloud rejects a burst of resets against one event, so these go out one at a
     # time with a pause in between rather than all at once.
     results: list[dict[str, Any]] = []

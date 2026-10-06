@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.12** | Log in can skip CAI and CAMGR off the Cisco network; the sign-in window is named Chromium for DCM; monitoring cards do not offer Reset or End; event reset still covers attendee sessions after a confirmation |
 | **2.0.11** | End, cancel, reset, and delete refuse a session or saved content you do not own; a delayed schedule keeps that delay after a busy slot |
 | **2.0.10** | The sign-in browser updates to current Chrome so Duo does not block Log in |
 | **2.0.9** | A deleted or cancelled session leaves the workspace on its own; the virtual center shows next to the session id |

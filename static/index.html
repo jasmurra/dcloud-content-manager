@@ -2610,12 +2610,16 @@
       <p class="hint">
         Sessions run under <strong>your</strong> dCloud login.
         <strong>Log in</strong> uses a tool-owned Chromium window for Cisco SSO (Duo included).
-        That one sign-in also connects CAI and CAMGR, so you should not need their Connect
-        buttons unless a session later drops. If that profile is already signed in, the
-        window finishes as soon as it opens.
+        If that profile is already signed in, the window finishes as soon as it opens.
+        dCloud works off the Cisco network. CAI and CAMGR do not.
       </p>
+      <label class="check-line" for="login-hub" style="margin-top:0.65rem">
+        <input type="checkbox" id="login-hub" checked />
+        <span>Also sign in to CAI and CAMGR</span>
+      </label>
+      <p class="hint" id="login-hub-hint">Must be on the Cisco network (office or VPN) for CAI and CAMGR. Uncheck this on home Wi-Fi so Log in only signs in to dCloud and does not keep opening those sites. Connect later from Content Automation Hub when you are on the Cisco network.</p>
       <div class="actions" style="margin-top:0.4rem">
-        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. Signs in to dCloud, CAI, and CAMGR together. If that profile is already signed in, it finishes right away.">Log In to dCloud</button>
+        <button type="button" id="btn-login" data-tip="Opens the tool's Chromium window for Cisco SSO/Duo. Signs in to dCloud. CAI and CAMGR are included only when the box above is checked.">Log In to dCloud</button>
         <button type="button" class="secondary" id="btn-validate" data-tip="Checks that your token works against dCloud before you schedule or load VMs.">Validate Token</button>
         <button type="button" class="secondary" id="btn-clear-session" data-tip="Clears the token held by this tool (does not sign you out of dCloud in Chrome).">Clear Login Session</button>
       </div>
@@ -3125,9 +3129,12 @@
       <summary class="panel-collapse-summary">Session Monitoring</summary>
       <div class="panel-collapse-body">
       <p class="hint">
-        Watch running sessions across all DCs without bulk shutdown or end actions.
+        Watch running sessions across all DCs, including sessions that are not yours.
+        This page does not offer Reset or End.
         Find them on <strong>My Content</strong>, then add the ones you want to watch.
-        You can also enter an ID below. Move a card to the job workspace when you want bulk save/end controls.
+        You can also enter an ID below.
+        Move a card to the job workspace to reset or end your own session. That asks you to confirm first.
+        Someone else's session has to be reset or ended in dCloud.
       </p>
       <p class="step-label">Monitor by ID</p>
       <p class="hint">
@@ -5065,8 +5072,8 @@
       const verb = action === "reset" ? "Reset" : "End";
       const delay = eventActionDelaySeconds();
       const detail = action === "reset"
-        ? "Each selected session will be torn down and rebuilt with the same session ID."
-        : "This ends the selected sessions without saving them and cannot be undone.";
+        ? "Are you sure? This cannot be undone. Reset tears down each selected session and rebuilds it with the same session ID. These sessions usually belong to someone else."
+        : "Are you sure? This cannot be undone. This ends the selected sessions without saving them.";
       const spacing = Math.round((sessionIds.length - 1) * delay);
       const pacing = sessionIds.length > 1
         ? `\n\nThese go out one at a time, ${delay}s apart — at least ${spacing < 60 ? `${spacing}s` : `${Math.ceil(spacing / 60)} minute(s)`} of spacing, plus however long dCloud takes to answer each one. Leave this page open.`
@@ -5075,8 +5082,8 @@
         sessionIds.map((id) => `${String(site || "").toUpperCase()} session ${id}`),
         {
           count: sessionIds.length,
-          title: `${verb} Event Sessions`,
-          okLabel: verb,
+          title: action === "reset" ? "Reset These Event Sessions?" : "End These Event Sessions?",
+          okLabel: action === "reset" ? "Yes, Reset" : "Yes, End",
           detail: `${verb} ${sessionIds.length} event session${sessionIds.length === 1 ? "" : "s"}?${pacing}\n\n${detail}`,
         },
       );
@@ -7472,7 +7479,7 @@
       const canReset = canResetSession(dc);
       // dCloud reports canReset on healthy sessions too, so only a failed card
       // gets the loud button; everything else keeps Reset in Card actions.
-      const showResetInline = canReset && !notMine && ["error", "cancelled"].includes(dc.phase);
+      const showResetInline = !monitor && canReset && !notMine && ["error", "cancelled"].includes(dc.phase);
       const resetTip = canReset
         ? "Same as Reset in the dCloud dashboard — rebuilds this session under the same demo and session ID."
         : "Reset is offered when dCloud says the session failed or can be reset.";
@@ -7512,7 +7519,7 @@
             </label>`;
       const moveLabel = monitor ? "Move to job workspace" : "Move to monitoring";
       const moveTip = monitor
-        ? "Move this card to the job workspace for bulk save/end controls."
+        ? "Move this card to the job workspace to reset or end your own session. Monitoring does not offer those."
         : "Move this card to monitoring (removed from bulk save/end).";
       const moveMonitorVal = monitor ? "0" : "1";
       const shareKind = shareKindForDc(dc);
@@ -7542,9 +7549,12 @@
       const renameBtn = canRename
         ? `<button type="button" class="card-rename-btn" ${cardData} data-tip="Rename this session in dCloud" aria-label="Rename session">✎</button>`
         : "";
+      // Monitoring is for watching, including someone else's session. Reset and
+      // End stay on the job workspace, and only for a session this user owns.
+      const showSessionDanger = !monitor && !notMine;
       const actionsMenu = `
                 <details class="vm-menu card-actions-menu">
-                  <summary data-tip="Save, extend, end, or move this card.">Actions</summary>
+                  <summary data-tip="${monitor ? "Session info, share, extend, or move this card." : "Save, extend, end, or move this card."}">Actions</summary>
                   <div class="vm-menu-list">
                     ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session Info</button>` : ""}
                     ${shareBtn}
@@ -7552,8 +7562,8 @@
                     ${notMine ? "" : `<button type="button" class="btn-dc-shutdown-all" ${cardData} ${canShutdownAll ? "" : "disabled"} data-tip="Guest-shuts down every powered-on VM without saving. vCUBE is powered off. The card keeps checking until all VMs are off.">Guest Shutdown All Powered-On VMs</button>`}
                     ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                     <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
-                    <button type="button" class="btn-dc-reset" ${cardData} ${canReset && !notMine ? "" : "disabled"} data-tip="${notMine ? `This is ${escapeHtml(dc.owner || "someone else")}'s session. This tool will not reset it.` : resetTip}">Reset</button>
-                    <button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>
+                    ${showSessionDanger ? `<button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>` : ""}
+                    ${showSessionDanger ? `<button type="button" class="btn-dc-end" ${cardData} ${canEnd ? "" : "disabled"} data-tip="${endTip}">${endLabel}</button>` : ""}
                   </div>
                 </details>`;
       return `
@@ -9747,8 +9757,31 @@
         "Login session cleared in this tool.";
     }
 
-    // Log in to dCloud already warmed CAI/CAMGR in the same window. If either
-    // is still signed out (VPN, extra SSO hop), Connect runs without another click.
+    function loginHubWanted() {
+      const box = $("login-hub");
+      return !box || box.checked;
+    }
+
+    function rememberLoginHubChoice() {
+      const box = $("login-hub");
+      if (!box) return;
+      try {
+        const saved = localStorage.getItem("dcm-login-hub");
+        if (saved === "0" || saved === "1") box.checked = saved === "1";
+      } catch {
+        // Private mode can block localStorage. The box still works for this visit.
+      }
+      box.addEventListener("change", () => {
+        try {
+          localStorage.setItem("dcm-login-hub", box.checked ? "1" : "0");
+        } catch {
+          // The choice still applies to this Log in click.
+        }
+      });
+    }
+
+    // Log in to dCloud already warmed CAI/CAMGR in the same window when that box
+    // is checked. If either is still signed out, Connect runs without another click.
     async function connectHubAfterLogin() {
       const caiBtn = $("btn-cai-connect");
       const caiAlready = Boolean(caiBtn && /connected/i.test(caiBtn.textContent || ""));
@@ -9769,13 +9802,16 @@
       showError("");
       try {
         const site = ($("src-site") && $("src-site").value) || "rtp";
+        const wantHub = loginHubWanted();
         if (allowWindow) {
-          $("auth-status").textContent =
-            "Leave the Chromium window open. If Duo opens a tab in this browser, finish it there — it may open behind this page. Chromium stays up until CAMGR is signed in.";
+          $("auth-status").textContent = wantHub
+            ? "Leave the sign-in window open and finish Duo if it appears. CAI and CAMGR are included only when this Mac can reach the Cisco network."
+            : "Leave the sign-in window open and finish Duo if it appears. This login is dCloud only.";
         }
         const data = await api(
           `/api/auth/dcloud-browser-login?site=${encodeURIComponent(site)}`
-            + `&allow_window=${allowWindow ? 1 : 0}`,
+            + `&allow_window=${allowWindow ? 1 : 0}`
+            + `&warm_hub=${wantHub ? 1 : 0}`,
           { method: "POST", body: "{}" },
         );
         if (applyImportedToken(data)) {
@@ -9783,7 +9819,7 @@
           if (data.camgr) updateCamgrStatus(data.camgr);
           $("auth-status").textContent = data.message || "Logged in.";
           await refreshAuth();
-          if (allowWindow) await connectHubAfterLogin();
+          if (allowWindow && wantHub) await connectHubAfterLogin();
           return true;
         }
         if (allowWindow) {
@@ -11004,11 +11040,12 @@
       }
       if (!owned.length) return;
       const summary = bulkSessionLabels(owned).join("; ");
+      const one = owned.length === 1;
       if (!await confirmListedBatch(bulkSessionLabels(owned), {
         count: owned.length,
-        title: "Reset Session",
-        okLabel: "Reset Session",
-        detail: "Reset in dCloud? Same as the Reset button in the dCloud dashboard: the session is torn down and rebuilt with the same demo and session ID. It disappears for a while before it comes back.",
+        title: one ? "Reset This Session?" : "Reset These Sessions?",
+        okLabel: one ? "Yes, Reset It" : "Yes, Reset Them",
+        detail: "Warning: this tears the session down and rebuilds it with the same demo and session ID. It disappears for a while before it comes back. This only runs on a session you own.",
       })) {
         return;
       }
@@ -14994,6 +15031,7 @@
     });
     document.addEventListener("scroll", () => closeSearchActionsMenus(), true);
     window.addEventListener("resize", () => closeSearchActionsMenus());
+    rememberLoginHubChoice();
     $("btn-login").addEventListener("click", () => loginToDcloud().catch((err) => showError(err.message)));
     $("btn-clear-session").addEventListener("click", () => clearLoginSession().catch((err) => showError(err.message)));
     $("btn-validate").addEventListener("click", () => validateToken().catch((err) => showError(err.message)));

@@ -23,7 +23,7 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from browser_auth.dcloud_token import jwt_expires_at
 
@@ -42,11 +42,35 @@ _playwright_ready = False
 _hub_cookies_lock = threading.Lock()
 _hub_cookies: dict[str, str] = {}
 
+# What macOS shows in the Dock and the menu bar. The app bundle and the binary
+# stay named Google Chrome for Testing so the download path still launches.
+SIGN_IN_BROWSER_NAME = "Chromium for DCM"
+
 # Same hosts the Connect buttons visit, so one Log in window can leave CAI and
 # CAMGR signed in without extra clicks.
 HUB_SITES = (
     ("cai", "https://dcloud-cai.cisco.com/", ("dcloud-cai.cisco.com",)),
     ("camgr", "https://dcloud-camgr.cisco.com/#/cas", ("dcloud-camgr.cisco.com",)),
+)
+TOOLBOX_HOME = "https://demotoolbox.cat-dcloud.com/"
+TOOLBOX_HOSTS = ("demotoolbox.cat-dcloud.com",)
+TOOLBOX_CLIENT_ID = "gde-demo-toolbox"
+TOOLBOX_REDIRECT_URI = "https://demotoolbox.cat-dcloud.com/"
+TOOLBOX_OAUTH_STATE = "login:https://demotoolbox.cat-dcloud.com/"
+TOOLBOX_AUTHORIZE_URL = (
+    "https://id.cisco.com/oauth2/default/v1/authorize?"
+    + urlencode(
+        {
+            "client_id": TOOLBOX_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": TOOLBOX_REDIRECT_URI,
+            "scope": "profile email openid groups",
+            "state": TOOLBOX_OAUTH_STATE,
+        }
+    )
+)
+TOOLBOX_SIGN_IN_NEEDED = (
+    "Demo Toolbox needs a Cisco sign-in in the tool browser — click Log in to dCloud."
 )
 
 # Hosts that mean "a person has to type something": Cisco's Okta tenant and Duo.
@@ -66,9 +90,15 @@ SSO_SETTLE_SECONDS = 8.0
 # user closing the sign-in window. "Continue in browser" can also take the
 # person to another window and back, so a short gap is not them quitting.
 WINDOW_BLANK_GRACE_SECONDS = 45.0
-DCLOUD_SIGN_IN_NEEDED = (
-    "dCloud needs a sign-in in the tool browser — click Log in to dCloud."
-)
+_captured_toolbox_jwt = ""
+
+
+def take_captured_toolbox_jwt() -> str:
+    """JWT harvested during dCloud sign-in, if Demo Toolbox connected in that window."""
+    global _captured_toolbox_jwt
+    token = _captured_toolbox_jwt
+    _captured_toolbox_jwt = ""
+    return token
 
 
 def _is_idp_page(page: Any) -> bool:
@@ -78,6 +108,22 @@ def _is_idp_page(page: Any) -> bool:
     except Exception:
         return False
     return any(host == idp or host.endswith(f".{idp}") or idp in host for idp in IDP_HOSTS)
+
+
+def _idp_waiting_for_human(page: Any) -> bool:
+    """True on a Duo/password form, not a silent Cisco authorize redirect."""
+    if not _is_idp_page(page):
+        return False
+    try:
+        host = (urlparse(page.url or "").hostname or "").lower()
+    except Exception:
+        host = ""
+    if "duosecurity.com" in host:
+        return True
+    try:
+        return page.locator("input[type='password'], input[name='identifier'], #okta-signin-username").count() > 0
+    except Exception:
+        return True
 
 
 def profile_exists() -> bool:
@@ -194,10 +240,42 @@ def _tool_chrome_app() -> Path | None:
     return max(apps, key=lambda app: _version_tuple(_chrome_app_version(app)))
 
 
+def _label_sign_in_chrome(app: Path) -> None:
+    """Drop the "for Testing" name from the window people actually see.
+
+    Only the main app's display name changes. Helper executables and the
+    .app folder stay as Google ships them, so Playwright can still start
+    the same binary.
+    """
+    plist_path = app / "Contents" / "Info.plist"
+    if not plist_path.is_file():
+        return
+    try:
+        with plist_path.open("rb") as handle:
+            info = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException):
+        return
+    if not isinstance(info, dict):
+        return
+    if (
+        info.get("CFBundleName") == SIGN_IN_BROWSER_NAME
+        and info.get("CFBundleDisplayName") == SIGN_IN_BROWSER_NAME
+    ):
+        return
+    info["CFBundleName"] = SIGN_IN_BROWSER_NAME
+    info["CFBundleDisplayName"] = SIGN_IN_BROWSER_NAME
+    try:
+        with plist_path.open("wb") as handle:
+            plistlib.dump(info, handle)
+    except OSError:
+        return
+
+
 def _sign_in_chrome_executable() -> str | None:
     app = _tool_chrome_app()
     if app is None:
         return None
+    _label_sign_in_chrome(app)
     binary = app / "Contents" / "MacOS" / "Google Chrome for Testing"
     if binary.is_file():
         return str(binary)
@@ -278,6 +356,7 @@ def _install_stable_chrome(version: str, url: str) -> None:
             check=False,
             capture_output=True,
         )
+    _label_sign_in_chrome(app)
     for old in CFT_DIR.iterdir():
         if old.name in {version, CFT_STATE_FILE.name}:
             continue
@@ -411,8 +490,6 @@ def _install_playwright_chromium() -> str | None:
 def ensure_playwright() -> str | None:
     """Install Playwright and a current Chrome for Testing. Returns an error or None."""
     global _playwright_ready
-    if _playwright_ready:
-        return None
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
     except ImportError:
@@ -433,6 +510,8 @@ def ensure_playwright() -> str | None:
     fallback_err = None
     if not _chromium_on_disk() and _sign_in_chrome_executable() is None:
         fallback_err = _install_playwright_chromium()
+    # Always compare with Chrome Stable. A previous silent login can mark
+    # Playwright ready while Duo still rejects the copy on disk.
     message = ensure_sign_in_chrome()
     if _sign_in_chrome_executable() or _chromium_on_disk():
         _playwright_ready = True
@@ -522,6 +601,35 @@ def _advance_duo_prompt(page: Any) -> bool:
     return bool(clicked)
 
 
+def _hub_host(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()
+
+
+def _navigation_unreachable(exc: BaseException) -> bool:
+    text = str(exc or "").lower()
+    return any(
+        mark in text
+        for mark in (
+            "err_name_not_resolved",
+            "err_internet_disconnected",
+            "err_address_unreachable",
+            "err_connection_refused",
+            "err_connection_timed_out",
+            "err_connection_closed",
+            "err_network_changed",
+            "err_name_resolution",
+        )
+    )
+
+
+def _page_is_error(page: Any) -> bool:
+    try:
+        url = str(page.url or "").lower()
+    except Exception:
+        return False
+    return url.startswith("chrome-error:") or "chromewebdata" in url
+
+
 def _warm_hub_sessions(
     page: Any,
     context: Any,
@@ -533,10 +641,20 @@ def _warm_hub_sessions(
     The Duo "Continue in browser" page has to stay up until the person clicks
     it. Navigating to CAMGR, or closing the window, before that click loses
     the prompt and never stores a CAMGR cookie.
+
+    Hosts that do not resolve (home Wi-Fi, off the Cisco network) are skipped.
+    Reopening a tab that only shows "This site can't be reached" is what kept
+    the sign-in window looping after dCloud itself had already signed in.
     """
+    from net_errors import host_resolves
+
     end = deadline if deadline is not None else time.time() + 240
     found: dict[str, str] = {}
-    pending = sorted(HUB_SITES, key=lambda item: item[0] != "camgr")
+    pending = [
+        item
+        for item in sorted(HUB_SITES, key=lambda item: item[0] != "camgr")
+        if host_resolves(_hub_host(item[1]))
+    ]
     attempt_until = 0.0
     navigate_after = 0.0
     on_host_since: dict[str, float] = {}
@@ -573,11 +691,21 @@ def _warm_hub_sessions(
             if page is None:
                 time.sleep(0.6)
                 continue
+            if _page_is_error(page):
+                pending.pop(0)
+                on_host_since.pop(key, None)
+                attempt_until = 0.0
+                continue
         else:
             page = workable or (pages[-1] if pages else None)
             if page is None or _is_idp_page(page):
                 on_host_since.clear()
                 time.sleep(0.6)
+                continue
+            if _page_is_error(page):
+                pending.pop(0)
+                on_host_since.pop(key, None)
+                attempt_until = 0.0
                 continue
             if not _page_on_hosts(page, hosts):
                 on_host_since.pop(key, None)
@@ -591,9 +719,19 @@ def _warm_hub_sessions(
                     pass
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-                except Exception:
+                except Exception as exc:
                     if _is_idp_page(page):
                         continue
+                    if _navigation_unreachable(exc) or _page_is_error(page):
+                        pending.pop(0)
+                        on_host_since.pop(key, None)
+                        attempt_until = 0.0
+                        continue
+                if _page_is_error(page):
+                    pending.pop(0)
+                    on_host_since.pop(key, None)
+                    attempt_until = 0.0
+                    continue
                 attempt_until = time.time() + 25
                 continue
         if _is_idp_page(page):
@@ -1155,6 +1293,7 @@ def capture_dcloud_tokens(
     headed: bool = True,
     timeout_s: float = 180,
     warm_hub: bool = True,
+    warm_toolbox: bool = False,
 ) -> tuple[str, str, str, str]:
     """Return (access, refresh, site, message) from the tool Chromium dCloud session.
 
@@ -1224,10 +1363,18 @@ def capture_dcloud_tokens(
                 def finish(access: str, refresh: str, found_site: str) -> tuple[str, str, str, str]:
                     # Content Manager wants CAI/CAMGR cookies in this same window.
                     # Demo Usage passes warm_hub=False so dCloud SSO is one login.
+                    global _captured_toolbox_jwt
                     if headed:
                         if warm_hub:
                             try:
                                 _store_hub_cookies(_warm_hub_sessions(page, context, deadline=deadline))
+                            except Exception:
+                                pass
+                        if warm_toolbox:
+                            try:
+                                jwt = _harvest_toolbox_in_context(page, context, time.time() + 50)
+                                if jwt:
+                                    _captured_toolbox_jwt = jwt
                             except Exception:
                                 pass
                     return access, refresh, found_site, "Signed in with the tool browser."
@@ -1438,3 +1585,243 @@ def _read_dcloud_storage(page: Any, site: str) -> tuple[str, str, str]:
             found = code
             break
     return access, refresh, found
+
+
+def _jwt_from_bag(values: dict[str, Any] | None) -> str:
+    """Pick a live JWT out of localStorage/sessionStorage without logging it."""
+    from browser_auth.dcloud_token import JWT_RE
+
+    raw_hits: list[str] = []
+    preferred: list[str] = []
+    for key, raw in (values or {}).items():
+        text = str(raw or "").strip().strip('"')
+        if text.startswith("{") and ("jwt" in text.lower() or "token" in text.lower()):
+            try:
+                data = json.loads(text)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                data = {}
+            if isinstance(data, dict):
+                for field in ("jwt", "token", "access_token", "accessToken"):
+                    nested = str(data.get(field) or "").strip()
+                    if JWT_RE.match(nested):
+                        text = nested
+                        break
+        if not JWT_RE.match(text):
+            continue
+        raw_hits.append(text)
+        if any(part in str(key).lower() for part in ("jwt", "token", "auth")):
+            preferred.append(text)
+    pool = preferred or raw_hits
+    live = [token for token in pool if _access_is_live(token)]
+    return (live or pool)[0] if (live or pool) else ""
+
+
+def _read_toolbox_jwt(page: Any) -> str:
+    try:
+        values = page.evaluate(
+            """() => {
+              const out = {};
+              const scan = (bag) => {
+                try {
+                  for (let i = 0; i < bag.length; i++) {
+                    const key = bag.key(i);
+                    if (key) out[key] = bag.getItem(key);
+                  }
+                } catch (err) {}
+              };
+              scan(localStorage);
+              scan(sessionStorage);
+              return out;
+            }"""
+        )
+    except Exception:
+        return ""
+    return _jwt_from_bag(values if isinstance(values, dict) else {})
+
+
+def _exchange_toolbox_code(code: str) -> str:
+    """POST the Cisco OAuth code to Demo Toolbox, same as the Toolbox SPA login."""
+    import requests
+
+    token = str(code or "").strip()
+    if not token:
+        return ""
+    try:
+        response = requests.post(
+            f"{TOOLBOX_HOME.rstrip('/')}/api/v1/login",
+            json={"code": token, "state": TOOLBOX_OAUTH_STATE},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=30,
+        )
+    except Exception:
+        return ""
+    if not response.ok:
+        return ""
+    try:
+        payload = response.json()
+    except Exception:
+        return ""
+    return str((payload or {}).get("jwt") or "").strip()
+
+
+def _jwt_from_authorization(header: str) -> str:
+    text = str(header or "").strip()
+    if text.lower().startswith("bearer "):
+        text = text.split(" ", 1)[1].strip()
+    from browser_auth.dcloud_token import JWT_RE
+    return text if JWT_RE.match(text) else ""
+
+
+def _attach_toolbox_sniffer(target: Any, caught: dict[str, str]) -> None:
+    def on_request(request: Any) -> None:
+        try:
+            url = str(request.url or "")
+            if "demotoolbox.cat-dcloud.com/api/" not in url:
+                return
+            token = _jwt_from_authorization(request.headers.get("authorization") or "")
+            if token:
+                caught["jwt"] = token
+        except Exception:
+            return
+
+    def on_response(response: Any) -> None:
+        try:
+            url = str(response.url or "")
+            if "/api/v1/login" not in url:
+                return
+            data = response.json()
+            token = str((data or {}).get("jwt") or "").strip()
+            if token:
+                caught["jwt"] = token
+        except Exception:
+            return
+
+    try:
+        target.on("request", on_request)
+        target.on("response", on_response)
+    except Exception:
+        return
+
+
+def _current_toolbox_jwt(page: Any, caught: dict[str, str]) -> str:
+    token = str(caught.get("jwt") or "").strip() or _read_toolbox_jwt(page)
+    return token if _access_is_live(token) else ""
+
+
+def _harvest_toolbox_in_context(page: Any, context: Any, deadline: float) -> str:
+    """Let the Toolbox SPA complete Cisco SSO in this already-signed-in profile."""
+    caught = {"jwt": ""}
+    tried_codes: set[str] = set()
+    _attach_toolbox_sniffer(context, caught)
+    for existing in _safe_pages(context):
+        _attach_toolbox_sniffer(existing, caught)
+    try:
+        page.goto(TOOLBOX_HOME, wait_until="domcontentloaded", timeout=45_000)
+    except Exception:
+        opened = _open_target_page(context, TOOLBOX_HOME)
+        if opened is not None:
+            page = opened
+            _attach_toolbox_sniffer(page, caught)
+    started = time.time()
+    while time.time() < deadline:
+        pages = _safe_pages(context)
+        if pages:
+            page = pages[-1]
+        token = _current_toolbox_jwt(page, caught)
+        if token:
+            return token
+        code = _code_from_url(getattr(page, "url", "") or "")
+        if code and code not in tried_codes and time.time() - started >= 5:
+            tried_codes.add(code)
+            exchanged = _exchange_toolbox_code(code)
+            if _access_is_live(exchanged):
+                caught["jwt"] = exchanged
+                return exchanged
+        time.sleep(0.45)
+    return _current_toolbox_jwt(page, caught)
+
+
+def capture_toolbox_jwt(
+    *,
+    headed: bool = True,
+    timeout_s: float = 180,
+) -> tuple[str, str]:
+    """Return (jwt, message) from Demo Toolbox in the shared Cisco SSO profile."""
+    missing = ensure_playwright()
+    if missing:
+        return "", missing
+    from playwright.sync_api import sync_playwright
+
+    deadline = time.time() + max(20.0, timeout_s)
+    with _BrowserTurn(headed) as turn:
+        if not turn.held:
+            return "", "The sign-in browser is already open."
+        with sync_playwright() as playwright:
+            try:
+                context = _launch(playwright, headed=headed)
+            except Exception as exc:
+                return "", _launch_failure(exc)
+            if headed:
+                _set_headed_open(True)
+                _hold_window_open(context)
+                _open_keeper(context)
+                _raise_tool_window()
+            try:
+                page = context.pages[0] if context.pages else context.new_page()
+                started = time.time()
+                caught = {"jwt": ""}
+                _attach_toolbox_sniffer(context, caught)
+                _attach_toolbox_sniffer(page, caught)
+                try:
+                    page.goto(
+                        TOOLBOX_HOME,
+                        wait_until="domcontentloaded",
+                        timeout=15_000 if not headed else 60_000,
+                    )
+                except Exception:
+                    if not headed:
+                        return "", TOOLBOX_SIGN_IN_NEEDED
+                    if not _safe_pages(context):
+                        _open_target_page(context, TOOLBOX_HOME)
+                if headed:
+                    _show_sign_in(context)
+                tried_codes: set[str] = set()
+                while time.time() < deadline:
+                    if not headed and _user_needs_window.is_set():
+                        return "", "A sign-in window was requested."
+                    pages = _login_pages(context) if headed else _safe_pages(context)
+                    if pages:
+                        page = pages[-1]
+                        if headed:
+                            _show_sign_in(context)
+                    token = _current_toolbox_jwt(page, caught)
+                    if token:
+                        return token, "Signed in to Demo Toolbox with the tool browser."
+                    host = ""
+                    try:
+                        host = (urlparse(page.url or "").hostname or "").lower()
+                    except Exception:
+                        host = ""
+                    if not headed and "duosecurity.com" in host and time.time() - started > IDP_SETTLE_SECONDS:
+                        return "", TOOLBOX_SIGN_IN_NEEDED
+                    code = _code_from_url(page.url or "")
+                    if code and code not in tried_codes and time.time() - started >= 5:
+                        tried_codes.add(code)
+                        exchanged = _exchange_toolbox_code(code)
+                        if _access_is_live(exchanged):
+                            return exchanged, "Signed in to Demo Toolbox with the tool browser."
+                    time.sleep(0.45)
+                token = _current_toolbox_jwt(page, caught)
+                if token:
+                    return token, "Signed in to Demo Toolbox with the tool browser."
+                return "", TOOLBOX_SIGN_IN_NEEDED if not headed else (
+                    "Timed out waiting for Demo Toolbox in the tool browser. "
+                    "Finish Duo if a prompt is showing, then try again."
+                )
+            finally:
+                _set_headed_open(False)
+                try:
+                    context.close()
+                except Exception:
+                    pass
+

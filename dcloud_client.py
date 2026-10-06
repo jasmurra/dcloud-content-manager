@@ -4027,6 +4027,14 @@ def update_session_name(
     }
 
 
+def _reset_needs_admin(status: int, detail: str) -> bool:
+    """True when dCloud refused because this session belongs to someone else."""
+    text = (detail or "").lower()
+    if status in {401, 403}:
+        return True
+    return "permission" in text or "do not have the permission" in text
+
+
 def _session_action(
     token: str,
     site: str,
@@ -4034,14 +4042,16 @@ def _session_action(
     action: str,
     *,
     timeout: int = DEFAULT_TIMEOUT,
+    admin: bool = False,
 ) -> tuple[bool, Any, int, str, list[str]]:
-    """PUT /api/sessions/{id}/{action} for a session this user owns.
+    """PUT the session action.
 
-    There is no admin-route fallback. That route can end or reset someone
-    else's session, and this tool is not allowed to do that.
+    admin=True uses /api/admin/sessions, which can act on someone else's
+    session. The only caller is a confirmed event reset. End, delete, and
+    a workspace reset stay on /api/sessions.
     """
     sid = (session_id or "").strip()
-    path = f"/api/sessions/{sid}/{action}"
+    path = f"/api/{'admin/' if admin else ''}sessions/{sid}/{action}"
     try:
         response = _request("PUT", f"{site_base(site)}{path}", token, timeout=timeout)
     except requests.RequestException as exc:
@@ -4107,6 +4117,36 @@ def reset_session(token: str, site: str, session_id: str) -> dict[str, Any]:
     if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
     # dCloud answers a good reset with `"message": []`, so fall back to our own wording.
+    message = detail or ("Reset requested." if ok else f"Reset failed (HTTP {status}).")
+    session = body.get("session") if isinstance(body, dict) else None
+    return {
+        "ok": ok,
+        "sessionId": sid,
+        "session": session if isinstance(session, dict) else {},
+        "triedPaths": tried,
+        "message": message,
+    }
+
+
+def reset_event_session(token: str, site: str, session_id: str) -> dict[str, Any]:
+    """Reset one event session, including an attendee's session.
+
+    The Events page asks the person to confirm before this is called. Event
+    sessions are not owned by the person running the event, so the ownership
+    stop used everywhere else does not apply here. The attendee route is tried
+    first. If dCloud refuses that, one admin-route reset follows.
+    """
+    sid = (session_id or "").strip()
+    if not sid:
+        return {"ok": False, "message": "Session ID is required."}
+    ok, body, status, detail, tried = _session_action(token, site, sid, "reset", timeout=60)
+    if not ok and _reset_needs_admin(status, detail):
+        ok, body, status, detail, admin_tried = _session_action(
+            token, site, sid, "reset", timeout=60, admin=True
+        )
+        tried = [*tried, *admin_tried]
+    if status == 404 and not ok:
+        return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
     message = detail or ("Reset requested." if ok else f"Reset failed (HTTP {status}).")
     session = body.get("session") if isinstance(body, dict) else None
     return {

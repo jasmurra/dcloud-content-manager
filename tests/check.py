@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import plistlib
 import re
 import subprocess
 import sys
@@ -800,6 +801,12 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("the old card label is gone", "Shutdown &amp; save this session" not in INDEX)
     for gone in ("Share session…", ">Reset session<"):
         check(f"card menu no longer says {gone}", gone not in INDEX)
+    check(
+        "monitoring does not offer reset or end",
+        "const showSessionDanger = !monitor && !notMine;" in INDEX
+        and "This page does not offer Reset or End." in INDEX
+        and "Yes, Reset It" in INDEX,
+    )
     check(
         "end and cancel stay off for a session you do not own",
         'const endLabel = notStarted ? "Cancel" : "End"' in INDEX
@@ -2505,11 +2512,18 @@ def test_event_management_section() -> None:
 
     client_source = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     check(
-        "end and reset never fall back to the admin session route",
+        "workspace end and reset do not use the admin session route",
         "def _session_action(" in client_source
-        and "/api/admin/sessions/" not in client_source
-        and "_looks_like_permission_error" not in client_source
-        and "def refuse_not_owned(" in client_source,
+        and "def reset_event_session(" in client_source
+        and "admin=True" in client_source[client_source.index("def reset_event_session("):client_source.index("def reset_event_session(") + 1200]
+        and "def refuse_not_owned(" in client_source
+        and 'operation = reset_event_session if action == "reset" else end_session' in source,
+    )
+    event_action = js_function("runEventSessionAction")
+    check(
+        "event reset asks before it touches someone else's session",
+        "Are you sure? This cannot be undone." in event_action
+        and 'okLabel: action === "reset" ? "Yes, Reset"' in event_action,
     )
 
     def owner_token(ccoid: str) -> str:
@@ -2541,6 +2555,10 @@ def test_event_management_section() -> None:
                 return FakeResponse(404, {"message": "Session not found."})
             if method == "GET":
                 return FakeResponse(200, {"owner": script["owner"], "uid": "491872"})
+            if method == "PUT" and script.get("deny_user") and "/api/admin/" not in url:
+                return FakeResponse(400, {
+                    "message": "you do not have the permission required to view it.",
+                })
             if method in {"PUT", "DELETE"}:
                 return FakeResponse(200, {"success": True, "message": []})
             return FakeResponse(400, {"message": "unexpected"})
@@ -2614,6 +2632,21 @@ def test_event_management_section() -> None:
             ],
             str(calls),
         )
+
+        calls.clear()
+        script["owner"] = "someoneelse"
+        script["deny_user"] = True
+        event_reset = dcloud_client.reset_event_session(mine, "sjc", "491872")
+        check(
+            "an event reset can rebuild someone else's session after the user route refuses",
+            event_reset["ok"] is True
+            and calls == [
+                "PUT https://dcloud2-sjc.cisco.com/api/sessions/491872/reset",
+                "PUT https://dcloud2-sjc.cisco.com/api/admin/sessions/491872/reset",
+            ],
+            str(event_reset) + " " + str(calls),
+        )
+        script["deny_user"] = False
 
         calls.clear()
         script["owner"] = "someoneelse"
@@ -2815,6 +2848,37 @@ def test_sign_in_browser_follows_chrome_stable() -> None:
         and "context.add_init_script(_chrome_brand_script())" in launch
         and 'brand: "Google Chrome"' in browser,
     )
+    with tempfile.TemporaryDirectory() as tmp:
+        app_dir = Path(tmp) / "Google Chrome for Testing.app" / "Contents"
+        app_dir.mkdir(parents=True)
+        plist_path = app_dir / "Info.plist"
+        binary = app_dir / "MacOS" / "Google Chrome for Testing"
+        binary.parent.mkdir()
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        with plist_path.open("wb") as handle:
+            plistlib.dump(
+                {
+                    "CFBundleName": "Google Chrome for Testing",
+                    "CFBundleDisplayName": "Google Chrome for Testing",
+                    "CFBundleExecutable": "Google Chrome for Testing",
+                },
+                handle,
+            )
+        tool_browser._label_sign_in_chrome(plist_path.parents[1])
+        with plist_path.open("rb") as handle:
+            labeled = plistlib.load(handle)
+        check(
+            "the sign-in window drops the for Testing name",
+            labeled.get("CFBundleName") == "Chromium for DCM"
+            and labeled.get("CFBundleDisplayName") == "Chromium for DCM"
+            and labeled.get("CFBundleExecutable") == "Google Chrome for Testing"
+            and binary.is_file(),
+            str(labeled),
+        )
+        tool_browser._label_sign_in_chrome(plist_path.parents[1])
+        with plist_path.open("rb") as handle:
+            again = plistlib.load(handle)
+        check("labeling twice leaves the name in place", again.get("CFBundleName") == "Chromium for DCM")
 
 
 def test_tool_owned_browser_avoids_keychain() -> None:
@@ -2894,12 +2958,18 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "auth-fields" in page,
     )
     check(
-        "Log in also connects CAI and CAMGR without extra Connect clicks",
-        "connectHubAfterLogin" in page
+        "Log in can include CAI and CAMGR, and the box can leave them out",
+        'id="login-hub"' in page
+        and "Also sign in to CAI and CAMGR" in page
+        and "Must be on the Cisco network" in page
+        and "warm_hub=" in page
+        and "if (allowWindow && wantHub)" in page
+        and "connectHubAfterLogin" in page
         and "_warm_hub_sessions" in browser
+        and "host_resolves" in browser[browser.index("def _warm_hub_sessions(") : browser.index("def _cookie_header(")]
+        and "warm_hub: bool = True" in source
         and "take_hub_cookies" in source
-        and "_apply_login_hub_cookies" in source
-        and "Signs in to dCloud, CAI, and CAMGR together" in page,
+        and "_apply_login_hub_cookies" in source,
     )
     finish = browser[browser.index("def finish(") : browser.index("def finish(") + 700]
     check(
@@ -2960,7 +3030,9 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "SIGTERM" not in release
         and "not _is_hidden_browser" in release
         and "_stop_tool_chrome(pid)" in release
-        and "Google Chrome for Testing.app" in browser,
+        and "Google Chrome for Testing.app" in browser
+        and 'SIGN_IN_BROWSER_NAME = "Chromium for DCM"' in browser
+        and "def _label_sign_in_chrome(" in browser,
     )
     check(
         "a hidden background browser does not block the sign-in window",
@@ -3130,7 +3202,7 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
     )
     check(
         "card Actions is on the collapsed row, not buried in the expanded body",
-        'summary data-tip="Save, extend, end, or move this card.">Actions</summary>' in page
+        'summary data-tip="${monitor ? "Session info, share, extend, or move this card." : "Save, extend, end, or move this card."}">Actions</summary>' in page
         and "${openSession}\n                ${actionsMenu}" in page
         and "card-actions-row" not in page
         and "Card actions</summary>" not in page
