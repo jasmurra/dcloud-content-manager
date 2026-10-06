@@ -1,3 +1,7 @@
+## 2.0.15 — 2026-10-06
+
+- **Mark a VM as a favorite.** It shows under the WebRDP links on monitoring cards and job workspace cards, with Actions beside it, including VM Console. Move Up and Move Down set the order. The same VM name stays marked on other cards
+
 ## 2.0.14 — 2026-10-06
 
 - **Your Active Sessions expand like a monitoring card.** Open one for WebRDP, VM power, the end time, and the same actions you use on a card, including Extend. A session that is already running does not offer a new start time. The details stay in this browser, so a page refresh does not download them again. Refresh Sessions gets a new copy

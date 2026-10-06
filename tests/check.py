@@ -811,6 +811,9 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
         and "3 * 24 * 60 * 60 * 1000" in INDEX
         and "function renderWebrdpJumps(" in INDEX
         and 'class="webrdp-jumps"' in INDEX
+        and "function renderVmFavoriteStrip(" in INDEX
+        and "btn-vm-favorite" in INDEX
+        and "dcloud-content-manager-vm-favorites-v1" in INDEX
         and "titleChip(cardStatusLabel(dc))" in INDEX,
     )
     run_node(

@@ -955,6 +955,11 @@
       padding: 0 0.7rem;
       font-size: 0.78rem;
     }
+    .vm-favorites {
+      margin: 0.15rem 0 0.65rem;
+    }
+    .vm-favorites .webrdp-label { display: block; margin-bottom: 0.15rem; }
+    .vm-favorites .vm-line { margin-top: 0.35rem; padding-top: 0.35rem; }
     .vm-menu { position: relative; flex-shrink: 0; }
     .card-actions-menu { display: inline-block; }
     .found-sessions-panel {
@@ -6848,10 +6853,86 @@
       return { on, off };
     }
 
+    const VM_FAVORITES_KEY = "dcloud-content-manager-vm-favorites-v1";
+
+    function vmFavoriteKey(vm) {
+      return vmDisplayName(vm).trim().toLowerCase();
+    }
+
+    function readVmFavorites() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(VM_FAVORITES_KEY) || "[]");
+        if (!Array.isArray(saved)) return [];
+        return saved.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean);
+      } catch {
+        return [];
+      }
+    }
+
+    function writeVmFavorites(names) {
+      try { localStorage.setItem(VM_FAVORITES_KEY, JSON.stringify(names)); } catch {}
+    }
+
+    function toggleVmFavorite(name) {
+      const key = String(name || "").trim().toLowerCase();
+      if (!key) return;
+      const names = readVmFavorites();
+      const index = names.indexOf(key);
+      if (index >= 0) names.splice(index, 1);
+      else names.unshift(key);
+      writeVmFavorites(names);
+    }
+
+    function moveVmFavorite(name, direction) {
+      const key = String(name || "").trim().toLowerCase();
+      const names = readVmFavorites();
+      const index = names.indexOf(key);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= names.length) return;
+      const [item] = names.splice(index, 1);
+      names.splice(next, 0, item);
+      writeVmFavorites(names);
+    }
+
+    function redrawVmFavorites(el) {
+      const foundCard = el?.closest?.("#found-sessions details.found-session-card");
+      if (foundCard) {
+        const dc = foundSessionCards.get(foundCard.dataset.cardKey);
+        const body = foundCard.querySelector(".found-session-detail");
+        if (dc && body) body.innerHTML = foundSessionDetailHtml(dc);
+        return;
+      }
+      if (lastRenderedJob) renderJob(lastRenderedJob, { forceCards: true });
+    }
+
+    function handleVmFavoriteClick(ev) {
+      const button = ev.target.closest?.(".btn-vm-favorite, .btn-vm-fav-up, .btn-vm-fav-down");
+      if (!button) return false;
+      ev.preventDefault();
+      const name = button.dataset.name || "";
+      if (button.classList.contains("btn-vm-fav-up")) moveVmFavorite(name, -1);
+      else if (button.classList.contains("btn-vm-fav-down")) moveVmFavorite(name, 1);
+      else toggleVmFavorite(name);
+      closeVmMenuFrom(button);
+      redrawVmFavorites(button);
+      return true;
+    }
+
+    function orderVmsByFavorite(vms) {
+      const rank = new Map(readVmFavorites().map((name, index) => [name, index]));
+      return [...(vms || [])].sort((left, right) => {
+        const leftRank = rank.has(vmFavoriteKey(left)) ? rank.get(vmFavoriteKey(left)) : 10000;
+        const rightRank = rank.has(vmFavoriteKey(right)) ? rank.get(vmFavoriteKey(right)) : 10000;
+        return leftRank - rightRank;
+      });
+    }
+
     function renderVmGroups(dc, cardKey, openVmMore) {
       const list = dc.vms || [];
       if (!list.length) return "";
       const { on, off } = groupVmsByPower(list);
+      on.splice(0, on.length, ...orderVmsByFavorite(on));
+      off.splice(0, off.length, ...orderVmsByFavorite(off));
       const renderGroup = (label, vms, groupKey) => {
         if (!vms.length) return "";
         const key = `${cardKey}:${groupKey}`;
@@ -6881,6 +6962,18 @@
       return `<div class="webrdp-jumps"><span class="webrdp-label">WebRDP</span>${jumps}</div>`;
     }
 
+    function renderVmFavoriteStrip(dc) {
+      const wanted = readVmFavorites();
+      if (!wanted.length) return "";
+      const byName = new Map((dc.vms || []).map((vm) => [vmFavoriteKey(vm), vm]));
+      const picked = wanted.map((name) => byName.get(name)).filter(Boolean);
+      if (!picked.length) return "";
+      const cardKey = sessionKey(dc.site, dc.sessionId);
+      return `<div class="vm-favorites"><span class="webrdp-label">Favorites</span>${
+        picked.map((vm) => renderVmRow(dc, cardKey, vm, "on", { strip: true })).join("")
+      }</div>`;
+    }
+
     function sessionEndingSoon(dc) {
       if (!dc?.scheduleStop || ["ended", "saved", "cancelled"].includes(dc.phase)) return false;
       const end = new Date(dc.scheduleStop);
@@ -6888,7 +6981,7 @@
       return end.getTime() - Date.now() <= 3 * 24 * 60 * 60 * 1000;
     }
 
-    function renderVmRow(dc, cardKey, vm, groupKey) {
+    function renderVmRow(dc, cardKey, vm, groupKey, { strip = false } = {}) {
       const links = [];
       const rdpOff = vm.rdpEnabled === false || vm.rdpEnabled === "false";
       const canAct = Boolean(dc.sessionId)
@@ -6910,11 +7003,21 @@
       const selectedBadge = vm.selected && (dc.powerOnTargets || []).length
         ? `<span class="badge ok vm-selected" data-tip="Checked in Load VMs when this session was scheduled">${titleChip("selected")}</span>`
         : "";
-      const powerHint = groupKey ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
+      const powerHint = groupKey && !strip ? "" : `<span class="hint">${escapeHtml(vm.powerState || "")}</span>`;
+      const favorite = readVmFavorites().includes(vmFavoriteKey(vm));
+      const favoriteBadge = favorite
+        ? `<span class="badge neutral" data-tip="This VM is marked so it stays under WebRDP.">${titleChip("favorite")}</span>`
+        : "";
+      const favoriteBtn = `<button type="button" class="btn-vm-favorite" ${vmData} data-tip="Keeps this VM under the WebRDP links, with Actions beside it. The same name stays marked on other cards.">${favorite ? "Remove Favorite" : "Favorite"}</button>`;
+      const moveBtns = strip
+        ? `<button type="button" class="btn-vm-fav-up" ${vmData} data-tip="Move this favorite up.">Move Up</button>
+           <button type="button" class="btn-vm-fav-down" ${vmData} data-tip="Move this favorite down.">Move Down</button>`
+        : "";
       return `
-            <div class="vm-line">
+            <div class="vm-line${strip ? " vm-favorite" : ""}">
               <div class="vm-meta">
                 <span class="name" title="${escapeHtml(tip)}">${escapeHtml(label)}</span>
+                ${favoriteBadge}
                 ${selectedBadge}
                 ${powerHint}
                 ${note}
@@ -6922,6 +7025,8 @@
               <details class="vm-menu">
                 <summary>Actions</summary>
                 <div class="vm-menu-list">
+                  ${favoriteBtn}
+                  ${moveBtns}
                   ${links.join("")}
                   <button type="button" class="btn-vm-on" ${vmData} ${canAct ? "" : "disabled"} data-tip="Powers on this VM in dCloud.">Power On</button>
                   <button type="button" class="btn-vm-hard-off" ${vmData} ${canAct ? "" : "disabled"} data-tip="Hard power off this VM (not a graceful guest shutdown).">Power Off</button>
@@ -7753,6 +7858,7 @@
                 </div>
               </div>
               ${renderWebrdpJumps(dc)}
+              ${renderVmFavoriteStrip(dc)}
               ${monitor ? '<span class="badge neutral">' + titleChip("monitor") + "</span>" : ""}
               ${nameLine}
               <div class="hint">demo ${escapeHtml(dc.demoId || "")}${dc.pool ? " · " + escapeHtml(dc.pool) : ""} · ${dc.contentExport === false ? "regular" : "export"}</div>
@@ -13044,6 +13150,7 @@
         : "";
       return `
         ${renderWebrdpJumps(dc)}
+        ${renderVmFavoriteStrip(dc)}
         <div class="hint">demo ${escapeHtml(dc.demoId || "—")}</div>
         ${sessionLine}
         ${vcLine}
@@ -15212,6 +15319,7 @@
     }
 
     function handleCardGridClick(ev) {
+      if (handleVmFavoriteClick(ev)) return;
       if (ev.target.closest("summary .card-open-session, summary .card-select, summary .card-select-wrap, summary .card-actions-menu")) {
         ev.stopPropagation();
       }
@@ -15797,6 +15905,7 @@
       });
     }, true);
     $("found-sessions").addEventListener("click", (ev) => {
+      if (handleVmFavoriteClick(ev)) return;
       const webrdpBtn = ev.target.closest(".btn-vm-webrdp");
       if (webrdpBtn) {
         ev.preventDefault();
