@@ -1,3 +1,9 @@
+## 2.0.16 — 2026-10-07
+
+- **A session ending within 3 days raises a red banner once.** It reads “You have session(s) scheduled to end soon.” Close it with X and that session does not raise it again
+- **A regular session is the default.** The exported box stays off until you load VMs, which is the path for picking which VMs power on. The schedule buttons say Schedule Regular Session and Schedule Exported Session
+- **A few labels are plainer.** The account menu says Login. The sign-in panel says dCloud Log In. CAMGR and CAI say Connected
+
 ## 2.0.15 — 2026-10-06
 
 - **Mark a VM as a favorite.** It shows under the WebRDP links on that session only, on a monitoring card or a job workspace card, with Actions beside it, including VM Console. The same VM name on another session stays unmarked

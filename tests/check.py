@@ -809,6 +809,11 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
         and "function sessionEndingSoon(" in INDEX
         and "Ending Soon" in INDEX
         and "3 * 24 * 60 * 60 * 1000" in INDEX
+        and 'id="ending-soon-banner"' in INDEX
+        and "You have session(s) scheduled to end soon" in INDEX
+        and "function dismissEndingSoonBanner(" in INDEX
+        and "dcloud-content-manager-ending-soon-seen-v1" in INDEX
+        and "function collectEndingSoonKeys(" in INDEX
         and "function renderWebrdpJumps(" in INDEX
         and 'class="webrdp-jumps"' in INDEX
         and "function renderVmFavoriteStrip(" in INDEX
@@ -1687,6 +1692,54 @@ def test_removed_id_can_be_added_back() -> None:
         "only the explicit add un-hides",
         source.count(", unhide=True)") == 1,
         f"{source.count(', unhide=True)')} callers un-hide",
+    )
+
+
+def test_schedule_labels_and_export_default() -> None:
+    """A regular session is the default. Loading VMs checks the exported box."""
+    check(
+        "scheduling stays regular until VMs are loaded",
+        'id="export-sessions" checked' not in INDEX
+        and "Schedule Regular Session" in INDEX
+        and "Schedule Exported Session" in INDEX
+        and "check to spin up session with VMs powered off" in INDEX
+        and "Schedule Checked Saved Content (with VMs powered off)" in INDEX
+        and 'authorized ? "Login"' in INDEX
+        and "dCloud Log In" in INDEX
+        and "CAMGR Connected" in INDEX
+        and "CAI Connected" in INDEX
+        and 'if ($("export-sessions")) $("export-sessions").checked = true;' in INDEX
+        and "Login and token" not in INDEX
+        and "uncheck to spin up the content normally and test" not in INDEX,
+    )
+
+
+def test_ending_soon_banner_is_once_per_session() -> None:
+    run_node(
+        "\n".join(
+            js_function(name)
+            for name in (
+                "sessionEndingSoon",
+                "endingSoonAlarmKey",
+                "collectEndingSoonKeys",
+            )
+        )
+        + """
+const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+const later = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+const rows = [
+  { site: "sjc", sessionId: "1", phase: "ready", scheduleStop: soon },
+  { site: "lon", sessionId: "2", phase: "ready", scheduleStop: soon },
+  { site: "rtp", sessionId: "3", phase: "ready", scheduleStop: later },
+  { site: "syd", sessionId: "4", phase: "ended", scheduleStop: soon },
+];
+const first = collectEndingSoonKeys(rows, []);
+if (first.join(",") !== "sjc:1,lon:2") throw new Error("first " + first.join(","));
+const again = collectEndingSoonKeys(rows, ["sjc:1"]);
+if (again.join(",") !== "lon:2") throw new Error("again " + again.join(","));
+if (collectEndingSoonKeys(rows, ["sjc:1", "lon:2"]).length) throw new Error("banner repeated");
+""",
+        "the ending soon banner is once per session",
     )
 
 

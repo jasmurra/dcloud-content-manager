@@ -2470,6 +2470,10 @@
       <span id="error-banner-text" class="banner-text"></span>
       <button type="button" class="banner-dismiss" id="error-banner-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
     </div>
+    <div id="ending-soon-banner" class="banner-dismissible err-box hidden">
+      <span class="banner-text">You have session(s) scheduled to end soon</span>
+      <button type="button" class="banner-dismiss" id="ending-soon-banner-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
+    </div>
 
     <div id="token-alert" class="modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="token-alert-title">
       <div class="modal-backdrop" id="token-alert-backdrop"></div>
@@ -2662,8 +2666,8 @@
     <div id="auth-panel-backdrop" class="auth-panel-backdrop hidden"></div>
     <details class="panel panel-collapse auth-panel" id="panel-step1">
       <summary class="panel-collapse-summary">
-        dCloud sign-in
-        <button type="button" class="secondary auth-panel-close" id="btn-close-dcloud-auth" aria-label="Close dCloud sign-in" title="Close">×</button>
+        dCloud Log In
+        <button type="button" class="secondary auth-panel-close" id="btn-close-dcloud-auth" aria-label="Close dCloud Log In" title="Close">×</button>
       </summary>
       <div class="panel-collapse-body">
       <p class="hint">
@@ -2855,8 +2859,8 @@
         </div>
       </div>
       <label class="check-line" for="export-sessions">
-        <input type="checkbox" id="export-sessions" checked />
-        <span>Schedule as exported sessions (uncheck to spin up the content normally and test)</span>
+        <input type="checkbox" id="export-sessions" />
+        <span>Schedule as exported sessions (check to spin up session with VMs powered off)</span>
       </label>
       <label class="check-line" for="auto-next-available">
         <input type="checkbox" id="auto-next-available" checked />
@@ -2867,7 +2871,7 @@
         Use <strong>Clear Job Workspace Cards</strong> below if you want a fresh workspace (monitoring cards stay).
       </p>
       <div class="actions">
-        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Exported sessions power on the VMs checked in Load VMs above; a normal session powers everything itself. If a job is already open, new sessions are added to it.">Schedule Exported Sessions &amp; Power On</button>
+        <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Check the box above, or load VMs, when you want to pick which VMs power on. A regular session powers everything itself. If a job is already open, new sessions are added to it.">Schedule Regular Session</button>
         <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with New Token</button>
       </div>
       <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
@@ -3023,7 +3027,7 @@
           </label>
           <label class="hint" style="display:flex;align-items:flex-start;gap:0.45rem;margin:0.5rem 0;">
             <input type="checkbox" id="saved-schedule-export" style="width:auto;margin-top:0.2rem" />
-            <span>Schedule as exported sessions (unchecked = regular sessions)</span>
+            <span>Schedule as exported sessions (check to spin up session with VMs powered off)</span>
           </label>
           <div class="actions">
             <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs.">Schedule Checked Saved Content</button>
@@ -4205,7 +4209,7 @@
       }
       $("account-signout")?.classList.toggle("hidden", !authorized);
       const openAuth = $("account-open-auth");
-      if (openAuth) openAuth.textContent = authorized ? "Login and token" : "Sign In to dCloud";
+      if (openAuth) openAuth.textContent = authorized ? "Login" : "Sign In to dCloud";
       const themeBtn = $("account-theme");
       if (themeBtn) themeBtn.textContent = readTheme() === "dark" ? "Light Theme" : "Dark theme";
     }
@@ -6609,8 +6613,8 @@
     function syncScheduleSavedButton() {
       const exported = $("saved-schedule-export").checked;
       $("btn-schedule-saved").textContent = exported
-        ? "Schedule checked saved content (exported)"
-        : "Schedule checked saved content (regular)";
+        ? "Schedule Checked Saved Content (with VMs powered off)"
+        : "Schedule Checked Saved Content";
     }
 
     function demoIds() {
@@ -7118,6 +7122,71 @@
       const end = new Date(dc.scheduleStop);
       if (Number.isNaN(end.getTime())) return false;
       return end.getTime() - Date.now() <= 3 * 24 * 60 * 60 * 1000;
+    }
+
+    const ENDING_SOON_SEEN_KEY = "dcloud-content-manager-ending-soon-seen-v1";
+    let lastFoundSessionRows = [];
+
+    function endingSoonAlarmKey(dc) {
+      const site = String(dc?.site || "").trim().toLowerCase();
+      const sessionId = String(dc?.sessionId || "").trim();
+      if (!site || !sessionId) return "";
+      return `${site}:${sessionId}`;
+    }
+
+    function readEndingSoonSeen() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(ENDING_SOON_SEEN_KEY) || "[]");
+        if (!Array.isArray(saved)) return [];
+        return saved.map((key) => String(key || "").trim()).filter(Boolean);
+      } catch {
+        return [];
+      }
+    }
+
+    function writeEndingSoonSeen(keys) {
+      try { localStorage.setItem(ENDING_SOON_SEEN_KEY, JSON.stringify(keys)); } catch {}
+    }
+
+    function collectEndingSoonKeys(rows, seenList) {
+      const seen = new Set(seenList || []);
+      const keys = [];
+      const have = new Set();
+      for (const dc of rows || []) {
+        if (!sessionEndingSoon(dc)) continue;
+        const key = endingSoonAlarmKey(dc);
+        if (!key || seen.has(key) || have.has(key)) continue;
+        have.add(key);
+        keys.push(key);
+      }
+      return keys;
+    }
+
+    function refreshEndingSoonBanner() {
+      const banner = $("ending-soon-banner");
+      if (!banner) return;
+      const jobRows = lastRenderedJob
+        ? [...visibleWorkspaceDcs(lastRenderedJob), ...visibleMonitorDcs(lastRenderedJob)]
+        : [];
+      const foundRows = (lastFoundSessionRows || []).map((row) => foundRowAsDc(row));
+      const keys = collectEndingSoonKeys([...jobRows, ...foundRows], readEndingSoonSeen());
+      if (!keys.length) {
+        banner.classList.add("hidden");
+        banner.dataset.keys = "";
+        return;
+      }
+      banner.dataset.keys = keys.join(",");
+      banner.classList.remove("hidden");
+    }
+
+    function dismissEndingSoonBanner() {
+      const banner = $("ending-soon-banner");
+      const keys = String(banner?.dataset.keys || "").split(",").map((key) => key.trim()).filter(Boolean);
+      writeEndingSoonSeen([...new Set([...readEndingSoonSeen(), ...keys])]);
+      if (banner) {
+        banner.classList.add("hidden");
+        banner.dataset.keys = "";
+      }
     }
 
     function renderVmRow(dc, cardKey, vm, groupKey, { strip = false, orderIndex = 0, orderCount = 0 } = {}) {
@@ -8131,6 +8200,7 @@
       lastLogLen = lines.length;
       if (job?.error) showError(job.error, { bannerOnly: true });
       else rememberDismissedError("");
+      refreshEndingSoonBanner();
       renderSavedIds(job);
       maybeFlushPendingSchedules(job).catch(() => {});
       if (job && jobId && jobNeedsVmRefresh(job) && !pollTimer) {
@@ -8252,7 +8322,7 @@
       const loggedIn = Boolean(info?.loggedIn);
       const becameConnected = loggedIn && !camgrLoggedIn;
       camgrLoggedIn = loggedIn;
-      markConnectButton("btn-camgr-connect", info?.loggedIn, "CAMGR connected ✓", "Connect to CAMGR");
+      markConnectButton("btn-camgr-connect", info?.loggedIn, "CAMGR Connected ✓", "Connect to CAMGR");
       syncCamgrWatch(Boolean(info?.loggedIn));
       syncRootIdHint();
       if (becameConnected) {
@@ -8277,7 +8347,7 @@
     function updateCaiStatus(info) {
       const el = $("cai-status");
       if (!el) return;
-      markConnectButton("btn-cai-connect", info?.loggedIn, "CAI connected ✓", "Connect to CAI");
+      markConnectButton("btn-cai-connect", info?.loggedIn, "CAI Connected ✓", "Connect to CAI");
       if (!info) {
         setConnectStatus(el, "CAI: on the Cisco network, click Connect to CAI.");
         return;
@@ -10329,6 +10399,11 @@
           site: data.site || "",
           at: Date.now(),
         };
+        // Loading VMs means the user is picking which ones power on.
+        if ($("export-sessions")) $("export-sessions").checked = true;
+        if ($("saved-schedule-export")) $("saved-schedule-export").checked = true;
+        syncRunButton();
+        syncScheduleSavedButton();
         return true;
       } catch (err) {
         $("session-meta").textContent = "";
@@ -10634,16 +10709,9 @@
 
     function syncRunButton() {
       const exported = $("export-sessions").checked;
-      const addToJob = appendToCurrentJob();
-      if (addToJob) {
-        $("btn-run").textContent = exported
-          ? "Schedule additional exported demo on this job"
-          : "Schedule additional regular demo on this job";
-      } else {
-        $("btn-run").textContent = exported
-          ? "Schedule exported sessions & power on"
-          : "Schedule regular sessions & power on";
-      }
+      $("btn-run").textContent = exported
+        ? "Schedule Exported Session"
+        : "Schedule Regular Session";
     }
 
     // Scheduling can finish with Job workspace collapsed, which left the click
@@ -11139,7 +11207,7 @@
       $("days").value = "1";
       $("timeout").value = "90";
       fillScheduleFromNow();
-      $("export-sessions").checked = true;
+      $("export-sessions").checked = vms.length > 0;
       $("lookup-status").textContent = "";
       syncRunButton();
     }
@@ -13344,6 +13412,7 @@
     function renderFoundSessions(data) {
       applySavedSessionCards();
       const rows = data.sessions || [];
+      lastFoundSessionRows = rows;
       const checkedKeys = new Set(
         [...document.querySelectorAll("#found-sessions .found-session:checked")].map(
           (box) => sessionKey(box.dataset.site, box.dataset.session),
@@ -13378,6 +13447,7 @@
       `;
       setFoundSessionsPanelVisible(true, { open: true, sessionCount: rows.length });
       markFoundSessionsOnCards(lastRenderedJob);
+      refreshEndingSoonBanner();
       bindFoundSessionActionMenus();
       applyListFilter(listFilterConfig("filter-found-sessions"));
       document.querySelectorAll("#found-sessions details.found-session-card[open]").forEach((card) => {
@@ -14391,7 +14461,6 @@
         if (hint) hint.textContent = row.name || "";
       }
       syncRunButton();
-      if ($("export-sessions")) $("export-sessions").checked = true;
       const first = SITE_ORDER.map((site) => bySite.get(site)).find(Boolean);
       const contentRadio = $("vm-source-content");
       if (contentRadio) contentRadio.checked = true;
@@ -14413,10 +14482,10 @@
         const status = $("lookup-status");
         if (status) {
           status.textContent =
-            `Copied “${label}” (${dcs.join(", ")}). Check the VMs to power on, set the dates, then Schedule exported sessions.`;
+            `Copied “${label}” (${dcs.join(", ")}). Check the VMs to power on, set the dates, then Schedule Exported Session.`;
           status.classList.add("lookup-ready");
         }
-        showToast(`Filled ${dcs.join(", ")}. Check the VMs to power on, then Schedule exported sessions.`);
+        showToast(`Filled ${dcs.join(", ")}. Check the VMs to power on, then Schedule Exported Session.`);
       } finally {
         syncScheduleSavedAll();
       }
@@ -16595,6 +16664,7 @@
       document.querySelectorAll("input[data-vm]").forEach((box) => { box.checked = ev.target.checked; });
     });
     $("error-banner-dismiss").addEventListener("click", () => dismissErrorBanner());
+    $("ending-soon-banner-dismiss").addEventListener("click", () => dismissEndingSoonBanner());
     $("auth-pause-dismiss").addEventListener("click", () => dismissAuthBanner());
 
     document.addEventListener("keydown", (ev) => {

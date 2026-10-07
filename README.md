@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.16** | A session ending soon shows a one-time banner; a regular session is the default until you load VMs |
 | **2.0.15** | A favorite VM stays on that session and sits under the WebRDP links. Up and down arrows reorder the VM list on that card |
 | **2.0.14** | Your Active Sessions expand like monitoring cards, and that detail is kept after a refresh; extend can only move the end later; Content and Sessions download only when you click Refresh Loaded Data |
 | **2.0.13** | End is back on your own monitoring card; a session ending within 3 days shows Ending Soon; expanded cards open WebRDP through dCloud's Remote Desktop page |
