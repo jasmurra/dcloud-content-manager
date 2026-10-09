@@ -243,6 +243,13 @@
       padding: 0.2rem 0.5rem;
       line-height: 1.1;
     }
+    details.panel-collapse.auth-panel > summary.panel-collapse-summary {
+      cursor: default;
+    }
+    details.panel-collapse.auth-panel > summary.panel-collapse-summary::before,
+    details.panel-collapse.auth-panel[open] > summary.panel-collapse-summary::before {
+      content: none;
+    }
     .section-order-controls {
       display: inline-flex;
       align-items: center;
@@ -704,11 +711,15 @@
       overflow: visible;
     }
     .card-site-group > summary {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
       padding: 0.55rem 0.75rem;
       font-weight: 650;
       cursor: pointer;
       color: var(--text);
     }
+    .card-site-heading { flex: 1; min-width: 0; }
     .card-site-count {
       color: var(--muted);
       font-weight: 500;
@@ -2562,6 +2573,24 @@
       </div>
     </div>
 
+    <div id="catalog-schedule-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="catalog-schedule-title">
+      <div class="modal-backdrop" id="catalog-schedule-backdrop"></div>
+      <div class="modal-card action-modal-card">
+        <h2 id="catalog-schedule-title">Schedule datacenters</h2>
+        <p id="catalog-schedule-body" class="hint"></p>
+        <div class="actions" style="margin:0.35rem 0 0.7rem">
+          <button type="button" class="secondary" id="catalog-schedule-all">Check all</button>
+          <button type="button" class="secondary" id="catalog-schedule-none">Uncheck all</button>
+        </div>
+        <div id="catalog-schedule-sites" class="camgr-dest-list"></div>
+        <div class="actions" style="margin-top:0.85rem">
+          <button type="button" id="catalog-schedule-continue" disabled>Continue scheduling</button>
+          <button type="button" id="catalog-schedule-vms" disabled data-tip="Fills the checked datacenters and loads VMs from the first one, so you can pick which VMs power on.">Continue + VMs</button>
+          <button type="button" class="secondary" id="catalog-schedule-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="confirm-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-alert-title">
       <div class="modal-backdrop" id="confirm-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
@@ -2601,7 +2630,6 @@
             <span id="prompt-alert-description-count" class="character-count">0</span>
           </div>
           <textarea id="prompt-alert-description" rows="5" autocomplete="off"></textarea>
-          <p id="prompt-alert-description-limit" class="hint" style="margin:0.3rem 0 0">TBv3 accepts a longer description than 255 characters. The count is just so you can see the length.</p>
         </div>
         <div class="actions">
           <button type="button" id="prompt-alert-ok">Save</button>
@@ -2875,18 +2903,6 @@
         <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with New Token</button>
       </div>
       <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
-      <details class="advanced" id="panel-recovery">
-        <summary>Refresh Recovery — Restore Last Job</summary>
-        <p class="hint">
-          Recent jobs (last few hours) restore automatically on page load or after restarting the app.
-          Use Restore last job for older saved work. To watch running sessions without bulk controls,
-          use <strong>Find My Active Sessions</strong> on My Content.
-          A browser refresh or server restart stops wait threads — restore re-checks dCloud and drops saved or ended sessions from the cards.
-        </p>
-        <div class="actions">
-          <button type="button" class="secondary" id="btn-restore-job" data-tip="Brings back the last saved job even if it is older than the auto-restore window. Re-checks dCloud and drops saved or ended sessions from the cards.">Restore Last Job</button>
-        </div>
-      </details>
       </div>
     </details>
     </section>
@@ -2906,11 +2922,9 @@
         Check the same demo in each DC, then <strong>Copy to Schedule Sessions</strong> to fill those IDs and load VMs.
       </p>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-find-sessions" data-tip="Downloads your currently running dCloud sessions from every datacenter, even when a recent pull is already showing. The button stays grey until the pull finishes.">Find My Active Sessions</button>
-        <button type="button" class="secondary" id="btn-refresh-sessions" data-tip="Downloads a fresh copy of your dashboard sessions from every datacenter.">Refresh Sessions</button>
-        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Downloads your saved content from every datacenter, even when a recent pull is already showing. The button stays grey until the pull finishes.">Find My Saved Content</button>
-        <button type="button" class="secondary" id="btn-refresh-schedule-saved" data-tip="Downloads a fresh copy of your saved content from every datacenter.">Refresh Saved Content</button>
-        <button type="button" id="btn-find-both" data-tip="Downloads your active sessions and your saved content together, even when a recent pull is already showing. The buttons stay grey until both pulls finish.">Find Both</button>
+        <button type="button" class="secondary" id="btn-find-sessions" data-tip="Downloads your active sessions from every datacenter. Click again anytime for a new copy. The button stays grey until the pull finishes.">Find/Refresh Sessions</button>
+        <button type="button" class="secondary" id="btn-find-schedule-saved" data-tip="Downloads your saved content from every datacenter. Click again anytime for a new copy. The button stays grey until the pull finishes.">Find/Refresh Content</button>
+        <button type="button" id="btn-find-both" data-tip="Downloads your active sessions and your saved content together. Click again anytime for a new copy. The buttons stay grey until both pulls finish.">Find/Refresh Both</button>
       </div>
       <p class="hint" id="my-content-activity" aria-live="polite"></p>
       <div class="list-toolbar">
@@ -2918,7 +2932,7 @@
       </div>
       <p class="hint list-filter-status" id="filter-my-content-status" aria-live="polite"></p>
       <details id="found-sessions-panel" class="found-sessions-panel">
-        <summary id="found-sessions-summary">Your Active Sessions — click Find above to retrieve your sessions.</summary>
+        <summary id="found-sessions-summary">Your Active Sessions — click Find/Refresh Sessions above to retrieve your sessions.</summary>
         <div class="found-sessions-body">
           <div class="list-toolbar">
             <button type="button" class="secondary" id="btn-check-all-sessions">Check All</button>
@@ -2940,14 +2954,13 @@
         </div>
       </details>
       <details id="found-schedule-saved-panel" class="found-sessions-panel">
-        <summary id="found-schedule-saved-summary">Your Saved Content — click Find above to retrieve your content.</summary>
+        <summary id="found-schedule-saved-summary">Your Saved Content — click Find/Refresh Content above to retrieve your content.</summary>
         <div class="found-sessions-body">
           <div class="list-toolbar">
             <button type="button" class="secondary" id="btn-expand-schedule-saved">Expand All DCs</button>
             <button type="button" class="secondary" id="btn-collapse-schedule-saved">Collapse All DCs</button>
             <button type="button" class="secondary" id="btn-check-all-schedule-saved">Check All</button>
             <button type="button" class="secondary" id="btn-uncheck-all-schedule-saved">Uncheck All</button>
-            <button type="button" class="secondary" id="btn-recheck-schedule-saved-ids" data-tip="Re-checks rows that match IDs in the Content Automation Hub list (from your last save).">Recheck Saved IDs</button>
             <button type="button" class="secondary" id="btn-copy-saved-to-schedule" disabled data-tip="Copies the checked content ID in each DC into Schedule sessions, then loads that demo’s VMs so you can pick which ones power on. Use this for an exported session. Stay here to schedule without Load VMs.">Copy to Schedule Sessions</button>
             <button type="button" class="secondary" id="btn-share-schedule-saved" disabled data-tip="Opens one share dialog for every checked saved copy. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share Checked</button>
             <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete Checked</button>
@@ -3021,16 +3034,16 @@
             Start/stop stay in sync with the demo-ID scheduler. One day = now until this time tomorrow — open the calendar if you need a later window.
             Delay and number of sessions stay in sync too.
           </p>
+          <label class="check-line" for="saved-schedule-export">
+            <input type="checkbox" id="saved-schedule-export" />
+            <span>Schedule as exported sessions (check to spin up session with VMs powered off)</span>
+          </label>
           <label class="check-line" for="saved-auto-next-available">
             <input type="checkbox" id="saved-auto-next-available" checked />
             <span>Use a nearby slot when resources are busy (only if it starts within the next 24 hours)</span>
           </label>
-          <label class="hint" style="display:flex;align-items:flex-start;gap:0.45rem;margin:0.5rem 0;">
-            <input type="checkbox" id="saved-schedule-export" style="width:auto;margin-top:0.2rem" />
-            <span>Schedule as exported sessions (check to spin up session with VMs powered off)</span>
-          </label>
           <div class="actions">
-            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows, using the schedule above and the VMs checked in Load VMs.">Schedule Checked Saved Content</button>
+            <button type="button" id="btn-schedule-saved" data-tip="Starts new dCloud sessions from the checked saved content rows. Leave the box above unchecked for a regular session. Check it, or load VMs, when you want to pick which VMs power on.">Schedule Regular Session</button>
           </div>
         </div>
       </details>
@@ -3124,14 +3137,22 @@
         </span>
         <button type="button" class="banner-dismiss" id="auth-pause-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
       </div>
+      <div id="pipeline-hold-banner" class="banner-dismissible warn-box hidden">
+        <span id="pipeline-hold-banner-text" class="banner-text"></span>
+        <button type="button" class="banner-dismiss" id="pipeline-hold-dismiss" aria-label="Dismiss message" title="Dismiss">×</button>
+      </div>
       <div id="job-card-view-actions" class="list-toolbar hidden" style="margin-top:0.75rem">
-        <button type="button" class="secondary" id="btn-card-check-all" data-tip="Select every visible job workspace card.">Check All</button>
+        <button type="button" class="secondary" id="btn-card-check-all" data-tip="Select every job workspace card still showing. A filter limits this to the matches.">Check All</button>
         <button type="button" class="secondary" id="btn-card-uncheck-all" data-tip="Clear card selection.">Uncheck All</button>
         <button type="button" class="secondary" id="btn-expand-job-dcs">Expand All DCs</button>
         <button type="button" class="secondary" id="btn-collapse-job-dcs">Collapse All DCs</button>
         <button type="button" class="secondary" id="btn-expand-job-cards">Expand All Cards</button>
         <button type="button" class="secondary" id="btn-collapse-job-cards">Collapse All Cards</button>
       </div>
+      <div class="list-toolbar hidden" id="job-card-filter-row">
+        <input type="search" class="list-filter" id="filter-job-cards" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter job workspace cards" data-tip="Narrows the workspace cards as you type. Matching datacenters open, and they go back to how they were when the box is cleared. Check all then takes just the cards still showing." />
+      </div>
+      <p class="hint list-filter-status" id="filter-job-cards-status" aria-live="polite"></p>
       <p id="job-cards-label" class="monitor-section-label hidden">Job workspace cards</p>
       <p id="cards-note" class="hint hidden" style="margin:0.75rem 0 0"></p>
       <div id="cards" class="cards" style="margin-top:0.35rem"></div>
@@ -3178,6 +3199,7 @@
         <div class="actions">
         <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh All Session Statuses</button>
         <button type="button" class="danger" id="btn-shutdown" disabled data-tip="Guest-shuts down the checked ready cards, waits for their VMs to power off, then saves. Stays off until a card is checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest Shutdown &amp; Save</button>
+        <button type="button" class="secondary" id="btn-guest-shutdown-checked" disabled data-tip="Guest-shuts down every powered-on VM on the checked sessions. Does not save or end them. vCUBE is powered off. Stays off until a card is checked.">Guest Shutdown All VMs</button>
         <button type="button" class="end" id="btn-end" disabled data-tip="Ends the checked sessions without saving. Stays off until a card is checked.">End Sessions (No Save)</button>
         <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear Job Workspace Cards</button>
         </div>
@@ -3230,6 +3252,10 @@
         <button type="button" class="secondary hidden" id="btn-expand-monitor-cards">Expand All Cards</button>
         <button type="button" class="secondary hidden" id="btn-collapse-monitor-cards">Collapse All Cards</button>
       </div>
+      <div class="list-toolbar hidden" id="monitor-card-filter-row">
+        <input type="search" class="list-filter" id="filter-monitor-cards" autocomplete="off" placeholder="Filter by session ID, name, or status" aria-label="Filter monitoring cards" data-tip="Narrows the monitoring cards as you type. Matching datacenters open, and they go back to how they were when the box is cleared." />
+      </div>
+      <p class="hint list-filter-status" id="filter-monitor-cards-status" aria-live="polite"></p>
       <p id="monitor-cards-label" class="monitor-section-label hidden">Monitoring cards</p>
       <div id="monitor-cards" class="cards" style="margin-top:0.35rem"></div>
       </div>
@@ -3540,7 +3566,7 @@
         <p class="hint">
           Find events by datacenter, or add one by ID. Finding lists the events only
           (about a second per DC) — sessions load when you Add or View sessions.
-          The last pull stays in this browser; Refresh downloads a live copy.
+          Find/Refresh Events downloads a new copy of the checked datacenters.
           Added events stay in the section below. Check sessions to reset or end them together.
         </p>
         <div>
@@ -3556,8 +3582,7 @@
           </div>
         </div>
         <div class="list-toolbar" style="margin-top:0.65rem">
-          <button type="button" id="btn-events-find" data-tip="Lists events in the checked datacenters from the last pull if one is saved. Does not download every session until you Add or View sessions.">Find Events</button>
-          <button type="button" class="secondary" id="btn-events-find-refresh" data-tip="Downloads a fresh copy of events in the checked datacenters.">Refresh</button>
+          <button type="button" id="btn-events-find" data-tip="Downloads events in the checked datacenters. Click again anytime for a new copy. Sessions load when you Add or View sessions.">Find/Refresh Events</button>
         </div>
         <details id="found-events-panel" class="found-sessions-panel hidden">
           <summary id="found-events-summary">Found Events</summary>
@@ -3640,10 +3665,9 @@
         <div class="unified-search-toolbar" style="margin-top:0.65rem">
           <button type="button" id="btn-unified-load-content">Load Content</button>
           <button type="button" id="btn-unified-load-sessions">Load Sessions</button>
-          <button type="button" class="secondary" id="btn-unified-load-both">Load Both</button>
-          <button type="button" class="secondary" id="btn-unified-search-refresh" data-tip="Downloads a new copy from dCloud. Available 10 minutes after the last download. Load uses the copy already here.">Refresh Loaded Data</button>
+          <button type="button" class="secondary" id="btn-unified-load-both" data-tip="The first click downloads Content and Sessions. Later clicks download a new copy, 10 minutes after the last one.">Load/Refresh Both</button>
         </div>
-        <p class="hint">Content and Sessions stay on this computer after you load them. Load again uses that copy and does not call dCloud. The time under each list is when it was downloaded. Refresh Loaded Data gets a new copy, and it waits 10 minutes between downloads.</p>
+        <p class="hint">Content and Sessions stay on this computer after you load them. The time under each list is when it was downloaded. Load/Refresh Both downloads them the first time, and later clicks get a new copy. A new copy waits 10 minutes between downloads.</p>
         <p id="unified-search-status" class="hint" aria-live="polite"></p>
         <div class="unified-search-filters" style="margin-top:0.7rem">
           <label style="flex:1;min-width:16rem">
@@ -3939,6 +3963,56 @@
     function dismissAuthBanner() {
       dismissedAuthMessage = ($("auth-pause-banner-text")?.textContent || "").trim();
       $("auth-pause-banner")?.classList.add("hidden");
+    }
+
+    let dismissedPipelineHold = "";
+
+    function pipelineHoldMessage(rows) {
+      const list = rows || [];
+      const waitingCai = list.find((row) => String(row.autoIntegrateStatus || "") === "waiting_auth");
+      if (waitingCai) {
+        return waitingCai.pipelineHoldMessage
+          || "Transfer finished. Connect to CAI to submit integration. The transfer is saved and integration continues after you connect.";
+      }
+      const transferHold = list.find((row) =>
+        ["camgr", "network"].includes(String(row.pipelineHold || ""))
+        && CAMGR_PENDING.includes(String(row.transferStatus || ""))
+      );
+      if (transferHold) {
+        return transferHold.pipelineHoldMessage
+          || "CAMGR needs a sign-in to keep tracking this transfer. Connect to CAMGR. Progress so far is saved.";
+      }
+      const integrateHold = list.find((row) =>
+        ["cai", "network"].includes(String(row.pipelineHold || ""))
+        && CAI_PENDING.includes(String(row.integrateStatus || ""))
+      );
+      if (integrateHold) {
+        return integrateHold.pipelineHoldMessage
+          || "Integration is still in progress. Connect to CAI to keep checking it. Progress is saved.";
+      }
+      const burn = list.find((row) => String(row.burnInStatus || "") === "waiting_auth");
+      if (burn) {
+        return burn.pipelineHoldMessage || burn.burnInMessage
+          || "Integration finished. Sign in to dCloud so the new sessions can be scheduled. Integration is saved.";
+      }
+      return "";
+    }
+
+    function showPipelineHold(rows) {
+      const banner = $("pipeline-hold-banner");
+      if (!banner) return;
+      const message = pipelineHoldMessage(rows);
+      if (!message) {
+        dismissedPipelineHold = "";
+        banner.classList.add("hidden");
+        return;
+      }
+      if (message === dismissedPipelineHold) {
+        banner.classList.add("hidden");
+        return;
+      }
+      $("pipeline-hold-banner-text").textContent = message;
+      banner.classList.remove("hidden");
     }
 
     function isHubAuthError(msg) {
@@ -4453,7 +4527,7 @@
       ) {
         return "#panel-step3";
       }
-      if (t.includes("delete") || t.includes("recheck saved") || t.includes("survey")) {
+      if (t.includes("delete") || t.includes("survey")) {
         return "#panel-cleanup";
       }
       if (t.includes("saved content") || t.includes("find saved")) {
@@ -4728,6 +4802,51 @@
       }
     }
 
+    let foundEventSort = { key: "", dir: "asc" };
+
+    function foundEventSortTh(key, label) {
+      const active = foundEventSort.key === key;
+      const aria = active ? (foundEventSort.dir === "asc" ? "ascending" : "descending") : "none";
+      return `<th class="saved-sort" data-sort="${escapeHtml(key)}" aria-sort="${aria}" title="Sort by ${escapeHtml(label)}">${escapeHtml(label)}</th>`;
+    }
+
+    function sortFoundEventRows(rows) {
+      const key = foundEventSort.key;
+      if (!key) return rows || [];
+      const factor = foundEventSort.dir === "asc" ? 1 : -1;
+      const numeric = key === "eventId" || key === "sessionCount" || key === "eventStart" || key === "eventEnd";
+      return [...(rows || [])].sort((left, right) => {
+        const pick = (row) => {
+          if (key === "name") return row.name || row.demoName || "";
+          if (key === "eventId" || key === "sessionCount") return Number(row[key]);
+          if (key === "eventStart" || key === "eventEnd") return Date.parse(row[key] || "") || 0;
+          return row[key] || "";
+        };
+        const a = pick(left);
+        const b = pick(right);
+        if (numeric) {
+          const an = Number(a);
+          const bn = Number(b);
+          return ((Number.isFinite(an) ? an : -Infinity) - (Number.isFinite(bn) ? bn : -Infinity)) * factor;
+        }
+        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }) * factor;
+      });
+    }
+
+    function setFoundEventSort(key) {
+      const next = String(key || "").trim();
+      if (!next) return;
+      if (foundEventSort.key === next) {
+        foundEventSort = { key: next, dir: foundEventSort.dir === "asc" ? "desc" : "asc" };
+      } else {
+        foundEventSort = {
+          key: next,
+          dir: next === "eventStart" || next === "eventEnd" || next === "eventId" || next === "sessionCount" ? "desc" : "asc",
+        };
+      }
+      renderFoundEvents();
+    }
+
     function foundEventIsAdded(site, eventId) {
       return eventEntries.has(eventKey(site, eventId));
     }
@@ -4771,18 +4890,18 @@
             <thead>
               <tr>
                 <th><input type="checkbox" class="found-event-dc-head" data-site="${escapeHtml(site)}" title="Select all in ${escapeHtml(site.toUpperCase())}" /></th>
-                <th>Event ID</th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Sessions</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Owner</th>
+                ${foundEventSortTh("eventId", "Event ID")}
+                ${foundEventSortTh("name", "Name")}
+                ${foundEventSortTh("status", "Status")}
+                ${foundEventSortTh("sessionCount", "Sessions")}
+                ${foundEventSortTh("eventStart", "Start")}
+                ${foundEventSortTh("eventEnd", "End")}
+                ${foundEventSortTh("owner", "Owner")}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              ${siteRows.map((row) => {
+              ${sortFoundEventRows(siteRows).map((row) => {
                 const key = eventKey(row.site, row.eventId);
                 const added = foundEventIsAdded(row.site, row.eventId);
                 const view = foundEventViews.get(key);
@@ -6000,7 +6119,7 @@
         });
         $("session-edit-modal").classList.add("hidden");
         sessionEditRow = null;
-        $("unified-search-status").textContent = result.message || `Session ${row.id} updated. The loaded list stays as it is until you click Refresh Loaded Data.`;
+        $("unified-search-status").textContent = result.message || `Session ${row.id} updated. The loaded list stays as it is until you click Load/Refresh Both.`;
       } catch (err) {
         $("session-edit-status").textContent = err.message;
       } finally {
@@ -6089,7 +6208,7 @@
         const message = result.message || `${doneLabels[action] || "Updated"} session ${row.id}.`;
         $("unified-search-status").textContent = message;
         showToast(message, { kind: "ok" });
-        $("unified-search-status").textContent = `${message} The loaded list stays as it is until you click Refresh Loaded Data.`;
+        $("unified-search-status").textContent = `${message} The loaded list stays as it is until you click Load/Refresh Both.`;
       } catch (err) {
         $("unified-search-status").textContent = err.message;
         showToast(err.message, { kind: "err" });
@@ -6122,7 +6241,7 @@
       }
     }
 
-    function openScheduleWithIds(ids, message, statusId = "unified-catalog-status") {
+    function openScheduleWithIds(ids, message, statusId = "unified-catalog-status", options = {}) {
       document.querySelectorAll(".demo-id").forEach((input) => { input.value = ""; });
       let count = 0;
       for (const [site, demoId] of Object.entries(ids || {})) {
@@ -6139,8 +6258,72 @@
       if (panel) panel.open = true;
       syncRunButton();
       showError("");
-      $(statusId).textContent = message;
+      if (statusId && $(statusId)) $(statusId).textContent = message;
+      showAppView("schedule");
+      if (options.toast !== false) showToast(message);
       panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    let catalogScheduleIds = {};
+
+    function closeCatalogSchedulePicker() {
+      catalogScheduleIds = {};
+      $("catalog-schedule-modal")?.classList.add("hidden");
+    }
+
+    function syncCatalogScheduleContinue() {
+      const any = document.querySelector(".catalog-schedule-site:checked");
+      for (const id of ["catalog-schedule-continue", "catalog-schedule-vms"]) {
+        const button = $(id);
+        if (button) button.disabled = !any;
+      }
+    }
+
+    function showCatalogSchedulePicker(name, ids) {
+      const available = SITE_ORDER.filter((site) => String(ids?.[site] || "").trim());
+      if (!available.length) {
+        showError("No schedulable demo IDs were found.");
+        return;
+      }
+      catalogScheduleIds = Object.fromEntries(available.map((site) => [site, String(ids[site]).trim()]));
+      const title = String(name || "This demo").trim();
+      $("catalog-schedule-body").textContent =
+        `${title} is available in ${available.length} datacenter${available.length === 1 ? "" : "s"}. Check the ones to schedule.`;
+      $("catalog-schedule-sites").innerHTML = available.map((site) => `
+        <label>
+          <input type="checkbox" class="catalog-schedule-site" value="${escapeHtml(site)}" />
+          ${escapeHtml(site.toUpperCase())}
+          <span class="mono hint">${escapeHtml(catalogScheduleIds[site])}</span>
+        </label>
+      `).join("");
+      syncCatalogScheduleContinue();
+      $("catalog-schedule-modal").classList.remove("hidden");
+    }
+
+    async function continueCatalogSchedule(loadVmList = false) {
+      const chosen = [...document.querySelectorAll(".catalog-schedule-site:checked")].map((box) => box.value);
+      if (!chosen.length) return;
+      const ids = Object.fromEntries(chosen.map((site) => [site, catalogScheduleIds[site]]));
+      const labels = chosen.map((site) => site.toUpperCase()).join(", ");
+      closeCatalogSchedulePicker();
+      openScheduleWithIds(
+        ids,
+        `Loaded ${labels} into Schedule sessions.`,
+        "unified-catalog-status",
+        { toast: !loadVmList },
+      );
+      if (!loadVmList) return;
+      const site = SITE_ORDER.find((code) => ids[code]);
+      if (!site) return;
+      const contentRadio = $("vm-source-content");
+      if (contentRadio) contentRadio.checked = true;
+      syncVmSourceUi();
+      $("src-site").value = site;
+      $("src-session").value = ids[site];
+      revealScheduleLoadVms();
+      const loaded = await loadVms({ keepDemoIds: true });
+      if (!loaded) return;
+      showToast(`Filled ${labels}. Check the VMs to power on, then Schedule Exported Session.`);
     }
 
     const ADMIN_LIST_REFRESH_MS = 10 * 60 * 1000;
@@ -6176,7 +6359,7 @@
             return `${source === "content" ? "Content" : "Sessions"}: ${ages}`;
           }).join(". ");
           $("unified-search-status").textContent =
-            `Showing the last download. ${line}. Click Refresh Loaded Data for a new copy.`;
+            `Showing the last download. ${line}. Click Load/Refresh Both for a new copy.`;
           return;
         }
         sites = missing;
@@ -6195,7 +6378,6 @@
         $("btn-unified-load-content"),
         $("btn-unified-load-sessions"),
         $("btn-unified-load-both"),
-        $("btn-unified-search-refresh"),
       ];
       buttons.forEach((button) => { button.disabled = true; });
       $("unified-search-status").textContent =
@@ -6349,7 +6531,7 @@
           method: "POST",
           body: JSON.stringify({ ...tokenPayload(), name }),
         });
-        openScheduleWithIds(data.ids, `Loaded ${Object.keys(data.ids || {}).length} datacenter demo ID(s) into Schedule sessions.`);
+        showCatalogSchedulePicker(name, data.ids || {});
       } catch (err) {
         $("unified-catalog-status").textContent = err.message;
       } finally {
@@ -6613,8 +6795,8 @@
     function syncScheduleSavedButton() {
       const exported = $("saved-schedule-export").checked;
       $("btn-schedule-saved").textContent = exported
-        ? "Schedule Checked Saved Content (with VMs powered off)"
-        : "Schedule Checked Saved Content";
+        ? "Schedule Exported Session"
+        : "Schedule Regular Session";
     }
 
     function demoIds() {
@@ -7691,7 +7873,7 @@
     }
 
     function setCardChecks(checked) {
-      document.querySelectorAll(".card-select").forEach((el) => { el.checked = checked; });
+      setBoxesChecked(document.querySelectorAll("#cards .card-select"), checked);
       syncWorkspaceBulkButtons();
     }
 
@@ -7703,7 +7885,7 @@
 
     function syncWorkspaceBulkButtons() {
       const anyChecked = document.querySelectorAll("#cards .card-select:checked").length > 0;
-      for (const id of ["btn-extend-checked", "btn-shutdown", "btn-end"]) {
+      for (const id of ["btn-extend-checked", "btn-shutdown", "btn-guest-shutdown-checked", "btn-end"]) {
         const button = $(id);
         if (button) button.disabled = !anyChecked;
       }
@@ -7885,18 +8067,101 @@
       });
     }
 
+    const sessionCardFilterSnapshots = { cards: null, "monitor-cards": null };
+
+    function sessionCardFilterActive(rootId) {
+      const inputId = rootId === "cards" ? "filter-job-cards" : "filter-monitor-cards";
+      return Boolean($(inputId)?.value.trim());
+    }
+
+    function applySessionCardFilter(containerId, inputId, statusId) {
+      const container = $(containerId);
+      const input = $(inputId);
+      if (!container || !input) return;
+      const needle = input.value.trim().toLowerCase();
+      const filtering = Boolean(needle);
+      if (filtering && !sessionCardFilterSnapshots[containerId]) {
+        const snap = {};
+        container.querySelectorAll("details.card-site-group").forEach((group) => {
+          snap[group.dataset.site || ""] = group.open;
+        });
+        sessionCardFilterSnapshots[containerId] = snap;
+      }
+      let total = 0;
+      let shown = 0;
+      let hiddenChecked = 0;
+      container.querySelectorAll("details.card-site-group").forEach((group) => {
+        const site = String(group.dataset.site || "");
+        const cards = [...group.querySelectorAll(":scope > .card-site-cards > details.card")];
+        let visible = 0;
+        cards.forEach((card) => {
+          total += 1;
+          const text = `${site} ${card.textContent}`.toLowerCase();
+          const match = !filtering || text.includes(needle);
+          card.classList.toggle("filtered-out", filtering && !match);
+          if (match) {
+            shown += 1;
+            visible += 1;
+          } else if (card.querySelector(".card-select:checked")) {
+            hiddenChecked += 1;
+          }
+        });
+        group.classList.toggle("filtered-out", filtering && cards.length > 0 && visible === 0);
+        if (filtering && visible) group.open = true;
+        const count = group.querySelector(".card-site-count");
+        if (count) {
+          const noun = `session${cards.length === 1 ? "" : "s"}`;
+          count.textContent = filtering
+            ? `${visible} of ${cards.length} ${noun}`
+            : `${cards.length} ${noun}`;
+        }
+      });
+      if (!filtering && sessionCardFilterSnapshots[containerId]) {
+        const snap = sessionCardFilterSnapshots[containerId];
+        container.querySelectorAll("details.card-site-group").forEach((group) => {
+          const site = group.dataset.site || "";
+          if (Object.prototype.hasOwnProperty.call(snap, site)) group.open = snap[site];
+        });
+        sessionCardFilterSnapshots[containerId] = null;
+      }
+      const status = $(statusId);
+      if (status) {
+        const hidden = hiddenChecked
+          ? (hiddenChecked === 1
+            ? " 1 checked card is hidden by this filter and still counts toward the buttons below."
+            : ` ${hiddenChecked} checked cards are hidden by this filter and still count toward the buttons below.`)
+          : "";
+        status.textContent = filtering
+          ? `Showing ${shown} of ${total} session${total === 1 ? "" : "s"} matching “${input.value.trim()}”.${hidden}`
+          : "";
+      }
+    }
+
+    function applySessionCardFilters() {
+      applySessionCardFilter("cards", "filter-job-cards", "filter-job-cards-status");
+      applySessionCardFilter("monitor-cards", "filter-monitor-cards", "filter-monitor-cards-status");
+    }
+
     function captureCardLayoutFromDom() {
       const layout = readCardLayout();
       layout.order = layout.order || {};
+      const previousGroups = layout.openGroups || {};
       layout.openCards = {};
       layout.openGroups = {};
       for (const rootId of ["cards", "monitor-cards"]) {
         const root = $(rootId);
         if (!root) continue;
         const scope = rootId === "cards" ? "workspace" : "monitor";
+        const keepGroups = sessionCardFilterActive(rootId);
+        if (keepGroups) {
+          const prefix = `${scope}:`;
+          for (const [key, value] of Object.entries(previousGroups)) {
+            if (key.startsWith(prefix)) layout.openGroups[key] = value;
+          }
+        }
         root.querySelectorAll("details.card-site-group").forEach((group) => {
           const site = group.dataset.site || "";
-          layout.openGroups[`${scope}:${site}`] = group.open;
+          if (!keepGroups) layout.openGroups[`${scope}:${site}`] = group.open;
           layout.order[`${scope}:${site}`] = [...group.querySelectorAll(":scope > .card-site-cards > details.card")]
             .map((card) => card.dataset.cardKey)
             .filter(Boolean);
@@ -7916,8 +8181,9 @@
         .map(({ site, rows: siteRows }) => {
           const open = layout.openGroups?.[`${scope}:${site}`] !== false ? " open" : "";
           const ordered = orderedSessionCards(siteRows, scope, site);
+          const viewLink = monitor ? "" : dcViewLink(site, "sessions");
           return `<details class="card-site-group" data-site="${escapeHtml(site)}"${open}>
-            <summary>${escapeHtml(site.toUpperCase())}<span class="card-site-count">${ordered.length} session${ordered.length === 1 ? "" : "s"}</span></summary>
+            <summary><span class="card-site-heading">${escapeHtml(site.toUpperCase())}<span class="card-site-count">${ordered.length} session${ordered.length === 1 ? "" : "s"}</span></span>${viewLink}</summary>
             <div class="card-site-cards">
               ${ordered.map((dc) => renderSessionCard(dc, {
                 monitor,
@@ -8138,7 +8404,9 @@
         $("btn-collapse-monitor-dcs")?.classList.add("hidden");
         $("btn-expand-monitor-cards")?.classList.add("hidden");
         $("btn-collapse-monitor-cards")?.classList.add("hidden");
+        $("monitor-card-filter-row")?.classList.add("hidden");
         $("job-card-view-actions")?.classList.add("hidden");
+        $("job-card-filter-row")?.classList.add("hidden");
         $("job-cards-label")?.classList.add("hidden");
         $("cards-actions")?.classList.add("hidden");
       } else {
@@ -8172,10 +8440,13 @@
             $("btn-collapse-monitor-dcs")?.classList.toggle("hidden", visibleMonitor.length === 0);
             $("btn-expand-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
             $("btn-collapse-monitor-cards")?.classList.toggle("hidden", visibleMonitor.length === 0);
+            $("monitor-card-filter-row")?.classList.toggle("hidden", visibleMonitor.length === 0);
             $("job-card-view-actions")?.classList.toggle("hidden", visibleJob.length === 0);
+            $("job-card-filter-row")?.classList.toggle("hidden", visibleJob.length === 0);
             $("job-cards-label")?.classList.toggle("hidden", visibleJob.length === 0);
             if (!$("sched-extend").value) suggestExtendDate(job);
             saveUiStateFromDom();
+            applySessionCardFilters();
             syncWorkspaceBulkButtons();
           }
         }
@@ -8327,6 +8598,7 @@
       syncRootIdHint();
       if (becameConnected) {
         refreshRootIds().catch(() => {});
+        refreshCamgrTransfers().catch(() => {});
       }
       if (!info) {
         setConnectStatus(el, "Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.");
@@ -8344,10 +8616,18 @@
       setConnectStatus(el, info.message || "Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.");
     }
 
+    let caiLoggedIn = false;
+
     function updateCaiStatus(info) {
       const el = $("cai-status");
       if (!el) return;
+      const loggedIn = Boolean(info?.loggedIn);
+      const becameConnected = loggedIn && !caiLoggedIn;
+      caiLoggedIn = loggedIn;
       markConnectButton("btn-cai-connect", info?.loggedIn, "CAI Connected ✓", "Connect to CAI");
+      if (becameConnected) {
+        refreshCaiReplacements().catch(() => {});
+      }
       if (!info) {
         setConnectStatus(el, "CAI: on the Cisco network, click Connect to CAI.");
         return;
@@ -9613,7 +9893,7 @@
     async function connectCamgr() {
       $("btn-camgr-connect").disabled = true;
       const status = $("camgr-status");
-        if (status) status.textContent = "Opening the tool browser…";
+        if (status) status.textContent = "Opening the tool browser… After you finish signing in, that window opens CAMGR to save the session.";
       try {
         // quiet: the reason belongs under the button, not in a pop-up.
         const data = await api("/api/camgr/connect", { method: "POST", body: "{}", quiet: true });
@@ -9805,6 +10085,8 @@
       const pending = (data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || []).some(
         (row) => CAMGR_PENDING.includes(String(row.transferStatus || ""))
           || row.autoIntegratePending
+          || String(row.autoIntegrateStatus || "") === "waiting_auth"
+          || String(row.burnInStatus || "") === "waiting_auth"
       );
       if (!pending) stopCamgrTransferPoll();
     }
@@ -9959,6 +10241,7 @@
 
     function renderSavedIdRows(rows) {
       lastSavedIdRows = rows || [];
+      showPipelineHold(lastSavedIdRows);
       const fingerprint = JSON.stringify(rows);
       if (fingerprint === lastSavedIdsFingerprint) {
         syncRootIdHint();
@@ -10055,7 +10338,7 @@
       if (rows.some((row) => caiRowNeedsPoll(row))) {
         startCaiReplacePoll();
       }
-      if (rows.some((row) => CAMGR_PENDING.includes(String(row.transferStatus || "")) || row.autoIntegratePending)) {
+      if (rows.some((row) => CAMGR_PENDING.includes(String(row.transferStatus || "")) || row.autoIntegratePending || String(row.autoIntegrateStatus || "") === "waiting_auth" || String(row.burnInStatus || "") === "waiting_auth")) {
         startCamgrTransferPoll();
       }
     }
@@ -10310,8 +10593,9 @@
           if (data.cai) updateCaiStatus(data.cai);
           if (data.camgr) updateCamgrStatus(data.camgr);
           $("auth-status").textContent = data.message || "Logged in.";
-          await refreshAuth();
           if (allowWindow && wantHub) await connectHubAfterLogin();
+          if (allowWindow) closeDcloudAuth();
+          await refreshAuth().catch(() => {});
           return true;
         }
         if (allowWindow) {
@@ -10487,9 +10771,21 @@
       if (!inserted) selectEl.appendChild(opt);
     }
 
+    function pruneOffGridMinutes(selectEl, keepMinute) {
+      if (!selectEl) return;
+      [...selectEl.options].forEach((opt) => {
+        const value = Number(opt.value);
+        if (value % 5 !== 0 && value !== keepMinute) opt.remove();
+      });
+    }
+
     function applyDateToControls(which, date, { exactTime = false } = {}) {
       const meta = dateTargetMeta(which);
-      const minute = exactTime ? date.getMinutes() : nearestMinuteOption(date.getMinutes());
+      const rawMinute = date.getMinutes();
+      // Now inserts the real minute. Later syncs must keep it, or the box
+      // snaps back to 20 or 25 and the real minute sits in the list unusable.
+      const keepExact = exactTime || rawMinute % 5 !== 0;
+      const minute = keepExact ? rawMinute : nearestMinuteOption(rawMinute);
       const snapped = new Date(
         date.getFullYear(),
         date.getMonth(),
@@ -10499,11 +10795,13 @@
         0,
         0,
       );
-      if (exactTime) ensureMinuteOption($(meta.minute), minute);
+      const minuteEl = $(meta.minute);
+      if (keepExact) ensureMinuteOption(minuteEl, minute);
+      pruneOffGridMinutes(minuteEl, keepExact ? minute : -1);
       $(meta.hidden).value = toLocalInput(snapped);
       $(meta.label).textContent = formatDateLabel(snapped);
       $(meta.hour).value = String(snapped.getHours());
-      $(meta.minute).value = String(snapped.getMinutes());
+      minuteEl.value = String(snapped.getMinutes());
     }
 
     function dateFromControls(which) {
@@ -10562,12 +10860,16 @@
     function bumpScheduleStartIfPast() {
       const start = dateFromControls("start");
       const now = new Date();
-      if (Number.isNaN(start.getTime()) || start.getTime() >= now.getTime() - 15000) return false;
+      if (Number.isNaN(start.getTime())) return false;
+      const startMinute = new Date(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours(), start.getMinutes(), 0, 0);
+      const nowMinute = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
+      // Now stores 13:28:00. Seconds later that is already in the past, and
+      // rounding up to the next 5 minutes scheduled 1:30 while the box said 28.
+      if (startMinute.getTime() >= nowMinute.getTime()) return false;
       const stop = dateFromControls("stop");
       const durationMs = Number.isNaN(stop.getTime()) ? 0 : Math.max(0, stop.getTime() - start.getTime());
-      const fresh = roundUp5(now);
-      applyDateToControls("start", fresh);
-      if (durationMs) applyDateToControls("stop", new Date(fresh.getTime() + durationMs));
+      applyDateToControls("start", nowMinute, { exactTime: true });
+      if (durationMs) applyDateToControls("stop", new Date(nowMinute.getTime() + durationMs), { exactTime: true });
       else syncScheduleStop();
       syncMainScheduleToSaved();
       return true;
@@ -11750,6 +12052,81 @@
       }
     }
 
+    async function guestShutdownChecked() {
+      if (!jobId) { showError("Restore or attach sessions first."); return; }
+      if (!ensureTokenReady("guest-shutting down VMs")) return;
+      const requested = resolveActionSessions();
+      const { mine, theirs } = splitOwnedTargets(requested);
+      if (theirs.length) {
+        showActionAlert(
+          `Skipping sessions you do not own:\n${ownerLabels(theirs).join("\n")}\n\nOnly the owner can shut down a session's VMs.`,
+          { title: "Not Your Session" }
+        );
+      }
+      const ready = [];
+      const skipped = [];
+      for (const row of mine) {
+        const dc = findDcCard(row.site, row.session_id);
+        const label = sessionActionLabel(row.site, row.session_id);
+        if (!dc || dc.phase !== "ready") {
+          skipped.push(label);
+          continue;
+        }
+        if (dc._manual_shutdown_waiting || dc.shutdownPrompt?.needed) {
+          skipped.push(`${label} (already shutting down)`);
+          continue;
+        }
+        ready.push(row);
+      }
+      if (!ready.length) {
+        if (!theirs.length) {
+          showError(skipped.length
+            ? "Checked sessions are not active, or a shutdown is already running."
+            : "Check the sessions to shut down. An empty selection does not shut down every session.");
+        }
+        return;
+      }
+      const skipNote = skipped.length ? ` Skipping: ${skipped.join("; ")}.` : "";
+      if (!await confirmListedBatch(bulkSessionLabels(ready), {
+        count: ready.length,
+        title: "Guest Shutdown All VMs",
+        okLabel: "Guest Shutdown All VMs",
+        detail: "Guest-shut down every powered-on VM on these sessions? Nothing is saved or ended. vCUBE is powered off." + skipNote,
+      })) {
+        return;
+      }
+      showError("");
+      noteLog(`Guest shutdown all VMs (no save) requested for ${bulkSessionLabels(ready).join("; ")}…`);
+      const failures = [];
+      let lastJob = null;
+      for (const row of ready) {
+        try {
+          lastJob = await api(`/api/jobs/${jobId}/guest-shutdown-all`, {
+            method: "POST",
+            body: JSON.stringify({
+              ...tokenPayload(),
+              site: row.site,
+              session_id: row.session_id,
+            }),
+          });
+        } catch (err) {
+          failures.push(`${sessionActionLabel(row.site, row.session_id)}: ${err.message}`);
+        }
+      }
+      if (lastJob) {
+        renderJob(lastJob, { forceCards: true });
+        startPolling();
+      }
+      if (failures.length) {
+        showError(failures.join(" "));
+        noteLog(`Guest shutdown all VMs failed for ${failures.length} session(s).`);
+        return;
+      }
+      showToast(ready.length === 1
+        ? "Guest shutdown submitted."
+        : `Guest shutdown submitted for ${ready.length} sessions.`);
+    }
+
     function shutdownPromptKey(job, dc) {
       const prompt = dc?.shutdownPrompt;
       if (!job || !prompt?.needed) return "";
@@ -12889,7 +13266,7 @@
     ];
 
     function rowIsFilteredOut(el) {
-      return !!el?.closest?.("tr.filtered-out, .found-session-card.filtered-out");
+      return !!el?.closest?.("tr.filtered-out, .found-session-card.filtered-out, details.card.filtered-out");
     }
 
     // Check all means "check everything the filter is showing", so a narrowed list
@@ -13183,7 +13560,7 @@
         if (summary) {
           const count = sessionCount ?? document.querySelectorAll(".found-session").length;
           summary.textContent = pending
-            ? "Your Active Sessions — click Find above to retrieve your sessions."
+            ? "Your Active Sessions — click Find/Refresh Sessions above to retrieve your sessions."
             : `Your Active Sessions (${count})`;
         }
       }
@@ -13290,6 +13667,7 @@
     const foundSessionCards = new Map();
     const foundSessionOpen = new Set();
     const foundVmMoreOpen = new Set();
+    const foundSessionVcTried = new Set();
 
     function applySavedSessionCards() {
       for (const dc of finderLists["session-card"]?.rows || []) {
@@ -13477,9 +13855,19 @@
       foundSessionCards.set(key, dc);
       persistFoundSessionCard(dc);
       const fresh = document.querySelector(`#found-sessions details.found-session-card[data-card-key="${CSS.escape(key)}"]`);
+      const merged = { ...foundRowAsDc({ site, sessionId, status: "Active", active: true }), ...dc };
       const freshBody = fresh?.querySelector(".found-session-detail");
-      if (freshBody) freshBody.innerHTML = foundSessionDetailHtml({ ...foundRowAsDc({ site, sessionId, status: "Active", active: true }), ...dc });
+      if (freshBody) freshBody.innerHTML = foundSessionDetailHtml(merged);
+      paintFoundSessionVc(fresh, merged);
       return dc;
+    }
+
+    function paintFoundSessionVc(card, dc) {
+      const meta = card?.querySelector(".card-summary-meta");
+      const sessionId = String(dc?.sessionId || card?.dataset.session || "");
+      const vc = String(dc?.virtualCenter || "").trim();
+      if (!meta || !sessionId) return;
+      meta.textContent = vc ? `${sessionId} (${vc})` : sessionId;
     }
 
     function rememberFoundStop(site, sessionId, stop) {
@@ -14107,33 +14495,6 @@
       syncAttachSessionsButton();
     }
 
-    function savedIdKeys() {
-      return new Set(
-        (lastSavedIdRows || []).map((row) => {
-          const site = String(row.site || "").toLowerCase();
-          const id = String(row.savedId || "").trim();
-          return site && id ? `${site}:${id}` : "";
-        }).filter(Boolean)
-      );
-    }
-
-    function markSavedIdsOnFoundContent() {
-      const keys = savedIdKeys();
-      if (!keys.size) return 0;
-      let marked = 0;
-      document.querySelectorAll(".found-saved-content, .schedule-saved-content, .saved-ids-found-content").forEach((box) => {
-        const key = `${box.dataset.site}:${box.dataset.contentId}`;
-        if (keys.has(key)) {
-          box.checked = true;
-          marked += 1;
-        }
-      });
-      syncFoundSavedAll();
-      syncScheduleSavedAll();
-      syncSavedIdsFoundAll();
-      return marked;
-    }
-
     function syncFoundSavedAll() {
       syncGroupChecks("found-saved-all-head", ".found-saved-content", "found-saved-dc-head");
       syncDeleteSavedButton();
@@ -14142,27 +14503,6 @@
     function syncSavedIdsFoundAll() {
       syncGroupChecks("", ".saved-ids-found-content", "saved-ids-found-dc-head");
       syncAddSavedButtons();
-    }
-
-    function recheckSavedIdsOnFoundContent({ forSchedule = false } = {}) {
-      if (!lastSavedIdRows.length) {
-        showError("No Saved content IDs yet — complete a save first, or restore a job that has them.");
-        return;
-      }
-      const selector = forSchedule ? ".schedule-saved-content" : ".found-saved-content";
-      if (!document.querySelector(selector)) {
-        showError(forSchedule
-          ? "Click Find my saved content first, then use Recheck saved IDs."
-          : "Click Find saved content first, then use Recheck saved IDs.");
-        return;
-      }
-      showError("");
-      const marked = markSavedIdsOnFoundContent();
-      if (marked) {
-        noteLog(`Rechecked ${marked} saved content row(s) from the Saved content IDs table.`);
-      } else {
-        noteLog("No matching rows in the list — those saved IDs may not appear under Find saved content (e.g. already deleted or promoted only).");
-      }
     }
 
     async function declineAllSurveys() {
@@ -14635,19 +14975,15 @@
     }
 
     const MY_CONTENT_FIND_LABELS = {
-      "btn-find-sessions": "Find My Active Sessions",
-      "btn-refresh-sessions": "Refresh Sessions",
-      "btn-find-schedule-saved": "Find My Saved Content",
-      "btn-refresh-schedule-saved": "Refresh Saved Content",
-      "btn-find-both": "Find Both",
+      "btn-find-sessions": "Find/Refresh Sessions",
+      "btn-find-schedule-saved": "Find/Refresh Content",
+      "btn-find-both": "Find/Refresh Both",
     };
     let myContentFindBusy = false;
 
     const MY_CONTENT_ACTIVITY = {
       "btn-find-sessions": "Pulling your active sessions from dCloud…",
-      "btn-refresh-sessions": "Pulling your active sessions from dCloud…",
       "btn-find-schedule-saved": "Pulling your saved content from dCloud…",
-      "btn-refresh-schedule-saved": "Pulling your saved content from dCloud…",
       "btn-find-both": "Pulling your active sessions and your saved content from dCloud…",
     };
 
@@ -15901,6 +16237,12 @@
     $("btn-continue-auth").addEventListener("click", () => continueAuth().catch((err) => showError(err.message)));
     $("btn-card-check-all").addEventListener("click", () => setCardChecks(true));
     $("btn-card-uncheck-all").addEventListener("click", () => setCardChecks(false));
+    $("filter-job-cards")?.addEventListener("input", () => {
+      applySessionCardFilter("cards", "filter-job-cards", "filter-job-cards-status");
+    });
+    $("filter-monitor-cards")?.addEventListener("input", () => {
+      applySessionCardFilter("monitor-cards", "filter-monitor-cards", "filter-monitor-cards-status");
+    });
     $("btn-extend-checked").addEventListener("click", () => extendSessions().catch((err) => showError(err.message)));
     $("btn-share-checked-cards")?.addEventListener("click", () => {
       openBulkShareModal(checkedShareTargetsFromCards());
@@ -15909,6 +16251,9 @@
       if (ev.target.classList.contains("card-select")) syncWorkspaceBulkButtons();
     });
     $("btn-shutdown").addEventListener("click", () => shutdownSave([]));
+    $("btn-guest-shutdown-checked").addEventListener("click", () => {
+      guestShutdownChecked().catch((err) => showError(err.message));
+    });
     $("btn-end").addEventListener("click", () => endSessions([]));
     $("btn-dismiss").addEventListener("click", () => dismissJob().catch((err) => showError(err.message)));
     $("btn-start-fresh").addEventListener("click", () => startFresh().catch((err) => showError(err.message)));
@@ -15921,7 +16266,6 @@
     $("fresh-modal-cancel").addEventListener("click", () => closeFreshModal(null));
     $("fresh-modal-backdrop").addEventListener("click", () => closeFreshModal(null));
     $("btn-clear-log").addEventListener("click", () => clearLog());
-    $("btn-restore-job").addEventListener("click", () => restoreJob(true).catch((err) => showError(err.message)));
     $("btn-refresh-status").addEventListener("click", () => refreshJobStatus().catch((err) => showError(err.message)));
     $("btn-refresh-monitor").addEventListener("click", () => refreshJobStatus().catch((err) => showError(err.message)));
     $("share-modal-backdrop").addEventListener("click", closeShareModal);
@@ -16020,13 +16364,6 @@
         if (toast) showToast(toast);
       }).catch((err) => showError(err.message));
     });
-    $("btn-refresh-sessions")?.addEventListener("click", () => {
-      runMyContentPull("btn-refresh-sessions", "Refreshing Sessions…", async () => {
-        const sessions = await findSessions({ refresh: true });
-        const toast = myContentPullToast(sessions, null);
-        if (toast) showToast(toast);
-      }).catch((err) => showError(err.message));
-    });
     $("btn-find-both")?.addEventListener("click", () => {
       runMyContentPull("btn-find-both", "Finding Both…", async () => {
         const { sessions, content } = await findBothMyContent({ refresh: true });
@@ -16070,13 +16407,6 @@
         if (toast) showToast(toast);
       }).catch((err) => showError(err.message));
     });
-    $("btn-refresh-schedule-saved")?.addEventListener("click", () => {
-      runMyContentPull("btn-refresh-schedule-saved", "Refreshing Content…", async () => {
-        const content = await findSavedContents("schedule", { refresh: true });
-        const toast = myContentPullToast(null, content);
-        if (toast) showToast(toast);
-      }).catch((err) => showError(err.message));
-    });
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
     $("btn-copy-saved-to-schedule")?.addEventListener("click", () => copyCheckedSavedToSchedule().catch((err) => showError(err.message)));
     $("btn-share-schedule-saved")?.addEventListener("click", () => {
@@ -16099,7 +16429,6 @@
     $("btn-collapse-schedule-saved")?.addEventListener("click", () => setDcGroupsOpen("found-schedule-saved", false));
     $("btn-check-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(true));
     $("btn-uncheck-all-schedule-saved")?.addEventListener("click", () => setScheduleSavedChecks(false));
-    $("btn-recheck-schedule-saved-ids")?.addEventListener("click", () => recheckSavedIdsOnFoundContent({ forSchedule: true }));
     $("btn-attach-sessions").addEventListener("click", () => attachSelectedSessions().catch((err) => showError(err.message)));
     $("btn-share-found-sessions")?.addEventListener("click", () => {
       openBulkShareModal(checkedFoundSessionTargets("found-session"));
@@ -16118,7 +16447,11 @@
       const key = card.dataset.cardKey;
       if (card.open) foundSessionOpen.add(key);
       else foundSessionOpen.delete(key);
-      if (!card.open || foundSessionCards.has(key)) return;
+      if (!card.open) return;
+      const loadedCard = foundSessionCards.get(key);
+      const hasVc = String(loadedCard?.virtualCenter || "").trim();
+      if (loadedCard && (hasVc || foundSessionVcTried.has(key))) return;
+      foundSessionVcTried.add(key);
       loadFoundSessionCard(card.dataset.site, card.dataset.session).catch((err) => {
         const body = card.querySelector(".found-session-detail");
         if (body) body.innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;
@@ -16328,8 +16661,7 @@
         addEvent().catch((err) => showError(err.message));
       }
     });
-    $("btn-events-find")?.addEventListener("click", () => findEvents().catch((err) => showError(err.message)));
-    $("btn-events-find-refresh")?.addEventListener("click", () => findEvents({ refresh: true }).catch((err) => showError(err.message)));
+    $("btn-events-find")?.addEventListener("click", () => findEvents({ refresh: true }).catch((err) => showError(err.message)));
     $("btn-event-find-all-dcs")?.addEventListener("click", () => {
       document.querySelectorAll(".event-find-dc").forEach((box) => { box.checked = true; });
     });
@@ -16380,6 +16712,12 @@
       ) syncEventSelection(group);
     });
     $("panel-events")?.addEventListener("click", (ev) => {
+      const sortTh = ev.target.closest("#found-events th.saved-sort");
+      if (sortTh) {
+        ev.preventDefault();
+        setFoundEventSort(sortTh.dataset.sort);
+        return;
+      }
       const addOne = ev.target.closest(".found-event-add");
       if (addOne) {
         addFoundEvent(addOne.dataset.site, addOne.dataset.eventId).catch((err) => showError(err.message));
@@ -16480,14 +16818,15 @@
     $("btn-unified-search").addEventListener("click", () => searchAllDcloud());
     $("btn-unified-load-content").addEventListener("click", () => loadUnifiedDcData(["content"]));
     $("btn-unified-load-sessions").addEventListener("click", () => loadUnifiedDcData(["sessions"]));
-    $("btn-unified-load-both").addEventListener("click", () => loadUnifiedDcData(["content", "sessions"]));
-    $("btn-unified-search-refresh").addEventListener("click", () => {
-      const sources = ["content", "sessions"].filter((source) => unifiedSearchDcData.loaded[source]);
-      if (!sources.length) {
-        $("unified-search-status").textContent = "Load Content or Sessions first.";
-        return;
-      }
-      loadUnifiedDcData(sources, { refreshData: true });
+    $("btn-unified-load-both").addEventListener("click", () => {
+      const sources = ["content", "sessions"];
+      const sites = selectedUnifiedSearchDcs();
+      const needsDownload = sites.some((site) => sources.some(
+        (source) => !(Number(unifiedSearchDcData.fetchedAt[source]?.[site]) > 0),
+      ));
+      // First click downloads. Once both lists are already here, the same button
+      // asks dCloud for a new copy and still waits 10 minutes between downloads.
+      loadUnifiedDcData(sources, { refreshData: !needsDownload });
     });
     $("btn-unified-search-all-dcs").addEventListener("click", () => {
       document.querySelectorAll(".unified-search-dc").forEach((box) => { box.checked = true; });
@@ -16638,6 +16977,19 @@
       const catalogButton = ev.target.closest(".btn-search-catalog-schedule");
       if (catalogButton) scheduleCatalogSearchResult(catalogButton.dataset.name || "", catalogButton);
     });
+    $("catalog-schedule-sites")?.addEventListener("change", () => syncCatalogScheduleContinue());
+    $("catalog-schedule-all")?.addEventListener("click", () => {
+      document.querySelectorAll(".catalog-schedule-site").forEach((box) => { box.checked = true; });
+      syncCatalogScheduleContinue();
+    });
+    $("catalog-schedule-none")?.addEventListener("click", () => {
+      document.querySelectorAll(".catalog-schedule-site").forEach((box) => { box.checked = false; });
+      syncCatalogScheduleContinue();
+    });
+    $("catalog-schedule-continue")?.addEventListener("click", () => continueCatalogSchedule(false));
+    $("catalog-schedule-vms")?.addEventListener("click", () => continueCatalogSchedule(true));
+    $("catalog-schedule-cancel")?.addEventListener("click", () => closeCatalogSchedulePicker());
+    $("catalog-schedule-backdrop")?.addEventListener("click", () => closeCatalogSchedulePicker());
     $("details-modal-body").addEventListener("click", (ev) => {
       const reveal = ev.target.closest(".btn-reveal-secret");
       if (!reveal) return;
@@ -16666,6 +17018,10 @@
     $("error-banner-dismiss").addEventListener("click", () => dismissErrorBanner());
     $("ending-soon-banner-dismiss").addEventListener("click", () => dismissEndingSoonBanner());
     $("auth-pause-dismiss").addEventListener("click", () => dismissAuthBanner());
+    $("pipeline-hold-dismiss")?.addEventListener("click", () => {
+      dismissedPipelineHold = ($("pipeline-hold-banner-text")?.textContent || "").trim();
+      $("pipeline-hold-banner")?.classList.add("hidden");
+    });
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape") return;
@@ -16684,6 +17040,10 @@
       }
       if (!$("prompt-alert")?.classList.contains("hidden")) {
         hidePromptAlert(null);
+        return;
+      }
+      if (!$("catalog-schedule-modal")?.classList.contains("hidden")) {
+        closeCatalogSchedulePicker();
         return;
       }
       if (!$("confirm-alert")?.classList.contains("hidden")) {
@@ -16769,7 +17129,7 @@
       for (let node = el?.parentElement; node; node = node.parentElement) {
         if (node.tagName === "DETAILS") node.open = true;
       }
-      if (target === "#panel-recovery" || target === "#panel-cleanup" || target === "#panel-saved-schedule") {
+      if (target === "#panel-cleanup" || target === "#panel-saved-schedule") {
         if (el) el.open = true;
       }
       const scroll = () => {
@@ -16825,6 +17185,10 @@
       ev.preventDefault();
       ev.stopPropagation();
       closeDcloudAuth();
+    });
+    document.querySelector("#panel-step1 > summary")?.addEventListener("click", (ev) => {
+      if (ev.target.closest("#btn-close-dcloud-auth")) return;
+      ev.preventDefault();
     });
     $("auth-panel-backdrop")?.addEventListener("click", closeDcloudAuth);
     $("dtoken")?.addEventListener("input", () => {
@@ -16968,6 +17332,7 @@
     syncScheduleCopyHint();
     syncRunButton();
     syncJobAppendHint();
+    if ($("saved-schedule-export")) $("saved-schedule-export").checked = false;
     syncScheduleSavedButton();
   </script>
   <div id="request-toasts" aria-live="polite" aria-relevant="additions"></div>

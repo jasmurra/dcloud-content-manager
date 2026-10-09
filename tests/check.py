@@ -669,7 +669,10 @@ def test_session_card_shows_virtual_center() -> None:
     check(
         "the collapsed session id includes the virtual center",
         "const vcMark = virtualCenter ? ` (${virtualCenter})` : \"\";" in INDEX
-        and "${dc.sessionId}${vcMark}" in INDEX,
+        and "${dc.sessionId}${vcMark}" in INDEX
+        and "function paintFoundSessionVc(" in INDEX
+        and "paintFoundSessionVc(fresh, merged)" in INDEX
+        and "fetch_tbv3_session_details(token, session_id, version)" in (ROOT / "app.py").read_text(encoding="utf-8"),
     )
 
 
@@ -752,7 +755,10 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
     check("the API rewrites vCUBE guest shutdown", "vCUBE has no guest shutdown" in (ROOT / "app.py").read_text(encoding="utf-8"))
     check(
         "the card can shut down all powered-on VMs without saving",
-        "Guest Shutdown All Powered-On VMs" in INDEX,
+        "Guest Shutdown All Powered-On VMs" in INDEX
+        and 'id="btn-guest-shutdown-checked"' in INDEX
+        and "function guestShutdownChecked(" in INDEX
+        and "btn-guest-shutdown-checked" in INDEX,
     )
     check(
         "the no-save action has its own endpoint",
@@ -1000,7 +1006,11 @@ def test_token_refresh_is_not_raced() -> None:
     keepalive = source[
         source.index("def _auth_keepalive_loop(") : source.index("def _start_auth_keepalive(")
     ]
-    check("keepalive refreshes the dCloud token too", '"dcloud": _dcloud_keepalive' in keepalive)
+    check(
+        "keepalive refreshes the dCloud token too",
+        '"dcloud": _dcloud_keepalive' in keepalive
+        and "DCLOUD_REFRESH_IDLE_SECONDS" in keepalive,
+    )
     check(
         "jobs use the live session, not a copied refresh token",
         "_ensure_user_access_token(progress, force=force)" in source,
@@ -1549,7 +1559,9 @@ def test_job_cards_survive_an_update_restart() -> None:
     )
     check(
         "last-job.json with cards auto-restores after an update, even if it is older than 4 hours",
-        app._auto_restore_eligible({"id": "j-keep", "dcs": job["dcs"], "updatedAt": job["updatedAt"]}) is True,
+        app._auto_restore_eligible({"id": "j-keep", "dcs": job["dcs"], "updatedAt": job["updatedAt"]}) is True
+        and 'id="btn-restore-job"' not in INDEX
+        and "Restore Last Job" not in INDEX,
     )
     check(
         "an empty last-job snapshot is not auto-restored",
@@ -1703,7 +1715,17 @@ def test_schedule_labels_and_export_default() -> None:
         and "Schedule Regular Session" in INDEX
         and "Schedule Exported Session" in INDEX
         and "check to spin up session with VMs powered off" in INDEX
-        and "Schedule Checked Saved Content (with VMs powered off)" in INDEX
+        and "Schedule Checked Saved Content (with VMs powered off)" not in INDEX
+        and 'class="check-line" for="saved-schedule-export"' in INDEX
+        and INDEX.index('for="saved-schedule-export"') < INDEX.index('for="saved-auto-next-available"')
+        and "Schedule Exported Session" in INDEX[
+            INDEX.index("function syncScheduleSavedButton")
+            : INDEX.index("function syncScheduleSavedButton") + 280
+        ]
+        and "Schedule Regular Session" in INDEX[
+            INDEX.index("function syncScheduleSavedButton")
+            : INDEX.index("function syncScheduleSavedButton") + 280
+        ]
         and 'authorized ? "Login"' in INDEX
         and "dCloud Log In" in INDEX
         and "CAMGR Connected" in INDEX
@@ -2049,7 +2071,13 @@ def test_staggered_session_copies_cards() -> None:
         parse_schedule_datetime(kept[0]["requestedStart"]) == later + timedelta(minutes=5),
         str(kept[0].get("requestedStart")),
     )
-    check("the page refreshes a stale start before scheduling", "bumpScheduleStartIfPast" in INDEX)
+    bump_fn = INDEX[INDEX.index("function bumpScheduleStartIfPast"):INDEX.index("function setControlToNow")]
+    check(
+        "the page refreshes a stale start before scheduling",
+        "function bumpScheduleStartIfPast" in INDEX
+        and "roundUp5(now)" not in bump_fn
+        and "startMinute.getTime() >= nowMinute.getTime()" in bump_fn,
+    )
     check(
         "the page sends the start unshifted now that the server staggers",
         "const firstDelay" not in INDEX and 'shiftedScheduleIso("sched-start", 0)' in INDEX,
@@ -2122,6 +2150,11 @@ def test_staggered_session_copies_cards() -> None:
         and "function findBothMyContent" in INDEX
         and "function runMyContentPull" in INDEX
         and "Finding Both…" in INDEX
+        and "Find/Refresh Sessions" in my_content
+        and "Find/Refresh Content" in my_content
+        and "Find/Refresh Both" in my_content
+        and 'id="btn-refresh-sessions"' not in my_content
+        and 'id="btn-refresh-schedule-saved"' not in my_content
         and "Pulling your active sessions from dCloud…" in INDEX
         and "Pulling your saved content from dCloud…" in INDEX
         and "refresh = true" in INDEX[INDEX.index("async function findBothMyContent"):INDEX.index("async function findBothMyContent") + 400]
@@ -2543,6 +2576,9 @@ def test_event_management_section() -> None:
         and 'class="event-find-dc"' in INDEX
         and 'id="filter-found-events"' in INDEX
         and "function findEvents(" in INDEX
+        and "function sortFoundEventRows(" in INDEX
+        and "function setFoundEventSort(" in INDEX
+        and 'foundEventSortTh("eventStart", "Start")' in INDEX
         and "function viewFoundEventSessions(" in INDEX
         and "liveOpen" in INDEX[
             INDEX.index("function renderDcGroupedList(")
@@ -2571,10 +2607,12 @@ def test_event_management_section() -> None:
         and "restoreCachedSavedContentList()" in INDEX
         and "function restoreCachedSessionList(" in INDEX
         and "restoreCachedSessionList()" in INDEX
-        and 'id="btn-events-find-refresh"' in INDEX
-        and 'id="btn-refresh-sessions"' in INDEX
+        and "Find/Refresh Events" in INDEX
+        and "findEvents({ refresh: true })" in INDEX
+        and 'id="btn-events-find-refresh"' not in INDEX
+        and "findSessions({ refresh: true })" in INDEX
         and 'id="btn-refresh-workspace-sessions"' in INDEX
-        and 'id="btn-refresh-schedule-saved"' in INDEX
+        and 'findSavedContents("schedule", { refresh: true })' in INDEX
         and 'id="btn-saved-ids-find-refresh"' in INDEX
         and "Showing the last pull" in INDEX
         and '"fetchedAt": fetched_at' in source
@@ -2614,6 +2652,14 @@ def test_event_management_section() -> None:
         "full Content and Sessions lists stay until Refresh Loaded Data",
         "_ADMIN_SEARCH_CACHE_SECONDS = 10 * 60" in client_source
         and "waits 10 minutes between downloads" in INDEX
+        and 'id="btn-unified-load-both"' in INDEX
+        and "Load/Refresh Both" in INDEX
+        and 'id="btn-unified-search-refresh"' not in INDEX
+        and 'id="catalog-schedule-modal"' in INDEX
+        and "Continue scheduling" in INDEX
+        and "Continue + VMs" in INDEX
+        and "Uncheck all" in INDEX
+        and 'showAppView("schedule")' in INDEX
         and "if cached:" in client_source[client_source.index("def fetch_admin_records("):client_source.index("def list_event_sessions(")]
         and "data-unified-age" in INDEX
         and 'id="my-content-activity"' in INDEX,
@@ -3142,6 +3188,9 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "warm_hub=" in page
         and "if (allowWindow && wantHub)" in page
         and "connectHubAfterLogin" in page
+        and "if (allowWindow) closeDcloudAuth();" in page
+        and "DCLOUD_SIGN_IN_NEEDED = " in browser
+        and "content: none" in page
         and "_warm_hub_sessions" in browser
         and "host_resolves" in browser[browser.index("def _warm_hub_sessions(") : browser.index("def _cookie_header(")]
         and "warm_hub: bool = True" in source
@@ -3170,12 +3219,26 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "Call log:" in browser
         and "kill EPERM" in browser,
     )
+    camgr_wait = browser[browser.index("def capture_site_cookies(") : browser.index("def capture_dcloud_tokens(")]
+    dcloud_wait = browser[browser.index("def capture_dcloud_tokens(") : browser.index("def _page_path(")]
+    check(
+        "the sign-in window is raised once and then leaves the mouse alone",
+        "page.bring_to_front()" not in camgr_wait
+        and "_focus_duo_tab()" not in camgr_wait
+        and "page.bring_to_front()" not in dcloud_wait
+        and "_focus_duo_tab()" not in dcloud_wait
+        and "Do not activate the window." in browser,
+    )
     check(
         "a headed sign-in stays open when the Duo popup closes and then opens the target site",
         "WINDOW_BLANK_GRACE_SECONDS" in browser
         and "def _open_target_page(" in browser
         and "opened_target_after_sso" in browser
+        and "def _idp_blocks_navigation(" in browser
+        and "def _duo_prompt_finished(" in browser
         and "def _open_keeper(" in browser
+        and "_KEEPER_HTML" in browser[browser.index("def _open_keeper(") : browser.index("def _focus_duo_tab(")]
+        and "raised_for_target" in browser
         and "def _focus_duo_tab(" in browser,
     )
     warm = browser[browser.index("def _warm_hub_sessions(") : browser.index("def _cookie_header(")]
@@ -3183,6 +3246,8 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "the Duo Continue page stays up until CAMGR can be opened",
         "def _still_on_idp(" in browser
         and "Do not navigate away from Duo." in warm
+        and "_idp_blocks_navigation(" in warm
+        and "_open_target_page(" in warm
         and "_warm_hub_sessions(page, context, deadline=deadline)" in browser
         and 'key != "camgr"' in warm
         and "window.close = function" in browser
@@ -3277,6 +3342,25 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and auto_fn.count('integrate_status="error"') == 1
         and 'if result.get("loggedIn") is False:' in auto_fn,
     )
+    check(
+        "a dropped CAI sign-in keeps the transfer and waits to integrate",
+        'status="waiting_auth"' in auto_fn
+        and "waiting_auth" in source[source.index("auto_status in ") : source.index("auto_status in ") + 80]
+        and "def _pipeline_watch_loop(" in source
+        and "_start_pipeline_watch()" in source,
+    )
+    check(
+        "CAMGR refresh keeps a saved transfer when the sign-in drops",
+        "pipelineHold" in source[source.index("def _refresh_camgr_transfer_statuses(") : source.index("def _camgr_job_to_transfer_row(")]
+        and 'refreshed.get("hold")' in source[source.index("def api_camgr_transfer_refresh(") : source.index("def api_camgr_jobs_import(")],
+    )
+    check(
+        "the page tells you to reconnect without losing the transfer",
+        'id="pipeline-hold-banner"' in INDEX
+        and "Transfer finished. Connect to CAI to submit integration." in INDEX
+        and "Connect to CAMGR. Progress so far is saved." in INDEX
+        and "Sign in to dCloud so the new sessions can be scheduled." in INDEX,
+    )
     import camgr_client
     from camgr_client import _vpod_number, list_camgr_vpods
 
@@ -3347,7 +3431,8 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         '<textarea id="prompt-alert-description"' in page
         and "maxlength=\"255\"" not in page.split('id="prompt-alert-description"')[1].split("</textarea>")[0]
         and 'id="prompt-alert-description-count"' in page
-        and "TBv3 accepts a longer description than 255 characters" in page,
+        and "TBv3 accepts a longer description than 255 characters" not in page
+        and "The count is just so you can see the length." not in page,
     )
     check(
         "save description character count updates while typing",
@@ -3365,6 +3450,13 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         "function renderCardGroups(" in page
         and 'class="card-site-group"' in page
         and 'class="card-site-count"' in page
+        and 'class="card-site-heading"' in page
+        and 'const viewLink = monitor ? "" : dcViewLink(site, "sessions")' in page
+        and 'id="filter-job-cards"' in page
+        and 'id="filter-monitor-cards"' in page
+        and "function applySessionCardFilter(" in page
+        and "sessionCardFilterSnapshots" in page
+        and 'setBoxesChecked(document.querySelectorAll("#cards .card-select"), checked)' in page
         and '$("cards").innerHTML = renderCardGroups(' in page
         and '$("monitor-cards").innerHTML = renderCardGroups(' in page,
     )
@@ -3509,11 +3601,11 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
     )
     check(
         "finding saved content no longer pre-checks Content Automation Hub rows",
-        # Only the Recheck saved IDs button may still call it.
-        page.count("= markSavedIdsOnFoundContent();") == 1
+        "markSavedIdsOnFoundContent" not in page
+        and "recheckSavedIdsOnFoundContent" not in page
         and "auto-checked ${marked} from Saved content IDs" not in page
-        and 'id="btn-recheck-schedule-saved-ids"' in page
-        and "function recheckSavedIdsOnFoundContent(" in page,
+        and 'id="btn-recheck-schedule-saved-ids"' not in page
+        and "Recheck Saved IDs" not in page,
     )
     check(
         "Hub saved-content rows are not auto-checked on refresh",
@@ -3706,7 +3798,10 @@ def test_selected_badge_is_per_card() -> None:
     check(
         "card refresh does not paint selected from the job-wide Load VMs list",
         'tag_selected_vms(live, list(dc.get("powerOnTargets") or []))' in load
-        and "_dc_power_targets" not in load,
+        and "_dc_power_targets" not in load
+        and "def _remember_scheduled_power(" in source
+        and "targets = list(dc.get(\"powerOnTargets\") or [])" in source
+        and "def _arm_power_resume(" in source,
     )
     check(
         "monitoring attach ignores Load VMs checks",
@@ -3746,9 +3841,62 @@ def test_stale_selected_badge_is_cleared() -> None:
         ]
     }
     app._retag_dc_selected_vms(job)
+    remembered = {
+        "dcs": [],
+    }
+    fresh = [{"site": "rtp", "phase": "waiting", "contentExport": True}]
+    watched = [{"site": "rtp", "phase": "waiting", "contentExport": True, "monitorOnly": True}]
+    app._remember_scheduled_power(
+        remembered,
+        fresh,
+        [{"name": "User Workstation 1", "displayName": "User Workstation 1"}],
+        content_export=True,
+    )
+    app._remember_scheduled_power(
+        remembered,
+        watched,
+        [{"name": "User Workstation 1", "displayName": "User Workstation 1"}],
+        content_export=True,
+    )
+    app._remember_scheduled_power(
+        remembered,
+        fresh,
+        [{"name": "Other"}],
+        content_export=False,
+    )
+    resumed = {
+        "dcs": [
+            {
+                "site": "sjc",
+                "sessionId": "1",
+                "phase": "ready",
+                "contentExport": True,
+                "autoPowered": False,
+                "powerOnPending": True,
+                "powerOnTargets": [{"name": "User Workstation 1"}],
+                "_power_resume_attempts": 3,
+            },
+            {
+                "site": "rtp",
+                "sessionId": "2",
+                "phase": "ready",
+                "contentExport": True,
+                "monitorOnly": True,
+                "powerOnPending": True,
+                "powerOnTargets": [{"name": "Microsoft Active Directory"}],
+            },
+        ]
+    }
+    app._arm_power_resume(resumed)
     check(
         "a regular/monitoring card loses leftover selected",
-        job["dcs"][0]["vms"][0]["selected"] is False,
+        job["dcs"][0]["vms"][0]["selected"] is False
+        and fresh[0]["powerOnPending"] is True
+        and fresh[0]["powerOnTargets"][0]["name"] == "User Workstation 1"
+        and "powerOnPending" not in watched[0]
+        and resumed["dcs"][0]["phase"] == "waiting"
+        and resumed["dcs"][0].get("_power_resume_attempts") is None
+        and resumed["dcs"][1]["phase"] == "ready",
     )
     check(
         "Load VMs on that session still marks the checked VM",

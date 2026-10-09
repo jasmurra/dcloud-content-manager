@@ -72,6 +72,7 @@ TOOLBOX_AUTHORIZE_URL = (
 TOOLBOX_SIGN_IN_NEEDED = (
     "Demo Toolbox needs a Cisco sign-in in the tool browser — click Log in to dCloud."
 )
+DCLOUD_SIGN_IN_NEEDED = "A sign-in is needed in the tool browser."
 
 # Hosts that mean "a person has to type something": Cisco's Okta tenant and Duo.
 IDP_HOSTS = (
@@ -124,6 +125,47 @@ def _idp_waiting_for_human(page: Any) -> bool:
         return page.locator("input[type='password'], input[name='identifier'], #okta-signin-username").count() > 0
     except Exception:
         return True
+
+
+def _duo_prompt_finished(page: Any) -> bool:
+    """True on Duo's done page. That tab is not the login anymore."""
+    if "duosecurity" not in _page_host(page):
+        return False
+    try:
+        url = str(page.url or "").lower()
+    except Exception:
+        url = ""
+    if "result=success" in url or "/success" in url:
+        return True
+    try:
+        text = page.locator("body").inner_text(timeout=800).lower()
+    except Exception:
+        return False
+    return any(
+        phrase in text
+        for phrase in (
+            "you can close this window",
+            "you can close",
+            "authentication successful",
+            "you're logged in",
+            "you are logged in",
+            "you're signed in",
+            "you are signed in",
+        )
+    )
+
+
+def _idp_blocks_navigation(context: Any) -> bool:
+    """True while a person still has to finish Cisco or Duo.
+
+    A leftover Duo tab that already says the login is done does not count.
+    Leaving that tab in charge meant Connect never opened CAMGR to save the cookie.
+    """
+    for page in _safe_pages(context):
+        if not _is_idp_page(page) or _duo_prompt_finished(page):
+            continue
+        return True
+    return False
 
 
 def profile_exists() -> bool:
@@ -555,7 +597,7 @@ def _still_on_idp(context: Any) -> bool:
 
 def _open_target_page(context: Any, url: str) -> Any | None:
     """Open the site we still need a cookie from. Used after SSO, when the login popup has closed."""
-    if _still_on_idp(context):
+    if _idp_blocks_navigation(context):
         # Do not navigate away from Duo. The person still has to click
         # Continue in browser, then come back to this same window.
         return None
@@ -663,6 +705,21 @@ def _warm_hub_sessions(
     while pending and time.time() < end:
         workable = _work_page(context)
         if _still_on_idp(context) and workable is None:
+            # Duo's own page says the login is done. Open the site we still
+            # need a cookie from. Waiting here is the 10–20s pause after
+            # "you can close this window", before the login dialog can finish.
+            if not _idp_blocks_navigation(context):
+                key, url, _hosts = pending[0]
+                if time.time() < navigate_after:
+                    time.sleep(0.3)
+                    continue
+                navigate_after = time.time() + 5
+                opened = _open_target_page(context, url)
+                if opened is not None and _page_is_error(opened):
+                    pending.pop(0)
+                    on_host_since.pop(key, None)
+                    attempt_until = 0.0
+                continue
             # CAMGR's own redirect lands here right after dCloud. Press Log in
             # once so the session they just finished is reused.
             now = time.time()
@@ -714,10 +771,6 @@ def _warm_hub_sessions(
                     continue
                 navigate_after = time.time() + 5
                 try:
-                    page.bring_to_front()
-                except Exception:
-                    pass
-                try:
                     page.goto(url, wait_until="domcontentloaded", timeout=45_000)
                 except Exception as exc:
                     if _is_idp_page(page):
@@ -732,7 +785,7 @@ def _warm_hub_sessions(
                     on_host_since.pop(key, None)
                     attempt_until = 0.0
                     continue
-                attempt_until = time.time() + 25
+                attempt_until = time.time() + (25 if key == "camgr" else 6)
                 continue
         if _is_idp_page(page):
             on_host_since.clear()
@@ -753,7 +806,7 @@ def _warm_hub_sessions(
         # CAMGR is the cookie this sign-in exists to capture. Other hub
         # sites can be skipped after a short try; CAMGR waits out the deadline.
         if attempt_until <= 0:
-            attempt_until = time.time() + 25
+            attempt_until = time.time() + (25 if key == "camgr" else 6)
         if key != "camgr" and time.time() > attempt_until:
             pending.pop(0)
             attempt_until = 0.0
@@ -985,8 +1038,8 @@ _KEEPER_TITLE = "Leave this window open"
 _KEEPER_HTML = """<!DOCTYPE html><html><head><title>Leave this window open</title></head>
 <body style="font-family:-apple-system,sans-serif;padding:2.5rem;line-height:1.45">
 <h1>Leave this window open</h1>
-<p>Finish the Duo prompt. If a tab opened in your main browser, it is being brought forward.</p>
-<p>This window stays here and then signs in to CAMGR. You can ignore it until that page loads.</p>
+<p>Finish Duo in this window. It stays open in the background, so you can keep using the rest of the computer.</p>
+<p>Click back to this window when you are ready for the fingerprint prompt. It will not keep taking over the screen.</p>
 </body></html>"""
 _last_duo_focus = 0.0
 
@@ -1039,28 +1092,41 @@ def _work_page(context: Any) -> Any | None:
 
 
 def _show_sign_in(context: Any) -> None:
-    """The dCloud tab stays in front. The extra Duo tab is not the sign-in."""
-    page = _dcloud_page(context)
-    if page is None:
-        for candidate in _login_pages(context):
-            if _is_idp_page(candidate):
-                page = candidate
-                break
-    if page is None:
-        pages = _login_pages(context)
-        page = pages[-1] if pages else None
-    if page is None:
-        return
-    try:
-        page.bring_to_front()
-    except Exception:
-        pass
+    """Remember which tab is the sign-in. Do not activate the window.
+
+    Pulling it forward on every check stole the mouse from the fingerprint
+    dialog and from whatever else the person was doing. The window is raised
+    once when it opens, then left alone so it can stay up in the background.
+    """
+    return None
 
 
 def _open_keeper(context: Any) -> Any | None:
-    """Keep the Cisco page in the one sign-in window. Do not open a second window."""
-    _show_sign_in(context)
-    return None
+    """Keep one tab so Duo cannot close the whole window.
+
+    The login tab is often the only tab. Duo's "open in browser" closes it,
+    and Chromium then quits, so Connect never gets a chance to open CAMGR.
+    This tab stays in the same window and is not brought forward.
+    """
+    for page in _safe_pages(context):
+        if _is_keeper(page):
+            return page
+    try:
+        page = context.new_page()
+        page.set_content(_KEEPER_HTML)
+        # The new tab would cover the sign-in. Put the original tab back in
+        # front once. This tab only exists so the window survives Duo.
+        for existing in _safe_pages(context):
+            if existing is page or _is_keeper(existing):
+                continue
+            try:
+                existing.bring_to_front()
+            except Exception:
+                pass
+            break
+        return page
+    except Exception:
+        return None
 
 
 def _focus_duo_tab() -> None:
@@ -1203,6 +1269,7 @@ def capture_site_cookies(
                 saw_idp = False
                 opened_target_after_sso = False
                 reopened_blank = False
+                raised_for_target = False
                 while time.time() < deadline:
                     if not headed and _user_needs_window.is_set():
                         return None, "A sign-in window was requested."
@@ -1214,29 +1281,24 @@ def capture_site_cookies(
                         _open_keeper(context)
                         # One replacement tab. Opening a new one every pass
                         # closes the window and brings it straight back.
-                        if not reopened_blank:
-                            reopened_blank = True
-                            _raise_tool_window()
+                        if not reopened_blank and not _idp_blocks_navigation(context):
                             opened = _open_target_page(context, url)
                             if opened is not None:
+                                reopened_blank = True
                                 page = opened
                                 opened_target_after_sso = True
                                 _hold_window_open(context)
-                                try:
-                                    page.bring_to_front()
-                                except Exception:
-                                    pass
+                                if not raised_for_target:
+                                    raised_for_target = True
+                                    _raise_tool_window()
                         time.sleep(0.4)
                         continue
                     if pages:
-                        page = pages[-1]
-                        if headed:
-                            _show_sign_in(context)
-                    if _still_on_idp(context) or _is_idp_page(page):
+                        page = _work_page(context) or pages[-1]
+                    if any(_is_idp_page(item) for item in pages):
                         saw_idp = True
+                    if _idp_blocks_navigation(context):
                         opened_target_after_sso = False
-                        if headed:
-                            _focus_duo_tab()
                         # Silent callers gain nothing by waiting out a login form.
                         if (
                             not headed
@@ -1245,24 +1307,32 @@ def capture_site_cookies(
                             return None, "A sign-in is needed in the tool browser."
                         time.sleep(1.2)
                         continue
+                    on_target = any(_page_on_hosts(item, hosts) for item in pages)
                     if (
                         headed
-                        and saw_idp
+                        and not on_target
                         and not opened_target_after_sso
-                        and not _page_on_hosts(page, hosts)
+                        and (saw_idp or time.time() - started > SSO_SETTLE_SECONDS)
                     ):
+                        # Duo can finish and leave its own tab up. Open the site
+                        # we still need a cookie from instead of waiting that out.
+                        nav = _work_page(context) or page
                         try:
-                            page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                            nav.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                            page = nav
                         except Exception:
                             opened = _open_target_page(context, url)
                             if opened is not None:
                                 page = opened
                         opened_target_after_sso = True
+                        if not raised_for_target:
+                            raised_for_target = True
+                            _raise_tool_window()
                         continue
                     # A cookie saved from an earlier visit is not proof that
                     # this window has reached the site. Closing on that cookie
                     # was taking the window down a few seconds after it opened.
-                    if headed and not _page_on_hosts(page, hosts):
+                    if headed and not on_target:
                         time.sleep(0.6)
                         continue
                     last_header = _cookie_header(context.cookies(), hosts)
@@ -1414,17 +1484,11 @@ def capture_dcloud_tokens(
                             page = opened
                             attach(page)
                             _hold_window_open(context)
-                            try:
-                                page.bring_to_front()
-                            except Exception:
-                                pass
                         time.sleep(0.4)
                         continue
                     blank_since = 0.0
                     if pages:
                         page = pages[-1]
-                        if headed:
-                            _show_sign_in(context)
                     # Silent callers must not sit here: once the redirects settle on an
                     # identity-provider page, only a real person can move it forward.
                     if (
@@ -1471,7 +1535,6 @@ def capture_dcloud_tokens(
                             continue
                     if headed and _still_on_idp(context):
                         saw_idp = True
-                        _focus_duo_tab()
                         time.sleep(0.5)
                         continue
                     if headed and time.time() - started < SSO_SETTLE_SECONDS:
@@ -1792,8 +1855,6 @@ def capture_toolbox_jwt(
                     pages = _login_pages(context) if headed else _safe_pages(context)
                     if pages:
                         page = pages[-1]
-                        if headed:
-                            _show_sign_in(context)
                     token = _current_toolbox_jwt(page, caught)
                     if token:
                         return token, "Signed in to Demo Toolbox with the tool browser."

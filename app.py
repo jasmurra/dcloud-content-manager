@@ -98,6 +98,8 @@ from dcloud_client import (
     fetch_session_log,
     update_session_schedule,
     extract_content_topology_uid,
+    extract_topology_uid,
+    fetch_tbv3_session_details,
     extract_parent_content_id,
     extract_root_content_id,
     root_content_id_is_self,
@@ -208,7 +210,7 @@ from camgr_client import (
 )
 
 from camgr_browser import capture_camgr_session
-from net_errors import host_resolves, off_network_message
+from net_errors import host_resolves, looks_off_network, off_network_message
 from tool_browser import (
     capture_dcloud_tokens,
     headed_is_open,
@@ -356,6 +358,9 @@ AUTH_KEEPALIVE_SECONDS = 240
 # Refresh the dCloud access JWT this long before it expires, so a long CAMGR
 # transfer + CAI integrate still has a live token when burn-in schedules.
 DCLOUD_REFRESH_BEFORE_SECONDS = 5 * 60
+# dCloud drops an unused refresh token in about two hours. Rotate it on this
+# interval so an idle tool still has a login later in the day.
+DCLOUD_REFRESH_IDLE_SECONDS = 45 * 60
 # While signed out, recapture from the tool browser if that profile already exists.
 AUTH_WATCH_SECONDS = 15
 # Reading Chrome's cookie DB hits macOS Keychain, so background loops never do it.
@@ -393,6 +398,26 @@ _managed_saved_lock = threading.Lock()
 _auto_integrate_lock = threading.Lock()
 _auto_integrate_busy: set[str] = set()
 _AUTO_INTEGRATE_MAX_ATTEMPTS = 36
+# A dropped sign-in or network must not finish the pipeline as a failure.
+# The step stays queued and runs after Connect / the network returns.
+CAI_HOLD_MESSAGE = (
+    "Transfer finished. Connect to CAI to submit integration. "
+    "The transfer is saved and integration continues after you connect."
+)
+CAMGR_HOLD_MESSAGE = (
+    "CAMGR needs a sign-in to keep tracking this transfer. "
+    "Connect to CAMGR. Progress so far is saved."
+)
+NETWORK_HOLD_MESSAGE = (
+    "The Cisco network dropped. This step stays queued and continues when the network is back."
+)
+DCLOUD_HOLD_MESSAGE = (
+    "Integration finished. Sign in to dCloud so the new sessions can be scheduled. "
+    "Integration is saved."
+)
+_pipeline_watch_lock = threading.Lock()
+_pipeline_watch_started = False
+PIPELINE_WATCH_SECONDS = 30
 _burn_in_lock = threading.Lock()
 _burn_in_busy: set[str] = set()
 # How often a failed transfer row asks CAMGR again, in case it was re-submitted.
@@ -640,6 +665,7 @@ def _apply_user_session(
         if (access or "").strip():
             exp = jwt_expires_at(access)
             _user_auth["expires_at"] = exp or (time.time() + 3600)
+            _user_auth["refreshed_at"] = time.time()
     _persist_user_session()
 
 
@@ -655,6 +681,7 @@ def _persist_user_session() -> None:
                 "source",
                 "profile_name",
                 "profile_user_id",
+                "refreshed_at",
             )
         }
     if not (snap.get("refresh_token") or snap.get("access_token")):
@@ -707,6 +734,10 @@ def _load_persisted_session() -> None:
     if stored_exp:
         with _user_auth_lock:
             _user_auth["expires_at"] = stored_exp
+    stored_refreshed = float(data.get("refreshed_at") or 0)
+    if stored_refreshed:
+        with _user_auth_lock:
+            _user_auth["refreshed_at"] = stored_refreshed
     profile_name = str(data.get("profile_name") or "").strip()
     profile_user_id = str(data.get("profile_user_id") or "").strip()
     if profile_name:
@@ -775,11 +806,14 @@ def _ensure_user_access_token(
                 if access:
                     return access
     if tool_browser_profile_exists() and not headed_is_open() and _playwright_refresh_allowed("dcloud"):
-        access, new_refresh, found_site, _message = capture_dcloud_tokens(
-            site or "rtp",
-            headed=False,
-            timeout_s=25,
-        )
+        try:
+            access, new_refresh, found_site, _message = capture_dcloud_tokens(
+                site or "rtp",
+                headed=False,
+                timeout_s=25,
+            )
+        except Exception:
+            access = ""
         if access and _access_token_still_valid(access, jwt_expires_at(access)):
             _apply_user_session(access, new_refresh, found_site or site or "rtp", "browser")
             return access
@@ -2072,7 +2106,7 @@ def _saved_id_display_row(
     auto_pending = (
         bool(transfer.get("autoIntegrate"))
         and str(transfer.get("status") or "").strip().lower() == "complete"
-        and auto_status in {"", "pending", "waiting"}
+        and auto_status in {"", "pending", "waiting", "waiting_auth"}
     )
     return {
         "site": site.upper(),
@@ -2116,6 +2150,8 @@ def _saved_id_display_row(
         "autoIntegrate": bool(transfer.get("autoIntegrate")),
         "autoIntegratePending": auto_pending,
         "autoIntegrateStatus": auto_status,
+        "pipelineHold": _pipeline_hold_kind(transfer, integrate, auto_status, burn_in_status),
+        "pipelineHoldMessage": _pipeline_hold_message(transfer, integrate, auto_status, burn_in_status),
         "autoBurnIn": bool(integrate.get("autoBurnIn") or transfer.get("autoBurnIn")),
         "burnInDays": int(integrate.get("burnInDays") or transfer.get("burnInDays") or 1),
         "burnInStatus": burn_in_status or str(transfer.get("burnInStatus") or ""),
@@ -2744,6 +2780,82 @@ def _recover_saved_from_active_id(
     return True
 
 
+def _vm_power_intent(selected: list[Any] | None) -> list[dict[str, Any]]:
+    """Names to power on, stored on the card before the session is Active."""
+    intent: list[dict[str, Any]] = []
+    for vm in selected or []:
+        if hasattr(vm, "model_dump"):
+            vm = vm.model_dump()
+        if not isinstance(vm, dict):
+            continue
+        name = str(vm.get("name") or vm.get("displayName") or "").strip()
+        short = str(vm.get("shortName") or "").strip()
+        if not name and not short:
+            continue
+        intent.append(
+            {
+                "name": vm.get("name") or "",
+                "displayName": vm.get("displayName") or vm.get("name") or "",
+                "shortName": short,
+                "mor": vm.get("mor") or "",
+                "uid": vm.get("uid") or "",
+            }
+        )
+    return intent
+
+
+def _remember_scheduled_power(
+    job: dict[str, Any],
+    cards: list[dict[str, Any]],
+    selected: list[Any] | None,
+    *,
+    content_export: bool,
+) -> None:
+    """Keep the checked VM list on each new card so a restart can still power them on.
+
+    A regular session, or an exported session with nothing checked, does not get this.
+    Monitoring cards are never included.
+    """
+    if not content_export:
+        return
+    intent = _vm_power_intent(selected)
+    if not intent:
+        return
+    changed = False
+    for dc in cards or []:
+        if dc.get("monitorOnly") or dc.get("autoPowered"):
+            continue
+        if dc.get("contentExport") is False:
+            continue
+        dc["powerOnTargets"] = intent
+        dc["powerOnPending"] = True
+        changed = True
+    if changed:
+        _persist_job(job)
+
+
+def _arm_power_resume(job: dict[str, Any]) -> bool:
+    """After a restart, keep cards that still owe a power-on in the status watch."""
+    changed = False
+    for dc in job.get("dcs") or []:
+        dc.pop("_power_worker", None)
+        dc.pop("_power_resume_attempts", None)
+        if dc.get("monitorOnly") or dc.get("autoPowered") or not dc.get("powerOnPending"):
+            continue
+        if not (dc.get("powerOnTargets") or []):
+            continue
+        if dc.get("contentExport") is False:
+            continue
+        phase = str(dc.get("phase") or "")
+        if phase in _TERMINAL_DC_PHASES or phase in {"error", "shutting_down", "saving", "ending"}:
+            continue
+        if phase in {"powering", "ready"}:
+            dc["phase"] = "waiting"
+            dc["message"] = "App restarted. Waiting to power on the VMs you checked."
+            changed = True
+    return changed
+
+
 def _dc_power_targets(dc: dict[str, Any], job: dict[str, Any]) -> list[dict[str, Any]]:
     explicit = dc.get("powerOnTargets") or []
     if explicit:
@@ -3046,23 +3158,74 @@ def _vm_power_summary(vms: list[dict[str, Any]]) -> str:
 
 
 def _power_selected_after_interrupt(job: dict[str, Any], dc: dict[str, Any], token: str) -> None:
-    """If a reload killed the wait/power thread, finish power-on for selected VMs once."""
-    if job.get("worker_alive") or dc.get("autoPowered") or not dc.get("powerOnPending"):
+    """Finish power-on for the VMs checked on this card when the wait thread is gone.
+
+    Uses this card's saved list only. The job-wide Load VMs list is not a fallback,
+    so a later schedule cannot power those names on an unrelated card.
+    """
+    if (
+        job.get("worker_alive")
+        or dc.get("_power_worker")
+        or dc.get("autoPowered")
+        or not dc.get("powerOnPending")
+    ):
         return
     site = dc["site"]
     sid = str(dc.get("sessionId") or "").strip()
-    targets = _dc_power_targets(dc, job)
-    chosen, _missing = match_selected_vms(dc.get("vms") or [], targets)
+    targets = list(dc.get("powerOnTargets") or [])
+    if not sid or not targets:
+        return
+    vms = dc.get("vms") or []
+    if not vms:
+        return
+    attempts = int(dc.get("_power_resume_attempts") or 0)
+    if attempts >= 3:
+        return
+    dc["_power_resume_attempts"] = attempts + 1
+    chosen, missing = match_selected_vms(vms, targets)
     need = [vm for vm in chosen if not _vm_is_powered_on(vm)]
+    if not chosen:
+        if missing:
+            _log(
+                job,
+                f"{site.upper()}: still waiting to match VMs to power on: {', '.join(missing)}.",
+            )
+        return
     if not need:
         _set_dc(job, site, match_session=sid, autoPowered=True, powerOnPending=False)
         return
     _log(
         job,
-        f"{site.upper()}: wait thread was interrupted — powering on "
-        f"{', '.join(str(vm.get('name') or '') for vm in need)}.",
+        f"{site.upper()}: powering on "
+        f"{', '.join(str(vm.get('displayName') or vm.get('name') or '') for vm in need)}.",
     )
     results = power_on_vms(token, site, sid, need, progress=lambda msg: _log(job, msg))
+    _load_dc_vms(job, dc, token)
+    live = dc.get("vms") or []
+    matched_now, _missing_now = match_selected_vms(live, targets)
+    still_off = [vm for vm in matched_now if not _vm_is_powered_on(vm)]
+    failed = [r for r in results if not r.get("ok")]
+    if still_off or failed:
+        detail = ""
+        if failed:
+            detail = "Power-on did not finish: " + "; ".join(
+                f"{r.get('name')}: {r.get('message')}" for r in failed
+            )
+        elif still_off:
+            names = ", ".join(
+                str(vm.get("displayName") or vm.get("name") or "") for vm in still_off
+            )
+            detail = f"Still powered off: {names}. Will try again."
+        _set_dc(
+            job,
+            site,
+            match_session=sid,
+            autoPowered=False,
+            powerOnPending=True,
+            powerResults=results,
+            message=detail,
+        )
+        return
     _set_dc(
         job,
         site,
@@ -3070,8 +3233,8 @@ def _power_selected_after_interrupt(job: dict[str, Any], dc: dict[str, Any], tok
         autoPowered=True,
         powerOnPending=False,
         powerResults=results,
+        message="",
     )
-    _load_dc_vms(job, dc, token)
 
 
 def _refresh_dc_save_progress(job: dict[str, Any], dc: dict[str, Any], token: str) -> None:
@@ -3389,12 +3552,30 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             message = f"VMs did not load: {vm_err}"
         elif not (dc.get("vms") or []):
             message = "dCloud returned no VMs for this session."
-        elif dc.get("powerOnPending"):
+        elif dc.get("powerOnPending") and not job.get("worker_alive") and not dc.get("_power_worker"):
             _power_selected_after_interrupt(job, dc, token)
+        if (
+            dc.get("powerOnPending")
+            and not dc.get("autoPowered")
+            and int(dc.get("_power_resume_attempts") or 0) < 3
+            and not job.get("worker_alive")
+            and not dc.get("_power_worker")
+        ):
+            bump(
+                phase="waiting",
+                status="Active",
+                message=str(dc.get("message") or "") or "Waiting to power on the VMs you checked.",
+                resetPendingUntil=0,
+                endedWithoutSave=False,
+            )
+            return
+        settled = message
+        if dc.get("powerOnPending") and int(dc.get("_power_resume_attempts") or 0) >= 3:
+            settled = str(dc.get("message") or "") or message
         bump(
             phase="ready",
             status="Active",
-            message=message,
+            message=settled,
             resetPendingUntil=0,
             endedWithoutSave=False,
         )
@@ -3485,7 +3666,9 @@ def _watch_job_statuses(job: dict[str, Any]) -> None:
             _retire_ended_cards(job)
             _sync_job_phase(job)
             return
-        tok = job.get("token") or token
+        tok = str(job.get("token") or token or "").strip()
+        if not tok:
+            tok, _token_err = _refresh_job_token(job)
         if tok:
             for dc in pending:
                 if job["stop"].is_set():
@@ -3641,11 +3824,14 @@ def _load_last_job() -> None:
                 "VM shutdown monitoring was interrupted by the app restart. "
                 "Refresh this card to check which VMs are still powered on."
             )
-    if _prune_old_cards(job):
+    resumed_power = _arm_power_resume(job)
+    if _prune_old_cards(job) or resumed_power:
         _persist_job(job)
     _retire_ended_cards(job)
     with _jobs_lock:
-        _jobs.setdefault(job["id"], job)
+        stored = _jobs.setdefault(job["id"], job)
+    if stored is job:
+        _ensure_status_watch(job)
 
 
 def _log(job: dict[str, Any], message: str) -> None:
@@ -3844,7 +4030,12 @@ def _auth_keepalive_loop() -> None:
         token, _expires_at, refresh, _site = _read_user_session()
         if not token and not refresh:
             return {"loggedIn": False}
-        return {"loggedIn": bool(_ensure_user_access_token())}
+        with _user_auth_lock:
+            refreshed_at = float(_user_auth.get("refreshed_at") or 0)
+        # Rotate a refresh token that has been sitting, instead of waiting
+        # until the access token is five minutes from expiry.
+        idle = bool(refresh) and (not refreshed_at or time.time() - refreshed_at >= DCLOUD_REFRESH_IDLE_SECONDS)
+        return {"loggedIn": bool(_ensure_user_access_token(force=idle))}
 
     probes = {
         "camgr": _camgr_auto_connect,
@@ -3872,6 +4063,70 @@ def _start_auth_keepalive() -> None:
             return
         _auth_keepalive_started = True
     threading.Thread(target=_auth_keepalive_loop, daemon=True).start()
+
+
+def _pipeline_has_pending() -> bool:
+    state = _managed_saved_state()
+    for item in state.get("transfers") or []:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "").strip().lower()
+        if status not in {"complete", "error", ""}:
+            return True
+        if _auto_integrate_pending(item):
+            return True
+    for item in state.get("integrates") or []:
+        if not isinstance(item, dict):
+            continue
+        overall = str(item.get("status") or "").strip().lower()
+        if overall in {"submitted", "queuing", "processing", "waiting"}:
+            return True
+        if str(item.get("burnInStatus") or "") in {"", "pending", "waiting_id", "waiting_auth"} and item.get("autoBurnIn"):
+            if overall == "completed":
+                return True
+    return False
+
+
+def _pipeline_watch_once() -> None:
+    target: dict[str, Any] | None = None
+    with _jobs_lock:
+        for job in _jobs.values():
+            if job.get("discarded"):
+                continue
+            if job.get("camgrTransfers") or job.get("caiIntegrates"):
+                target = job
+                break
+    try:
+        _refresh_camgr_transfer_statuses(target)
+    except HTTPException:
+        pass
+    try:
+        _refresh_cai_integrate_statuses(target)
+    except HTTPException:
+        pass
+
+
+def _pipeline_watch_loop() -> None:
+    # The browser tab is not required. Sleep, a closed lid, and a short network
+    # drop pause this thread with the rest of the Mac, then it continues the
+    # same transfer → integration → new-session steps from what was saved.
+    while True:
+        time.sleep(PIPELINE_WATCH_SECONDS)
+        try:
+            if not _pipeline_has_pending():
+                continue
+            _pipeline_watch_once()
+        except Exception:
+            continue
+
+
+def _start_pipeline_watch() -> None:
+    global _pipeline_watch_started
+    with _pipeline_watch_lock:
+        if _pipeline_watch_started:
+            return
+        _pipeline_watch_started = True
+    threading.Thread(target=_pipeline_watch_loop, daemon=True).start()
 
 
 def _camgr_open_worker() -> None:
@@ -4086,13 +4341,64 @@ def _integrate_saved_demo(
     }
 
 
+def _pipeline_offline(message: object) -> bool:
+    text = str(message or "")
+    return looks_off_network(text) or "not on the cisco network" in text.lower()
+
+
+def _pipeline_hold_kind(
+    transfer: dict[str, Any],
+    integrate: dict[str, Any],
+    auto_status: str,
+    burn_in_status: str,
+) -> str:
+    if auto_status == "waiting_auth":
+        return str(transfer.get("pipelineHold") or "cai")
+    transfer_status = str(transfer.get("status") or "").strip().lower()
+    if transfer.get("pipelineHold") and transfer_status not in {"complete", "error", ""}:
+        return str(transfer.get("pipelineHold") or "")
+    if integrate.get("pipelineHold") and str(integrate.get("status") or "") not in {"completed", "error"}:
+        return str(integrate.get("pipelineHold") or "")
+    if burn_in_status == "waiting_auth":
+        return "dcloud"
+    return ""
+
+
+def _pipeline_hold_message(
+    transfer: dict[str, Any],
+    integrate: dict[str, Any],
+    auto_status: str,
+    burn_in_status: str,
+) -> str:
+    kind = _pipeline_hold_kind(transfer, integrate, auto_status, burn_in_status)
+    if not kind:
+        return ""
+    if auto_status == "waiting_auth":
+        return str(transfer.get("pipelineHoldMessage") or transfer.get("message") or CAI_HOLD_MESSAGE)
+    if kind == "dcloud":
+        return str(integrate.get("pipelineHoldMessage") or integrate.get("burnInMessage") or DCLOUD_HOLD_MESSAGE)
+    if transfer.get("pipelineHold") == kind:
+        return str(transfer.get("pipelineHoldMessage") or "")
+    return str(integrate.get("pipelineHoldMessage") or "")
+
+
+def _stamp_pipeline_hold(item: dict[str, Any], kind: str, message: str) -> None:
+    item["pipelineHold"] = kind
+    item["pipelineHoldMessage"] = message
+
+
+def _clear_pipeline_hold(item: dict[str, Any]) -> None:
+    item["pipelineHold"] = ""
+    item["pipelineHoldMessage"] = ""
+
+
 def _auto_integrate_pending(item: dict[str, Any]) -> bool:
     if not item.get("autoIntegrate"):
         return False
     if str(item.get("status") or "").strip().lower() != "complete":
         return False
     flag = str(item.get("autoIntegrateStatus") or "").strip().lower()
-    return flag in {"", "pending", "waiting"}
+    return flag in {"", "pending", "waiting", "waiting_auth"}
 
 
 def _mark_auto_integrate_state(
@@ -4150,14 +4456,12 @@ def _try_auto_integrate_transfer(job: dict[str, Any] | None, item: dict[str, Any
             job=job,
             wait_for_dests=True,
         )
-        attempts = int(item.get("autoIntegrateAttempts") or 0) + 1
-        item["autoIntegrateAttempts"] = attempts
-        timed_out = attempts >= _AUTO_INTEGRATE_MAX_ATTEMPTS
-        retryable = bool(result.get("waiting")) or result.get("loggedIn") is False
-        if result.get("ok"):
+
+        def _submitted(hit: dict[str, Any]) -> dict[str, Any]:
+            _clear_pipeline_hold(item)
             item["autoIntegrateStatus"] = "submitted"
-            item["message"] = result.get("message") or "CAI integration submitted."
-            row = result.get("row") or {}
+            item["message"] = hit.get("message") or "CAI integration submitted."
+            row = hit.get("row") or {}
             if item.get("autoBurnIn"):
                 row.update(
                     {
@@ -4170,7 +4474,53 @@ def _try_auto_integrate_transfer(job: dict[str, Any] | None, item: dict[str, Any
                 _upsert_cai_integrate(job, row)
             _upsert_camgr_transfer(job, item)
             return {"ok": True, "row": row, "message": item["message"]}
-        if retryable and not timed_out:
+
+        def _hold_for_reconnect(hit: dict[str, Any]) -> dict[str, Any]:
+            # Sign-in and network loss stay queued. A later Connect submits this
+            # same transfer; attempts are not spent, so overnight does not expire it.
+            kind = "network" if _pipeline_offline(hit.get("message")) else "cai"
+            message = NETWORK_HOLD_MESSAGE if kind == "network" else CAI_HOLD_MESSAGE
+            _stamp_pipeline_hold(item, kind, message)
+            _mark_auto_integrate_state(
+                job,
+                item,
+                status="waiting_auth",
+                message=message,
+                dests=dests,
+            )
+            return {"ok": False, "waiting": True, "waitingAuth": True, "message": message}
+
+        if result.get("ok"):
+            return _submitted(result)
+        if result.get("loggedIn") is False:
+            return _hold_for_reconnect(result)
+        if _pipeline_offline(result.get("message")):
+            return _hold_for_reconnect(result)
+        attempts = int(item.get("autoIntegrateAttempts") or 0) + 1
+        item["autoIntegrateAttempts"] = attempts
+        if (
+            result.get("waiting")
+            and attempts >= _AUTO_INTEGRATE_MAX_ATTEMPTS
+            and not item.get("autoIntegratePartialTried")
+        ):
+            item["autoIntegratePartialTried"] = True
+            available = cai_integrate_dests(list(result.get("available") or []))
+            if available:
+                partial = _integrate_saved_demo(
+                    cookie,
+                    site=site,
+                    saved_id=saved_id,
+                    dests=available,
+                    job=job,
+                    wait_for_dests=False,
+                )
+                if partial.get("ok"):
+                    return _submitted(partial)
+                if partial.get("loggedIn") is False or _pipeline_offline(partial.get("message")):
+                    return _hold_for_reconnect(partial)
+                result = partial
+        if result.get("waiting"):
+            _clear_pipeline_hold(item)
             _mark_auto_integrate_state(
                 job,
                 item,
@@ -4179,55 +4529,6 @@ def _try_auto_integrate_transfer(job: dict[str, Any] | None, item: dict[str, Any
                 dests=dests,
             )
             return {"ok": False, "waiting": True, "message": item["message"]}
-        if retryable and timed_out:
-            available = cai_integrate_dests(list(result.get("available") or []))
-            if available:
-                result = _integrate_saved_demo(
-                    cookie,
-                    site=site,
-                    saved_id=saved_id,
-                    dests=available,
-                    job=job,
-                    wait_for_dests=False,
-                )
-                if result.get("ok"):
-                    item["autoIntegrateStatus"] = "submitted"
-                    item["message"] = result.get("message") or "CAI integration submitted."
-                    row = result.get("row") or {}
-                    if item.get("autoBurnIn"):
-                        row.update(
-                            {
-                                "autoBurnIn": True,
-                                "burnInDays": max(1, int(item.get("burnInDays") or 1)),
-                                "burnInStatus": str(row.get("burnInStatus") or "pending"),
-                                "burnInJobId": str(row.get("burnInJobId") or ""),
-                            }
-                        )
-                        _upsert_cai_integrate(job, row)
-                    _upsert_camgr_transfer(job, item)
-                    return {"ok": True, "row": row, "message": item["message"]}
-            # CAI never got the request (session gone, dests not ready). Do not
-            # paint Integration Error chips as if CAI itself failed.
-            _mark_auto_integrate_state(
-                job,
-                item,
-                status="error",
-                message=str(
-                    result.get("message")
-                    or "Timed out waiting for CAI dest DCs. Connect to CAI, Load VMs, and Submit integration."
-                ),
-                dests=dests,
-            )
-            return {"ok": False, "message": item["message"]}
-        if result.get("loggedIn") is False:
-            _mark_auto_integrate_state(
-                job,
-                item,
-                status="error",
-                message=str(result.get("message") or "CAI is not signed in. Click Connect to CAI, then Submit integration."),
-                dests=dests,
-            )
-            return {"ok": False, "message": item["message"]}
         _mark_auto_integrate_state(
             job,
             item,
@@ -4258,7 +4559,6 @@ def _camgr_error_row_is_due(item: dict[str, Any]) -> bool:
 
 
 def _refresh_camgr_transfer_statuses(job: dict[str, Any] | None) -> dict[str, Any]:
-    cookie = _require_camgr_cookie()
     items = []
     seen: set[str] = set()
     if job is not None:
@@ -4280,87 +4580,146 @@ def _refresh_camgr_transfer_statuses(job: dict[str, Any] | None) -> dict[str, An
         items.append(item)
     changed = False
     auto_integrated: list[dict[str, Any]] = []
+    hold = ""
+    hold_message = ""
+    # Completed transfers can still need CAI. That step does not need a CAMGR cookie,
+    # so a dropped CAMGR sign-in must not block integration.
     for item in items:
         status = str(item.get("status") or "").strip().lower()
-        if status in {"complete", "error"}:
-            if _auto_integrate_pending(item):
-                auto_hit = _try_auto_integrate_transfer(job, item)
-                if auto_hit.get("ok"):
-                    auto_integrated.append(auto_hit.get("row") or item)
-                    changed = True
-                elif auto_hit.get("waiting") or auto_hit.get("message"):
-                    changed = True
-                continue
-            if not _camgr_error_row_is_due(item):
-                continue
-            # Fall through and ask CAMGR again: this row may have been re-submitted.
-            item["errorCheckedAt"] = time.time()
-            _upsert_camgr_transfer(job, item)
-        refreshed = refresh_camgr_job(
-            cookie,
-            guid=str(item.get("guid") or ""),
-            demo_id=str(item.get("demoId") or item.get("savedId") or ""),
-            source_dc=str(item.get("camgrDc") or ""),
-            servers=list(item.get("servers") or []),
-            dest_dcs=list(item.get("dcs") or []),
-            owner=str(item.get("owner") or ""),
-        )
-        if refreshed.get("loggedIn") is False:
-            _camgr_mark_unverified(refreshed.get("message") or "")
-            return refreshed
-        if not refreshed.get("ok"):
-            return refreshed
-        hit = refreshed.get("job") or {}
-        if not refreshed.get("found") or not hit:
+        if status == "complete" and _auto_integrate_pending(item):
+            auto_hit = _try_auto_integrate_transfer(job, item)
+            if auto_hit.get("ok"):
+                auto_integrated.append(auto_hit.get("row") or item)
+                changed = True
+            elif auto_hit.get("waiting") or auto_hit.get("message"):
+                changed = True
+            if auto_hit.get("waitingAuth"):
+                hold = str(item.get("pipelineHold") or "cai")
+                hold_message = str(item.get("pipelineHoldMessage") or hold_message)
+    needs_camgr = []
+    for item in items:
+        status = str(item.get("status") or "").strip().lower()
+        if status in {"complete", ""}:
             continue
-        new_status = str(hit.get("status") or "").strip().lower()
-        new_raw = str(hit.get("statusRaw") or "").strip()
-        new_progress = hit.get("progress")
-        new_guid = str(hit.get("guid") or item.get("guid") or "")
-        new_dc_status = hit.get("dcStatus") or []
-        if (
-            new_status != status
-            or new_raw != str(item.get("statusRaw") or "")
-            or new_progress != item.get("progress")
-            or new_guid != str(item.get("guid") or "")
-            or new_dc_status != (item.get("dcStatus") or [])
-        ):
-            item.update(
-                {
-                    "status": new_status,
-                    "statusRaw": new_raw,
-                    "progress": new_progress,
-                    "guid": new_guid,
-                    "sessionId": hit.get("sessionId") or item.get("sessionId") or 0,
-                    "dcStatus": hit.get("dcStatus") or [],
-                    "dcs": hit.get("dcs") or item.get("dcs") or [],
-                    "message": f"{new_raw} {new_progress}%".strip()
-                    if new_raw and new_status not in {"complete", "error"}
-                    else (new_raw or item.get("message") or ""),
-                }
-            )
-            _upsert_camgr_transfer(job, item)
-            if job is not None and status == "error" and new_status not in {"complete", "error"}:
-                _log(
-                    job,
-                    f"{str(item.get('site') or '').upper()}: following the re-submitted CAMGR "
-                    f"transfer for {item.get('savedId')} ({new_raw or new_status}). "
-                    "The earlier attempt failed.",
-                )
-            elif job is not None and new_status in {"complete", "error"}:
-                _log(
-                    job,
-                    f"{str(item.get('site') or '').upper()}: CAMGR transfer "
-                    f"{new_raw or new_status} for {item.get('savedId')}.",
-                )
-            if new_status == "complete" and _auto_integrate_pending(item):
-                auto_hit = _try_auto_integrate_transfer(job, item)
-                if auto_hit.get("ok"):
-                    auto_integrated.append(auto_hit.get("row") or item)
+        if status == "error" and not _camgr_error_row_is_due(item):
+            continue
+        needs_camgr.append(item)
+    cookie = ""
+    if needs_camgr:
+        try:
+            cookie = _require_camgr_cookie()
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, str) else "CAMGR session expired."
+            kind = "network" if _pipeline_offline(detail) else "camgr"
+            message = NETWORK_HOLD_MESSAGE if kind == "network" else CAMGR_HOLD_MESSAGE
+            hold = hold or kind
+            hold_message = hold_message or message
+            for item in needs_camgr:
+                if str(item.get("status") or "").strip().lower() == "complete":
+                    continue
+                _stamp_pipeline_hold(item, kind, message)
+                _upsert_camgr_transfer(job, item)
+            changed = True
+    if cookie:
+        for item in needs_camgr:
+            _refresh_one_camgr_transfer(job, item, cookie, auto_integrated)
+            if item.get("pipelineHold"):
+                hold = hold or str(item.get("pipelineHold"))
+                hold_message = hold_message or str(item.get("pipelineHoldMessage") or "")
             changed = True
     if changed and job is not None:
         _persist_job(job)
-    return {"ok": True, "loggedIn": True, "autoIntegrated": auto_integrated}
+    return {
+        "ok": True,
+        "loggedIn": not bool(hold),
+        "hold": hold,
+        "holdMessage": hold_message,
+        "autoIntegrated": auto_integrated,
+    }
+
+
+def _refresh_one_camgr_transfer(
+    job: dict[str, Any] | None,
+    item: dict[str, Any],
+    cookie: str,
+    auto_integrated: list[dict[str, Any]],
+) -> None:
+    status = str(item.get("status") or "").strip().lower()
+    if status == "error":
+        item["errorCheckedAt"] = time.time()
+        _upsert_camgr_transfer(job, item)
+    refreshed = refresh_camgr_job(
+        cookie,
+        guid=str(item.get("guid") or ""),
+        demo_id=str(item.get("demoId") or item.get("savedId") or ""),
+        source_dc=str(item.get("camgrDc") or ""),
+        servers=list(item.get("servers") or []),
+        dest_dcs=list(item.get("dcs") or []),
+        owner=str(item.get("owner") or ""),
+    )
+    if refreshed.get("loggedIn") is False or _pipeline_offline(refreshed.get("message")):
+        _camgr_mark_unverified(str(refreshed.get("message") or ""))
+        kind = "network" if _pipeline_offline(refreshed.get("message")) else "camgr"
+        message = NETWORK_HOLD_MESSAGE if kind == "network" else CAMGR_HOLD_MESSAGE
+        _stamp_pipeline_hold(item, kind, message)
+        _upsert_camgr_transfer(job, item)
+        return
+    if not refreshed.get("ok"):
+        if _pipeline_offline(refreshed.get("message")):
+            _stamp_pipeline_hold(item, "network", NETWORK_HOLD_MESSAGE)
+            _upsert_camgr_transfer(job, item)
+        return
+    hit = refreshed.get("job") or {}
+    if not refreshed.get("found") or not hit:
+        return
+    new_status = str(hit.get("status") or "").strip().lower()
+    new_raw = str(hit.get("statusRaw") or "").strip()
+    new_progress = hit.get("progress")
+    new_guid = str(hit.get("guid") or item.get("guid") or "")
+    new_dc_status = hit.get("dcStatus") or []
+    had_hold = bool(item.get("pipelineHold"))
+    if had_hold:
+        _clear_pipeline_hold(item)
+    if (
+        had_hold
+        or new_status != status
+        or new_raw != str(item.get("statusRaw") or "")
+        or new_progress != item.get("progress")
+        or new_guid != str(item.get("guid") or "")
+        or new_dc_status != (item.get("dcStatus") or [])
+    ):
+        item.update(
+            {
+                "status": new_status,
+                "statusRaw": new_raw,
+                "progress": new_progress,
+                "guid": new_guid,
+                "sessionId": hit.get("sessionId") or item.get("sessionId") or 0,
+                "dcStatus": hit.get("dcStatus") or [],
+                "dcs": hit.get("dcs") or item.get("dcs") or [],
+                "message": f"{new_raw} {new_progress}%".strip()
+                if new_raw and new_status not in {"complete", "error"}
+                else (new_raw or item.get("message") or ""),
+            }
+        )
+        _upsert_camgr_transfer(job, item)
+        if job is not None and status == "error" and new_status not in {"complete", "error"}:
+            _log(
+                job,
+                f"{str(item.get('site') or '').upper()}: following the re-submitted CAMGR "
+                f"transfer for {item.get('savedId')} ({new_raw or new_status}). "
+                "The earlier attempt failed.",
+            )
+        elif job is not None and new_status in {"complete", "error"}:
+            _log(
+                job,
+                f"{str(item.get('site') or '').upper()}: CAMGR transfer "
+                f"{new_raw or new_status} for {item.get('savedId')}.",
+            )
+        if new_status == "complete" and _auto_integrate_pending(item):
+            auto_hit = _try_auto_integrate_transfer(job, item)
+            if auto_hit.get("ok"):
+                auto_integrated.append(auto_hit.get("row") or item)
 
 
 def _camgr_job_to_transfer_row(pub: dict[str, Any], *, site: str, saved_id: str) -> dict[str, Any]:
@@ -4850,7 +5209,8 @@ def _queue_integration_burn_in(
         token = _cached_user_access_token()
         if not token:
             item["burnInStatus"] = "waiting_auth"
-            item["burnInMessage"] = "Burn-in is waiting for a dCloud login."
+            item["burnInMessage"] = DCLOUD_HOLD_MESSAGE
+            _stamp_pipeline_hold(item, "dcloud", DCLOUD_HOLD_MESSAGE)
             _upsert_cai_integrate(None, item)
             return job, 0
         if job is None:
@@ -4873,6 +5233,8 @@ def _queue_integration_burn_in(
                 "burnInMessage": (
                     f"Queued {len(targets)} integrated demo(s) for a {days}-day burn-in."
                 ),
+                "pipelineHold": "",
+                "pipelineHoldMessage": "",
             }
         )
         _upsert_cai_integrate(None, item)
@@ -4890,12 +5252,21 @@ def _queue_integration_burn_in(
 
 def _refresh_cai_integrate_statuses(job: dict[str, Any] | None) -> dict[str, Any]:
     cookie = _require_cai_cookie()
-    listed = list_cai_tasks(cookie)
-    if not listed.get("ok"):
-        if listed.get("loggedIn") is False:
-            _set_cai_cookie("", "CAI session expired.")
-        return listed
-    tasks = listed.get("tasks") or []
+    listed = list_cai_tasks(cookie) if cookie else {
+        "ok": False,
+        "loggedIn": False,
+        "message": "CAI is not signed in.",
+    }
+    cai_down = not listed.get("ok")
+    if cai_down and listed.get("loggedIn") is False:
+        _set_cai_cookie("", "CAI session expired.")
+    tasks = [] if cai_down else (listed.get("tasks") or [])
+    cai_hold = "network" if _pipeline_offline(listed.get("message")) else "cai"
+    cai_hold_message = (
+        NETWORK_HOLD_MESSAGE
+        if cai_hold == "network"
+        else "Integration is still in progress. Connect to CAI to keep checking it. Progress is saved."
+    )
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     if job is not None:
@@ -4917,6 +5288,17 @@ def _refresh_cai_integrate_statuses(job: dict[str, Any] | None) -> dict[str, Any
         items.append(item)
     changed = False
     for item in items:
+        if cai_down:
+            overall = str(item.get("status") or "")
+            if overall not in {"completed", "error", ""}:
+                _stamp_pipeline_hold(item, cai_hold, cai_hold_message)
+                _upsert_cai_integrate(job, item)
+                changed = True
+            continue
+        if item.get("pipelineHold"):
+            _clear_pipeline_hold(item)
+            _upsert_cai_integrate(job, item)
+            changed = True
         dests = cai_integrate_dests(list(item.get("dcs") or []))
         dc_tasks = list(item.get("dcTasks") or [])
         dest_pending = [
@@ -5056,9 +5438,16 @@ def _refresh_cai_integrate_statuses(job: dict[str, Any] | None) -> dict[str, Any
         worker = _run_job if burn_job is not job else _schedule_and_watch_new_dcs
         threading.Thread(target=worker, args=(burn_job, payload), daemon=True).start()
     primary_burn_job = next(reversed(burn_jobs.values()), None)
+    hold = cai_hold if cai_down else ""
+    hold_message = cai_hold_message if cai_down else ""
+    if any(str(item.get("burnInStatus") or "") == "waiting_auth" for item in items):
+        hold = hold or "dcloud"
+        hold_message = hold_message or DCLOUD_HOLD_MESSAGE
     return {
         "ok": True,
-        "loggedIn": True,
+        "loggedIn": not cai_down,
+        "hold": hold,
+        "holdMessage": hold_message,
         "tasks": tasks,
         "burnInJob": primary_burn_job,
         "burnInJobs": list(burn_jobs.values()),
@@ -5075,6 +5464,7 @@ set_camgr_cookie_sink(_camgr_cookie_rotated)
 # hidden browsers, and the extra one blocks the sign-in window.
 if __name__ != "__main__":
     _start_auth_keepalive()
+    _start_pipeline_watch()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -5774,6 +6164,45 @@ def _watch_and_power_dc(
 ) -> None:
     if not session_id:
         return
+    export = bool(payload.content_export) and not payload.skip_power_on
+    intent = _vm_power_intent(selected) if export else []
+    if intent:
+        _set_dc(
+            job,
+            site,
+            match_session=session_id,
+            powerOnTargets=intent,
+            powerOnPending=True,
+            _power_worker=True,
+        )
+    else:
+        _set_dc(job, site, match_session=session_id, _power_worker=True)
+    try:
+        _watch_and_power_dc_body(
+            job,
+            payload,
+            site,
+            session_id,
+            selected,
+            progress=progress,
+            current_token=current_token,
+            recover=recover,
+        )
+    finally:
+        _set_dc(job, site, match_session=session_id, _power_worker=False)
+
+
+def _watch_and_power_dc_body(
+    job: dict[str, Any],
+    payload: RunPayload,
+    site: str,
+    session_id: str,
+    selected: list[dict[str, Any]],
+    *,
+    progress: Callable[[str], None],
+    current_token: Callable[[], str],
+    recover: Callable[[str], tuple[str, str | None]],
+) -> None:
     wait = wait_until_active(
         current_token(),
         site,
@@ -5852,6 +6281,7 @@ def _watch_and_power_dc(
         }
         for vm in matched
     ]
+    stored_targets = power_targets or _vm_power_intent(selected)
     _set_dc(
         job,
         site,
@@ -5859,8 +6289,8 @@ def _watch_and_power_dc(
         phase="powering",
         status="Active",
         message="Matching VMs and powering on…",
-        powerOnPending=bool(power_targets),
-        powerOnTargets=power_targets,
+        powerOnPending=bool(stored_targets),
+        powerOnTargets=stored_targets,
     )
     tok = current_token()
     results = []
@@ -5883,30 +6313,39 @@ def _watch_and_power_dc(
         current_token(), site, session_id, live, live_details
     )
     live = attach_vm_access_links(current_token(), site, session_id, live)
-    live = tag_selected_vms(live, power_targets or selected)
+    live = tag_selected_vms(live, stored_targets or selected)
     failed = [r for r in results if not r.get("ok")]
     # The demo powers its own VMs on, so report what is actually off rather than
     # what this tool was asked to start.
     powered_off = [vm for vm in (live or []) if not _vm_is_powered_on(vm)]
+    still_needed: list[dict[str, Any]] = []
+    if stored_targets:
+        matched_live, _still_missing = match_selected_vms(live or [], stored_targets)
+        still_needed = [vm for vm in matched_live if not _vm_is_powered_on(vm)]
+        if selected and not matched_live:
+            still_needed = list(stored_targets)
+    finished = not still_needed
     message = ""
     if failed:
         message = "Power-on finished with errors: " + "; ".join(
             f"{r.get('name')}: {r.get('message')}" for r in failed
         )
+    elif not finished:
+        message = "Still waiting to power on the VMs you checked."
     elif not matched and powered_off:
         message = "Expand Powered off below if you need another VM started."
     _set_dc(
         job,
         site,
         match_session=session_id,
-        phase="ready",
+        phase="ready" if finished else "waiting",
         status="Active",
         message=message,
         vms=live,
         powerResults=results,
-        powerOnTargets=power_targets,
-        autoPowered=True,
-        powerOnPending=False,
+        powerOnTargets=stored_targets,
+        autoPowered=finished,
+        powerOnPending=not finished,
         name=str((live_details or {}).get("name") or "").strip(),
         viewUrl=wait.get("viewUrl")
         or session_view_url(site, session_id, session=live_details or wait.get("session")),
@@ -6105,6 +6544,12 @@ def _schedule_and_watch_new_dcs(job: dict[str, Any], payload: RunPayload) -> Non
         )
         if scheduled:
             progress(f"Scheduled {len(scheduled)} session(s) in parallel.")
+        _remember_scheduled_power(
+            job,
+            scheduled,
+            selected,
+            content_export=bool(payload.content_export),
+        )
         _spawn_watch_threads(
             job,
             payload,
@@ -6154,6 +6599,12 @@ def _run_job(job: dict[str, Any], payload: RunPayload) -> None:
         )
         if scheduled:
             progress(f"Scheduled {len(scheduled)} session(s) in parallel.")
+        _remember_scheduled_power(
+            job,
+            scheduled,
+            selected,
+            content_export=bool(payload.content_export),
+        )
 
         job["phase"] = "waiting_active"
         threads = _spawn_watch_threads(
@@ -8536,6 +8987,15 @@ def api_session_card(body: SearchItemPayload) -> dict[str, Any]:
         "ownedByMe": True,
         **_dc_ids_from_session(details),
     }
+    # The dashboard list often has no vCenter number. Session details use
+    # virtualCenterId, and expand=server can omit it, so the expand that loads
+    # this card checks the topology session when the first payload has none.
+    if not str(dc.get("virtualCenter") or "").strip():
+        version = extract_topology_uid(details)
+        tbv3, _tbv3_err = fetch_tbv3_session_details(token, session_id, version)
+        virtual_center = session_virtual_center(tbv3)
+        if virtual_center:
+            dc["virtualCenter"] = virtual_center
     return {"ok": True, "dc": dc}
 
 
@@ -9140,16 +9600,14 @@ def api_cai_replace_refresh(body: CaiRefreshPayload) -> dict[str, Any]:
             job = _job(jid)
         except HTTPException:
             job = None
+    replace_blocked = False
     if job is not None:
         refreshed = _refresh_cai_replace_statuses(job)
-        if refreshed.get("loggedIn") is False:
-            raise HTTPException(401, refreshed.get("message") or "CAI session expired.")
-        if not refreshed.get("ok"):
-            raise HTTPException(400, refreshed.get("message") or "Could not refresh CAI tasks.")
+        replace_blocked = refreshed.get("loggedIn") is False or not refreshed.get("ok")
     integ = _refresh_cai_integrate_statuses(job)
-    if integ.get("loggedIn") is False:
+    if integ.get("loggedIn") is False and not integ.get("hold") and not replace_blocked:
         raise HTTPException(401, integ.get("message") or "CAI session expired.")
-    if not integ.get("ok"):
+    if not integ.get("ok") and not integ.get("hold"):
         raise HTTPException(400, integ.get("message") or "Could not refresh CAI integrations.")
     burn_in_job = integ.get("burnInJob")
     if burn_in_job is not None:
@@ -9160,6 +9618,8 @@ def api_cai_replace_refresh(body: CaiRefreshPayload) -> dict[str, Any]:
         "savedIds": _saved_id_summary(job),
         "tasks": integ.get("tasks") or [],
         "burnInScheduled": int(integ.get("burnInScheduled") or 0),
+        "hold": integ.get("hold") or "",
+        "holdMessage": integ.get("holdMessage") or "",
     }
 
 
@@ -9677,15 +10137,17 @@ def api_camgr_transfer(body: CamgrTransferPayload) -> dict[str, Any]:
 def api_camgr_transfer_refresh(body: CaiRefreshPayload) -> dict[str, Any]:
     job = _maybe_job(body.job_id)
     refreshed = _refresh_camgr_transfer_statuses(job)
-    if refreshed.get("loggedIn") is False:
+    if refreshed.get("loggedIn") is False and not refreshed.get("hold"):
         raise HTTPException(401, refreshed.get("message") or "CAMGR session expired.")
-    if not refreshed.get("ok"):
+    if not refreshed.get("ok") and not refreshed.get("hold"):
         raise HTTPException(400, refreshed.get("message") or "Could not refresh CAMGR transfers.")
     return {
         "ok": True,
         "job": _public_job(job) if job is not None else None,
         "savedIds": _saved_id_summary(job),
         "autoIntegrated": refreshed.get("autoIntegrated") or [],
+        "hold": refreshed.get("hold") or "",
+        "holdMessage": refreshed.get("holdMessage") or "",
     }
 
 
