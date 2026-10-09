@@ -3069,7 +3069,9 @@ def test_sign_in_browser_follows_chrome_stable() -> None:
         "the sign-in window launches that Chrome and tells Duo its real version",
         'launch_args["executable_path"] = executable' in launch
         and "context.add_init_script(_chrome_brand_script())" in launch
-        and 'brand: "Google Chrome"' in browser,
+        and 'brand: "Google Chrome"' in browser
+        and "def _keep_sign_in_browser_out_of_open_with(" in browser
+        and '"-gc"' in browser,
     )
     with tempfile.TemporaryDirectory() as tmp:
         app_dir = Path(tmp) / "Google Chrome for Testing.app" / "Contents"
@@ -3084,6 +3086,8 @@ def test_sign_in_browser_follows_chrome_stable() -> None:
                     "CFBundleName": "Google Chrome for Testing",
                     "CFBundleDisplayName": "Google Chrome for Testing",
                     "CFBundleExecutable": "Google Chrome for Testing",
+                    "CFBundleURLTypes": [{"CFBundleURLSchemes": ["http", "https", "file"]}],
+                    "CFBundleDocumentTypes": [{"CFBundleTypeName": "HTML"}],
                 },
                 handle,
             )
@@ -3095,6 +3099,8 @@ def test_sign_in_browser_follows_chrome_stable() -> None:
             labeled.get("CFBundleName") == "Chromium for DCM"
             and labeled.get("CFBundleDisplayName") == "Chromium for DCM"
             and labeled.get("CFBundleExecutable") == "Google Chrome for Testing"
+            and "CFBundleURLTypes" not in labeled
+            and "CFBundleDocumentTypes" not in labeled
             and binary.is_file(),
             str(labeled),
         )

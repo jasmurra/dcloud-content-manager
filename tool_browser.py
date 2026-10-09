@@ -282,12 +282,27 @@ def _tool_chrome_app() -> Path | None:
     return max(apps, key=lambda app: _version_tuple(_chrome_app_version(app)))
 
 
+# These are what macOS uses to list an app under Open With for links.
+_OPEN_WITH_CLAIM_KEYS = (
+    "CFBundleURLTypes",
+    "CFBundleDocumentTypes",
+    "UTExportedTypeDeclarations",
+    "UTImportedTypeDeclarations",
+)
+_LSREGISTER = Path(
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+    "LaunchServices.framework/Support/lsregister"
+)
+_open_with_cleaned = False
+
+
 def _label_sign_in_chrome(app: Path) -> None:
-    """Drop the "for Testing" name from the window people actually see.
+    """Drop the "for Testing" name and the link claims from this copy.
 
     Only the main app's display name changes. Helper executables and the
     .app folder stay as Google ships them, so Playwright can still start
-    the same binary.
+    the same binary. http/https claims are removed so a Chrome update does
+    not add another Google Chrome for Testing row to the Open With menu.
     """
     plist_path = app / "Contents" / "Info.plist"
     if not plist_path.is_file():
@@ -299,18 +314,59 @@ def _label_sign_in_chrome(app: Path) -> None:
         return
     if not isinstance(info, dict):
         return
+    changed = False
     if (
-        info.get("CFBundleName") == SIGN_IN_BROWSER_NAME
-        and info.get("CFBundleDisplayName") == SIGN_IN_BROWSER_NAME
+        info.get("CFBundleName") != SIGN_IN_BROWSER_NAME
+        or info.get("CFBundleDisplayName") != SIGN_IN_BROWSER_NAME
     ):
+        info["CFBundleName"] = SIGN_IN_BROWSER_NAME
+        info["CFBundleDisplayName"] = SIGN_IN_BROWSER_NAME
+        changed = True
+    for key in _OPEN_WITH_CLAIM_KEYS:
+        if key in info:
+            info.pop(key)
+            changed = True
+    if not changed:
         return
-    info["CFBundleName"] = SIGN_IN_BROWSER_NAME
-    info["CFBundleDisplayName"] = SIGN_IN_BROWSER_NAME
     try:
         with plist_path.open("wb") as handle:
             plistlib.dump(info, handle)
     except OSError:
         return
+
+
+def _sign_in_apps_for_open_with() -> list[Path]:
+    roots = [BROWSERS_DIR, Path.home() / "Library" / "Caches" / "ms-playwright"]
+    found: list[Path] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        found.extend(
+            path for path in root.glob("**/Google Chrome for Testing.app") if path.is_dir()
+        )
+    return found
+
+
+def _lsregister(*args: str) -> None:
+    if platform.system() != "Darwin" or not _LSREGISTER.is_file():
+        return
+    subprocess.run([str(_LSREGISTER), *args], check=False, capture_output=True)
+
+
+def _keep_sign_in_browser_out_of_open_with() -> None:
+    """Stop this tool's Chrome copies from being offered for ordinary links.
+
+    Each upgrade is a new .app, and macOS keeps every one it has launched in
+    the right-click Open With menu, including copies whose folder is gone.
+    """
+    global _open_with_cleaned
+    if _open_with_cleaned or platform.system() != "Darwin":
+        return
+    _open_with_cleaned = True
+    for app in _sign_in_apps_for_open_with():
+        _label_sign_in_chrome(app)
+        _lsregister("-f", str(app))
+    _lsregister("-gc")
 
 
 def _sign_in_chrome_executable() -> str | None:
@@ -403,7 +459,10 @@ def _install_stable_chrome(version: str, url: str) -> None:
         if old.name in {version, CFT_STATE_FILE.name}:
             continue
         if old.is_dir():
+            for stale in old.glob("**/Google Chrome for Testing.app"):
+                _lsregister("-u", str(stale))
             shutil.rmtree(old, ignore_errors=True)
+    _lsregister("-gc")
 
 
 def ensure_sign_in_chrome() -> str | None:
@@ -412,6 +471,7 @@ def ensure_sign_in_chrome() -> str | None:
     Returns an error string when the update fails. The caller still uses the
     browser already on disk when there is one.
     """
+    _keep_sign_in_browser_out_of_open_with()
     installed = _local_sign_in_chrome_version()
     state = _read_cft_state()
     known_stable = str(state.get("stable") or "")
