@@ -976,7 +976,12 @@ def test_token_refresh_is_not_raced() -> None:
     body = source[
         source.index("def _ensure_user_access_token(") : source.index("def _refresh_with_any_site(")
     ]
-    check("only one refresh runs at a time", "with _token_refresh_lock:" in body)
+    check(
+        "only one refresh runs at a time",
+        "with _token_refresh_lock:" in body
+        and "return token if _access_token_still_valid(token, expires_at)" in body
+        and "_refresh_error_left_token_unused(" in source,
+    )
     check(
         "the session is re-read after waiting for the lock",
         body.count("_read_user_session()") >= 2,
@@ -1744,6 +1749,7 @@ def test_ending_soon_banner_is_once_per_session() -> None:
                 "sessionEndingSoon",
                 "endingSoonAlarmKey",
                 "collectEndingSoonKeys",
+                "endingSoonDismissKeys",
             )
         )
         + """
@@ -1760,6 +1766,12 @@ if (first.join(",") !== "sjc:1,lon:2") throw new Error("first " + first.join(","
 const again = collectEndingSoonKeys(rows, ["sjc:1"]);
 if (again.join(",") !== "lon:2") throw new Error("again " + again.join(","));
 if (collectEndingSoonKeys(rows, ["sjc:1", "lon:2"]).length) throw new Error("banner repeated");
+const remembered = endingSoonDismissKeys(rows, [], ["sjc:1"]);
+if (remembered.slice().sort().join(",") !== "lon:2,sjc:1") throw new Error("dismiss " + remembered.join(","));
+if (collectEndingSoonKeys(rows, remembered).length) throw new Error("refresh brought the same sessions back");
+const fresh = { site: "sng", sessionId: "9", phase: "ready", scheduleStop: soon };
+const added = collectEndingSoonKeys([...rows, fresh], remembered);
+if (added.join(",") !== "sng:9") throw new Error("new session " + added.join(","));
 """,
         "the ending soon banner is once per session",
     )
@@ -1983,7 +1995,53 @@ def test_staggered_session_copies_cards() -> None:
     lone = app._expand_schedule_cards(
         [("sjc", "480730")], payload.model_copy(update={"delay_minutes": 30, "session_count": 1})
     )
-    check("a single session still waits out the delay", lone[0]["scheduleOffsetMinutes"] == 30)
+    import dcloud_client
+
+    class _Redirect:
+        status_code = 302
+        headers = {"Location": "https://dcloud2-rtp.cisco.com/api/sessions/1363290"}
+        url = "https://dcloud2-rtp.cisco.com/api/sessions/schedule"
+        text = ""
+
+        def json(self):
+            raise ValueError("no body")
+
+    posted: list[str] = []
+
+    def _fake_http(method, url, **kwargs):
+        del url, kwargs
+        posted.append(method)
+        return _Redirect()
+
+    real_http = dcloud_client.requests.request
+    dcloud_client.requests.request = _fake_http
+    try:
+        redirected = dcloud_client._request(
+            "POST",
+            "https://dcloud2-rtp.cisco.com/api/sessions/schedule",
+            "t",
+            json_body={"count": 1},
+            repeat_on_redirect=False,
+        )
+    finally:
+        dcloud_client.requests.request = real_http
+    kept, _row, extras = dcloud_client._schedule_session_from_response(
+        type("Ok", (), {
+            "json": lambda self: {"success": True, "sessions": [{"uid": "1363289"}, {"uid": "1363290"}]},
+            "text": "",
+            "status_code": 200,
+        })()
+    )
+    check(
+        "a single session still waits out the delay",
+        lone[0]["scheduleOffsetMinutes"] == 30
+        and posted == ["POST"]
+        and redirected.status_code == 302
+        and dcloud_client._session_id_in_url(redirected.headers["Location"]) == "1363290"
+        and kept == "1363289"
+        and extras == ["1363290"]
+        and "repeat_on_redirect=False" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
+    )
 
     # Mario: the nearby slot moved the first session to tonight, then the other
     # two were booked at that same instant instead of 30 and 60 minutes later.
@@ -3342,11 +3400,22 @@ def test_tool_owned_browser_avoids_keychain() -> None:
     auto_fn = source[
         source.index("def _try_auto_integrate_transfer(") : source.index("def _camgr_error_row_is_due(")
     ]
+    import cai_client
+
+    earlier = cai_client._prefer_integrate_task(
+        [
+            {"status": "Completed", "updated": "2026-10-09 13:52:11", "newId": "2", "dc": "rtp => rtp"},
+            {"status": "Completed", "updated": "2026-10-09 13:51:06", "newId": "1", "dc": "rtp => rtp"},
+        ]
+    )
     check(
         "auto-integrate does not mark CAI error when CAI never got the job",
         'integrate_status="error"' in auto_fn
         and auto_fn.count('integrate_status="error"') == 1
-        and 'if result.get("loggedIn") is False:' in auto_fn,
+        and 'if result.get("loggedIn") is False:' in auto_fn
+        and "_dests_already_integrating(" in source
+        and "cookieIgnored" in (ROOT / "cai_client.py").read_text(encoding="utf-8")
+        and (earlier or {}).get("newId") == "1",
     )
     check(
         "a dropped CAI sign-in keeps the transfer and waits to integrate",

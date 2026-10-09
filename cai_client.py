@@ -133,6 +133,12 @@ class _FormVmParser(HTMLParser):
                 "demo": "",
                 "dc": "",
             }
+            if not row["dc"]:
+                # The demo page puts the route in Type (`Integration rtp => lon`)
+                # and leaves the DC column blank.
+                route = re.search(r"([A-Za-z]+)\s*=>\s*([A-Za-z]+)", row["type"])
+                if route:
+                    row["dc"] = f"{route.group(1)} => {route.group(2)}"
             if "replacement" in row["type"].lower() or "integrat" in row["type"].lower() or row["server"]:
                 self.tasks.append(row)
             return
@@ -788,21 +794,46 @@ def match_integrate_task(
 
 
 def list_cai_tasks(cookie_header: str) -> dict[str, Any]:
-    resp, err = _get_html(cookie_header, CAI_HOME)
+    """Read the CAI task list.
+
+    On the Cisco network the homepage works with no cookie. A saved cookie that
+    no longer matches must not hide that page, or a finished integration stays
+    "submitted" and the next refresh sends it again.
+    """
+    header = (cookie_header or "").strip()
+    resp, err = _get_html(header, CAI_HOME)
+    cookie_ignored = False
+
+    def _readable(response: requests.Response | None, error: str) -> bool:
+        return (
+            not error
+            and response is not None
+            and _looks_logged_in(response.text or "", response.status_code, str(response.url))
+        )
+
+    if header and not _readable(resp, err):
+        resp, err = _get_html("", CAI_HOME)
+        cookie_ignored = True
     if err:
-        return {"ok": False, "message": err, "tasks": []}
+        return {"ok": False, "message": err, "tasks": [], "cookieIgnored": cookie_ignored}
     if resp is None:
-        return {"ok": False, "message": "No response from CAI.", "tasks": []}
-    if not _looks_logged_in(resp.text or "", resp.status_code, str(resp.url)):
+        return {"ok": False, "message": "No response from CAI.", "tasks": [], "cookieIgnored": cookie_ignored}
+    if not _readable(resp, ""):
         return {
             "ok": False,
             "loggedIn": False,
             "message": "CAI session expired. Open CAI in Chrome and import again.",
             "tasks": [],
+            "cookieIgnored": cookie_ignored,
         }
     parser = _FormVmParser()
     parser.feed(resp.text or "")
-    return {"ok": True, "loggedIn": True, "tasks": parser.tasks}
+    return {
+        "ok": True,
+        "loggedIn": True,
+        "tasks": parser.tasks,
+        "cookieIgnored": cookie_ignored,
+    }
 
 
 def normalize_task_status(raw: str) -> str:
@@ -831,12 +862,21 @@ _INTEGRATE_STATUS_LABELS = {
 
 
 def _prefer_integrate_task(tasks: list[dict[str, str]]) -> dict[str, str] | None:
+    """One task per dest. In-progress wins. Two completed copies keep the earlier one."""
     order = ("processing", "queuing", "submitted", "error", "completed")
     ranked = [(normalize_task_status(str(task.get("status") or "")), task) for task in tasks]
+
+    def _earliest(group: list[dict[str, str]]) -> dict[str, str]:
+        def _key(task: dict[str, str]) -> tuple[bool, str]:
+            updated = str(task.get("updated") or "").strip()
+            return (not updated, updated)
+
+        return min(group, key=_key)
+
     for wanted in order:
-        for status, task in ranked:
-            if status == wanted:
-                return task
+        group = [task for status, task in ranked if status == wanted]
+        if group:
+            return _earliest(group)
     return tasks[0] if tasks else None
 
 

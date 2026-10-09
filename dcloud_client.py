@@ -364,8 +364,14 @@ def _request(
     timeout: int = DEFAULT_TIMEOUT,
     extra_headers: dict[str, str] | None = None,
     include_auth: bool = True,
+    repeat_on_redirect: bool = True,
 ) -> requests.Response:
-    """Follow redirects without turning POST/PUT into GET (that yields Tomcat 405 HTML)."""
+    """Follow redirects without turning POST/PUT into GET (that yields Tomcat 405 HTML).
+
+    Schedule creates must pass repeat_on_redirect=False. A 302 back to the
+    schedule URL was posted again, and that second create is the extra session
+    in every datacenter.
+    """
     headers = _headers(token) if include_auth else {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -396,6 +402,8 @@ def _request(
                 ) from exc
             raise
         if last.status_code not in (301, 302, 303, 307, 308):
+            return last
+        if not repeat_on_redirect and current_method != "GET":
             return last
         location = last.headers.get("Location") or last.headers.get("location") or ""
         if not location:
@@ -2831,6 +2839,32 @@ def find_schedule_conflict(
     return first_conflict
 
 
+def _session_id_in_url(url: str) -> str:
+    match = re.search(r"/sessions/(\d+)(?:\b|/|$)", str(url or ""))
+    return match.group(1) if match else ""
+
+
+def _schedule_session_from_response(response: requests.Response) -> tuple[str, dict[str, Any], list[str]]:
+    """First session id in a schedule reply, plus any extra ids from that same reply."""
+    body = _json_or_text(response)
+    sessions = body.get("sessions") if isinstance(body, dict) else None
+    ids: list[str] = []
+    first: dict[str, Any] = {}
+    if isinstance(sessions, list):
+        for item in sessions:
+            if not isinstance(item, dict):
+                continue
+            uid = str(item.get("uid") or item.get("id") or "").strip()
+            if not uid or uid in ids:
+                continue
+            if not first:
+                first = item
+            ids.append(uid)
+    if not ids:
+        return "", {}, []
+    return ids[0], first, ids[1:]
+
+
 def schedule_exported_session(
     token: str,
     site: str,
@@ -2958,21 +2992,50 @@ def schedule_exported_session(
             demo, start_ts, stop_ts, pool_id=pool_id, content_export=content_export
         )
         try:
-            response = _request("POST", url, token, json_body=payload, timeout=60)
+            response = _request(
+                "POST",
+                url,
+                token,
+                json_body=payload,
+                timeout=60,
+                repeat_on_redirect=False,
+            )
         except requests.RequestException as exc:
             return {"ok": False, "message": str(exc)}
         body = _json_or_text(response)
         last_message = api_message(body) or f"HTTP {response.status_code}"
-        success = isinstance(body, dict) and body.get("success") is True
-        sessions = body.get("sessions") if isinstance(body, dict) else None
-        if success and isinstance(sessions, list) and sessions:
-            uid = str(sessions[0].get("uid") or "")
-            first = sessions[0] if isinstance(sessions[0], dict) else {}
+        uid, first, extra = _schedule_session_from_response(response)
+        if not uid and response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get("Location") or response.headers.get("location") or ""
+            uid = _session_id_in_url(location)
+            if not uid and location:
+                next_url = urljoin(url, location)
+                if _host_allowed(next_url):
+                    try:
+                        got = _request("GET", next_url, token, timeout=60, repeat_on_redirect=False)
+                    except requests.RequestException:
+                        got = None
+                    if got is not None:
+                        uid, first, extra = _schedule_session_from_response(got)
+                        if not uid:
+                            uid = _session_id_in_url(str(getattr(got, "url", "") or ""))
+        if uid:
+            if extra and progress:
+                progress(
+                    f"{site_code.upper()}: one schedule returned sessions {', '.join(extra)}; "
+                    f"keeping {uid}."
+                )
             return {
                 "ok": True,
                 "sessionId": uid,
                 "viewUrl": session_view_url(site_code, uid, session=first) if uid else "",
-                "message": last_message,
+                "message": last_message or f"Scheduled session {uid}.",
+            }
+        if response.status_code in (301, 302, 303, 307, 308):
+            # The create may already have landed. Posting the body again opens a second session.
+            return {
+                "ok": False,
+                "message": "Schedule was sent once and the reply had no session id. Not sending it again.",
             }
         return {"ok": False, "message": last_message}
 

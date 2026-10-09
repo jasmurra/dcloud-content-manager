@@ -818,9 +818,18 @@ def _ensure_user_access_token(
             _apply_user_session(access, new_refresh, found_site or site or "rtp", "browser")
             return access
     token, expires_at, _refresh, _site = _read_user_session()
-    # Refresh can fail while the access token still has a few minutes left.
-    # Dropping it here is what blanks the token field and looks like a logout.
-    return token if (not force and _access_token_still_valid(token, expires_at)) else ""
+    # Refresh can fail while the access token still has time left. Dropping it
+    # here blanks the token field. An idle refresh (force) must not do that either.
+    return token if _access_token_still_valid(token, expires_at) else ""
+
+
+def _refresh_error_left_token_unused(err: str) -> bool:
+    """True when dCloud never saw the refresh token, so another DC can try it.
+
+    A 4xx means the POST arrived. dCloud retires a refresh token it has seen,
+    and sending that same string to the other datacenters is what forces a login.
+    """
+    return "refresh request failed" in str(err or "").lower()
 
 
 def _refresh_with_any_site(
@@ -828,20 +837,25 @@ def _refresh_with_any_site(
     site: str,
     progress: Callable[[str], None] | None = None,
 ) -> str:
-    """Refresh against the session's DC, then the others — any DC honours the token."""
+    """Refresh against the session's DC. Try another DC only if the request never connected."""
     sites: list[str] = [site] if site else []
     for code in DCLOUD_SITES:
         if code not in sites:
             sites.append(code)
     last_err = ""
     for try_site in sites:
+        _token, _expires_at, refresh_now, _site_now = _read_user_session()
+        if not refresh_now:
+            break
         access, _new_refresh, _expires_at, err = _refresh_session_token(
-            refresh, try_site, progress
+            refresh_now, try_site, progress
         )
         if access:
             return access
         if err:
             last_err = err
+        if not _refresh_error_left_token_unused(err or ""):
+            break
     if progress and last_err:
         progress(last_err)
     return ""
@@ -4232,6 +4246,25 @@ def _auth_camgr_needed() -> dict[str, Any]:
     }
 
 
+def _dests_already_integrating(
+    tasks: list[dict[str, Any]],
+    saved_id: str,
+    dests: list[str],
+) -> list[str]:
+    """Dests CAI already has an integration for. Those must not be submitted again."""
+    wanted = cai_integrate_dests(dests)
+    hits = match_integrate_task(tasks, saved_id=saved_id, dests=wanted)
+    covered: list[str] = []
+    for task in hits:
+        status = normalize_task_status(str(task.get("status") or ""))
+        if status in {"", "error"}:
+            continue
+        _source, dest = parse_cai_task_dc(str(task.get("dc") or ""))
+        if dest in wanted and dest not in covered:
+            covered.append(dest)
+    return covered
+
+
 def _integrate_saved_demo(
     cookie: str,
     *,
@@ -4285,6 +4318,54 @@ def _integrate_saved_demo(
                 f"(available: {', '.join(sorted(available)) or 'none'})."
             ),
         }
+    listed = list_cai_tasks(cookie)
+    if listed.get("ok") and listed.get("cookieIgnored"):
+        _mark_cai_reachable("CAI session is active.", "")
+    known_tasks = list(listed.get("tasks") or []) if listed.get("ok") else []
+    for task in page.get("tasks") or []:
+        if "integrat" not in str(task.get("type") or "").lower():
+            continue
+        copied = dict(task)
+        copied["demo"] = str(copied.get("demo") or saved_id)
+        known_tasks.append(copied)
+    covered = _dests_already_integrating(known_tasks, saved_id, chosen)
+    remaining = [dc for dc in chosen if dc not in covered]
+    prev = _cai_integrate_map(job).get(_saved_id_key(site, saved_id)) or {}
+    prev_chips = [chip for chip in (prev.get("dcTasks") or []) if isinstance(chip, dict)]
+    if covered and not remaining:
+        chips = cai_integrate_dc_chips(chosen, known_tasks, overall="completed", previous=prev_chips)
+        row = {
+            "site": site,
+            "savedId": saved_id,
+            "dcs": chosen,
+            "status": "submitted",
+            "message": "CAI already has this integration.",
+            "caiUrl": page.get("caiUrl") or cai_demo_url(site, saved_id),
+            "caiDc": str(page.get("caiDc") or ""),
+            "newId": str(prev.get("newId") or ""),
+            "dcTasks": chips,
+            "dcIdsChecked": False,
+            "autoBurnIn": bool(prev.get("autoBurnIn")),
+            "burnInDays": prev.get("burnInDays") or 1,
+            "burnInStatus": str(prev.get("burnInStatus") or ""),
+            "burnInJobId": str(prev.get("burnInJobId") or ""),
+        }
+        _upsert_cai_integrate(job, row)
+        if job is not None:
+            _log(
+                job,
+                f"{site.upper()}: CAI already integrated {saved_id} "
+                f"→ {', '.join(cai_dc_label(dc) for dc in chosen)}. Not submitting again.",
+            )
+        return {
+            "ok": True,
+            "loggedIn": True,
+            "already": True,
+            "row": row,
+            "chosen": chosen,
+            "message": row["message"],
+        }
+    chosen = remaining or chosen
     cai_dc = str(page.get("caiDc") or "")
     result = submit_integrate(
         cookie,
@@ -4979,6 +5060,8 @@ def _upsert_cai_replace(job: dict[str, Any], item: dict[str, Any]) -> dict[str, 
 def _refresh_cai_replace_statuses(job: dict[str, Any]) -> dict[str, Any]:
     cookie = _require_cai_cookie()
     listed = list_cai_tasks(cookie)
+    if listed.get("ok") and listed.get("cookieIgnored"):
+        _mark_cai_reachable("CAI session is active.", "")
     if not listed.get("ok"):
         if listed.get("loggedIn") is False:
             _set_cai_cookie("", "CAI session expired.")
@@ -5252,11 +5335,11 @@ def _queue_integration_burn_in(
 
 def _refresh_cai_integrate_statuses(job: dict[str, Any] | None) -> dict[str, Any]:
     cookie = _require_cai_cookie()
-    listed = list_cai_tasks(cookie) if cookie else {
-        "ok": False,
-        "loggedIn": False,
-        "message": "CAI is not signed in.",
-    }
+    # An empty cookie is fine on the Cisco network. A stale one is ignored inside
+    # list_cai_tasks, which retries without it.
+    listed = list_cai_tasks(cookie)
+    if listed.get("ok") and listed.get("cookieIgnored"):
+        _mark_cai_reachable("CAI session is active.", "")
     cai_down = not listed.get("ok")
     if cai_down and listed.get("loggedIn") is False:
         _set_cai_cookie("", "CAI session expired.")

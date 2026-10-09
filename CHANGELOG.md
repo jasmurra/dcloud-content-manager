@@ -1,3 +1,10 @@
+## 2.0.18 — 2026-10-09
+
+- **A refresh does not submit an integration CAI already has.** When those tasks are done, the row shows the new demo IDs and burn-in schedules them
+- **Burn-in posts each schedule once.** A redirect is not sent again, so a datacenter does not get two sessions at the same time
+- **A failed token refresh no longer logs you out while the access token is still good.** It also does not spend that refresh token on every datacenter
+- **Closing the ending-soon banner remembers the sessions already showing.** A refresh brings it back only when a different session is about to end
+
 ## 2.0.17 — 2026-10-09
 
 - **The login popup closes once the token is saved.** The title no longer collapses it. While the tool is open it refreshes the dCloud token every 45 minutes, so a quiet stretch does not ask for another Duo login

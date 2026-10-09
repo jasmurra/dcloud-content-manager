@@ -7344,30 +7344,47 @@
       return keys;
     }
 
-    function refreshEndingSoonBanner() {
-      const banner = $("ending-soon-banner");
-      if (!banner) return;
+    function endingSoonRowsNow() {
       const jobRows = lastRenderedJob
         ? [...visibleWorkspaceDcs(lastRenderedJob), ...visibleMonitorDcs(lastRenderedJob)]
         : [];
       const foundRows = (lastFoundSessionRows || []).map((row) => foundRowAsDc(row));
-      const keys = collectEndingSoonKeys([...jobRows, ...foundRows], readEndingSoonSeen());
+      return [...jobRows, ...foundRows];
+    }
+
+    function endingSoonDismissKeys(rows, alreadySeen, bannerKeys) {
+      // Remember every session that was already ending soon, not only the ones
+      // written on the banner. A refresh otherwise treats that same list as new.
+      return [...new Set([
+        ...(alreadySeen || []),
+        ...collectEndingSoonKeys(rows, []),
+        ...(bannerKeys || []),
+      ])];
+    }
+
+    function refreshEndingSoonBanner() {
+      const banner = $("ending-soon-banner");
+      if (!banner) return;
+      const keys = collectEndingSoonKeys(endingSoonRowsNow(), readEndingSoonSeen());
       if (!keys.length) {
         banner.classList.add("hidden");
-        banner.dataset.keys = "";
+        banner.removeAttribute("data-ending-keys");
         return;
       }
-      banner.dataset.keys = keys.join(",");
+      banner.setAttribute("data-ending-keys", keys.join(","));
       banner.classList.remove("hidden");
     }
 
     function dismissEndingSoonBanner() {
       const banner = $("ending-soon-banner");
-      const keys = String(banner?.dataset.keys || "").split(",").map((key) => key.trim()).filter(Boolean);
-      writeEndingSoonSeen([...new Set([...readEndingSoonSeen(), ...keys])]);
+      const shown = String(banner?.getAttribute("data-ending-keys") || "")
+        .split(",")
+        .map((key) => key.trim())
+        .filter(Boolean);
+      writeEndingSoonSeen(endingSoonDismissKeys(endingSoonRowsNow(), readEndingSoonSeen(), shown));
       if (banner) {
         banner.classList.add("hidden");
-        banner.dataset.keys = "";
+        banner.removeAttribute("data-ending-keys");
       }
     }
 
