@@ -1,3 +1,12 @@
+## 2.0.17 — 2026-10-09
+
+- **The login popup closes once the token is saved.** The title no longer collapses it. While the tool is open it refreshes the dCloud token every 45 minutes, so a quiet stretch does not ask for another Duo login
+- **A Chrome update no longer adds Google Chrome for Testing to the right-click Open With menu.** The old rows clear the next time the tool starts
+- **VMs you checked for an exported session still power on after the app restarts**
+- **Job workspace site groups have Click to view in dCloud.** A filter on the workspace and on monitoring finds a session without opening every datacenter. Check all takes the cards still showing
+- **Guest Shutdown All VMs** shuts down powered-on VMs on the checked sessions. It does not save or end them
+- **Find/Refresh Events is one button.** Click a column header to sort that list. Find/Refresh Sessions, Content, and Both work the same way
+
 ## 2.0.16 — 2026-10-07
 
 - **A session ending within 3 days raises a red banner once.** It reads “You have session(s) scheduled to end soon.” Close it with X and that session does not raise it again
