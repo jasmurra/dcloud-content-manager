@@ -1722,6 +1722,7 @@ def test_schedule_labels_and_export_default() -> None:
         and "check to spin up session with VMs powered off" in INDEX
         and "Schedule Checked Saved Content (with VMs powered off)" not in INDEX
         and 'class="check-line" for="saved-schedule-export"' in INDEX
+        and 'document.body.appendChild(popup)' in INDEX
         and INDEX.index('for="saved-schedule-export"') < INDEX.index('for="saved-auto-next-available"')
         and "Schedule Exported Session" in INDEX[
             INDEX.index("function syncScheduleSavedButton")

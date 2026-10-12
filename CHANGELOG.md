@@ -1,3 +1,7 @@
+## 2.0.19 — 2026-10-12
+
+- **The date calendar on My Content opens again.** It was opening inside the hidden Schedule page, so the click did nothing
+
 ## 2.0.18 — 2026-10-09
 
 - **A refresh does not submit an integration CAI already has.** When those tasks are done, the row shows the new demo IDs and burn-in schedules them

@@ -10965,6 +10965,10 @@
     }
 
     function openCalendar(which) {
+      // The popup lives in the Schedule view. That view is display:none on My
+      // Content, which hid the calendar even though the click ran.
+      const popup = $("dt-popup");
+      if (popup && popup.parentElement !== document.body) document.body.appendChild(popup);
       calTarget = which;
       const meta = dateTargetMeta(which);
       const current = parseLocalInput($(meta.hidden).value) || new Date();
