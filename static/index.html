@@ -8520,38 +8520,37 @@
 
     let lastSavedIdRows = [];
     let caiReplacePollTimer = null;
+    let caiReplacePollInFlight = false;
+    const HUB_POLL_MS = 20 * 1000;
     const CAI_PENDING = ["submitted", "queuing", "processing"];
 
     function caiRowNeedsPoll(row) {
-      if (row.autoBurnIn && ["", "pending", "waiting_id", "waiting_auth"].includes(String(row.burnInStatus || ""))) {
-        return true;
-      }
       if (CAI_PENDING.includes(String(row.replaceStatus || ""))) return true;
       const vmChips = row.replaceVmStatus || [];
       if (vmChips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")))) return true;
       if (CAI_PENDING.includes(String(row.integrateStatus || ""))) return true;
       const chips = row.integrateDcStatus || [];
-      if (chips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")))) return true;
-      const needsTbv3 = chips.some((chip) => {
-        const id = String(chip.newId || "").trim();
-        if (!id) return false;
-        if (String(chip.href || "").includes("tbv3-ui.ciscodcloud.com")) return false;
-        return !chip.hrefChecked;
-      });
-      if (needsTbv3) return true;
-      if (row.integrateIdsChecked) return false;
-      if (String(row.integrateStatus || "") === "completed") {
-        if (!chips.length) return true;
-        return chips.some((chip) => !String(chip.newId || "").trim());
-      }
-      return false;
+      return chips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")));
+    }
+
+    function caiRowsNeedPoll(rows) {
+      return (rows || []).some((row) => caiRowNeedsPoll(row));
     }
     let camgrTransferPollTimer = null;
+    let camgrTransferPollInFlight = false;
     let camgrLoggedIn = false;
     let rootLookupInFlight = false;
     let camgrDestSourceGuids = [];
     let camgrDevServers = [];
     const CAMGR_PENDING = ["ready", "exporting", "exported", "xfring", "xfred", "importing", "submitted"];
+
+    function camgrRowNeedsPoll(row) {
+      return CAMGR_PENDING.includes(String(row.transferStatus || "").toLowerCase());
+    }
+
+    function camgrRowsNeedPoll(rows) {
+      return (rows || []).some((row) => camgrRowNeedsPoll(row));
+    }
 
     const HUB_HELP_KEY = "dcloud-hub-help-v1";
 
@@ -9047,9 +9046,10 @@
 
     function startCaiReplacePoll() {
       if (caiReplacePollTimer) return;
+      if (!caiRowsNeedPoll(lastSavedIdRows)) return;
       caiReplacePollTimer = setInterval(() => {
         refreshCaiReplacements().catch(() => {});
-      }, 5000);
+      }, HUB_POLL_MS);
     }
 
     async function refreshCaiStatus() {
@@ -9207,32 +9207,37 @@
     }
 
     async function refreshCaiReplacements() {
-      const res = await fetch("/api/cai/replace/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobId || "" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const message = typeof data.detail === "string" ? data.detail : "Could not refresh CAI replacements.";
-        if (res.status === 401 || /CAI session/i.test(message)) {
+      if (caiReplacePollInFlight) return;
+      caiReplacePollInFlight = true;
+      try {
+        const res = await fetch("/api/cai/replace/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ job_id: jobId || "" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message = typeof data.detail === "string" ? data.detail : "Could not refresh CAI replacements.";
+          if (res.status === 401 || /CAI session/i.test(message)) {
+            stopCaiReplacePoll();
+            updateCaiStatus({ loggedIn: false, message });
+          }
+          return;
+        }
+        if (data.job) {
+          if (data.burnInScheduled && data.job.id) {
+            setJobId(data.job.id);
+            noteLog(`Scheduled ${data.burnInScheduled} post-integration burn-in session(s).`);
+          }
+          renderJob(data.job);
+        }
+        else if (data.savedIds) applySavedIds(data.savedIds);
+        if (!caiRowsNeedPoll(data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || [])) {
           stopCaiReplacePoll();
-          updateCaiStatus({ loggedIn: false, message });
         }
-        return;
+      } finally {
+        caiReplacePollInFlight = false;
       }
-      if (data.job) {
-        if (data.burnInScheduled && data.job.id) {
-          setJobId(data.job.id);
-          noteLog(`Scheduled ${data.burnInScheduled} post-integration burn-in session(s).`);
-        }
-        renderJob(data.job);
-      }
-      else if (data.savedIds) applySavedIds(data.savedIds);
-      const pending = (data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || []).some(
-        (row) => caiRowNeedsPoll(row)
-      );
-      if (!pending) stopCaiReplacePoll();
     }
 
     async function submitCaiIntegrate() {
@@ -9452,7 +9457,7 @@
       if (caiTemplatePollTimer) return;
       caiTemplatePollTimer = setInterval(() => {
         refreshCaiTemplates().catch(() => {});
-      }, 5000);
+      }, HUB_POLL_MS);
     }
 
     async function refreshCaiTemplates() {
@@ -9908,9 +9913,10 @@
 
     function startCamgrTransferPoll() {
       if (camgrTransferPollTimer) return;
+      if (!camgrRowsNeedPoll(lastSavedIdRows)) return;
       camgrTransferPollTimer = setInterval(() => {
         refreshCamgrTransfers().catch(() => {});
-      }, 5000);
+      }, HUB_POLL_MS);
     }
 
     async function refreshCamgrStatus() {
@@ -10093,37 +10099,39 @@
     }
 
     async function refreshCamgrTransfers() {
-      const res = await fetch("/api/camgr/transfer/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobId || "" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const message = typeof data.detail === "string" ? data.detail : "Could not refresh CAMGR transfers.";
-        if (res.status === 401 || /CAMGR session|Content Automation Manager/i.test(message)) {
+      if (camgrTransferPollInFlight) return;
+      camgrTransferPollInFlight = true;
+      try {
+        const res = await fetch("/api/camgr/transfer/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ job_id: jobId || "" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message = typeof data.detail === "string" ? data.detail : "Could not refresh CAMGR transfers.";
+          if (res.status === 401 || /CAMGR session|Content Automation Manager/i.test(message)) {
+            stopCamgrTransferPoll();
+            updateCamgrStatus({ loggedIn: false, message });
+          }
+          return;
+        }
+        if (data.job) renderJob(data.job);
+        else if (data.savedIds) applySavedIds(data.savedIds);
+        if (data.autoIntegrated?.length) {
+          for (const row of data.autoIntegrated) {
+            const site = String(row.site || "").toUpperCase();
+            const dests = sortByDatacenter(row.dcs || []).join(", ").toUpperCase();
+            noteLog(`${site}: CAI integration submitted for ${row.savedId}${dests ? ` → ${dests}` : ""}.`);
+          }
+          startCaiReplacePoll();
+        }
+        if (!camgrRowsNeedPoll(data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || [])) {
           stopCamgrTransferPoll();
-          updateCamgrStatus({ loggedIn: false, message });
         }
-        return;
+      } finally {
+        camgrTransferPollInFlight = false;
       }
-      if (data.job) renderJob(data.job);
-      else if (data.savedIds) applySavedIds(data.savedIds);
-      if (data.autoIntegrated?.length) {
-        for (const row of data.autoIntegrated) {
-          const site = String(row.site || "").toUpperCase();
-          const dests = sortByDatacenter(row.dcs || []).join(", ").toUpperCase();
-          noteLog(`${site}: CAI integration submitted for ${row.savedId}${dests ? ` → ${dests}` : ""}.`);
-        }
-        startCaiReplacePoll();
-      }
-      const pending = (data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || []).some(
-        (row) => CAMGR_PENDING.includes(String(row.transferStatus || ""))
-          || row.autoIntegratePending
-          || String(row.autoIntegrateStatus || "") === "waiting_auth"
-          || String(row.burnInStatus || "") === "waiting_auth"
-      );
-      if (!pending) stopCamgrTransferPoll();
     }
 
     async function loadSavedIds() {
@@ -10370,12 +10378,10 @@
       syncSavedIdHeadCheck();
       syncRootIdHint();
       syncHubActionButtons();
-      if (rows.some((row) => caiRowNeedsPoll(row))) {
-        startCaiReplacePoll();
-      }
-      if (rows.some((row) => CAMGR_PENDING.includes(String(row.transferStatus || "")) || row.autoIntegratePending || String(row.autoIntegrateStatus || "") === "waiting_auth" || String(row.burnInStatus || "") === "waiting_auth")) {
-        startCamgrTransferPoll();
-      }
+      if (caiRowsNeedPoll(rows)) startCaiReplacePoll();
+      else stopCaiReplacePoll();
+      if (camgrRowsNeedPoll(rows)) startCamgrTransferPoll();
+      else stopCamgrTransferPoll();
     }
 
     function escapeHtml(value) {

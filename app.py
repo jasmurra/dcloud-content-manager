@@ -699,6 +699,23 @@ def _persist_user_session() -> None:
         pass
 
 
+def _sync_user_session_from_disk() -> None:
+    """Pick up a rotate that another process wrote to the session file."""
+    if not SESSION_FILE.is_file():
+        return
+    try:
+        data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return
+    file_refreshed = float(data.get("refreshed_at") or 0)
+    file_refresh = (data.get("refresh_token") or "").strip()
+    with _user_auth_lock:
+        mem_refreshed = float(_user_auth.get("refreshed_at") or 0)
+        mem_refresh = (_user_auth.get("refresh_token") or "").strip()
+    if file_refreshed > mem_refreshed + 0.01 or (file_refresh and not mem_refresh):
+        _load_persisted_session()
+
+
 def _load_persisted_session() -> None:
     if not SESSION_FILE.is_file():
         return
@@ -4051,6 +4068,7 @@ def _cai_auto_connect() -> dict[str, Any]:
 
 
 def _dcloud_keepalive() -> dict[str, Any]:
+    _sync_user_session_from_disk()
     token, _expires_at, refresh, _site = _read_user_session()
     if not token and not refresh:
         return {"loggedIn": False}
@@ -5792,6 +5810,7 @@ def api_clear_session() -> dict[str, Any]:
 
 @app.post("/api/auth/refresh")
 async def api_refresh_session() -> dict[str, Any]:
+    _sync_user_session_from_disk()
     with _user_auth_lock:
         refresh = (_user_auth.get("refresh_token") or "").strip()
         site = (_user_auth.get("site") or "rtp").strip().lower()
@@ -5802,16 +5821,6 @@ async def api_refresh_session() -> dict[str, Any]:
         )
     access, _new_refresh, expires_at, err = _refresh_session_token(refresh, site)
     if err or not access:
-        token = _ensure_user_access_token(force=True)
-        if token:
-            with _user_auth_lock:
-                expires_at = float(_user_auth.get("expires_at") or 0)
-            return {
-                "ok": True,
-                "token": token,
-                "expiresAt": int(expires_at),
-                "message": "Refreshed dCloud access token.",
-            }
         raise HTTPException(400, err or "Could not refresh dCloud token.")
     return {
         "ok": True,

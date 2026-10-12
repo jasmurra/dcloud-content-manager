@@ -1043,6 +1043,83 @@ def test_token_refresh_is_not_raced() -> None:
     check("a sign-in failure re-checks auth", "refreshAuth().catch(() => {});" in INDEX)
 
 
+def test_dcloud_refresh_uses_cisco_sso() -> None:
+    """The 45-minute loop posted dc_p_r to ui-tokens. dCloud renews at id.cisco.com."""
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    oauth = (ROOT / "browser_auth" / "dcloud_oauth.py").read_text(encoding="utf-8")
+    refresh_fn = oauth[
+        oauth.index("def refresh_dcloud_user_token(") : oauth.index("def _refresh_sso_token(")
+    ]
+    sso_fn = oauth[oauth.index("def _refresh_sso_token(") : oauth.index("def resolve_dcloud_token(")]
+    check(
+        "token refresh posts to the Cisco SSO token URL",
+        "DCLOUD_TOKEN_URL" in sso_fn
+        and 'grant_type": "refresh_token"' in sso_fn
+        and "client_id" in sso_fn
+        and "access_token" in sso_fn,
+    )
+    check(
+        "token refresh is not the ui-tokens accessCode endpoint",
+        "ui-tokens" not in sso_fn
+        and "json={\"refreshToken\"" not in oauth
+        and "dcloud2-" not in sso_fn,
+    )
+    check(
+        "Log in uses the current dCloud production SPA client",
+        'DCLOUD_SPA_CLIENT_ID = "7d20388d-e19b-4db6-a86b-3fefbfcde913"' in oauth,
+    )
+    check(
+        "a leftover access token is not reported as a successful refresh",
+        "token = _ensure_user_access_token(force=True)" not in source[
+            source.index("def api_refresh_session(") : source.index("def api_dcloud_browser_login(")
+        ],
+    )
+    check(
+        "keepalive reloads a session file another process refreshed",
+        "def _sync_user_session_from_disk(" in source
+        and "_sync_user_session_from_disk()" in source[
+            source.index("def _dcloud_keepalive(") : source.index("def _dcloud_refresh_loop(")
+        ],
+    )
+
+
+def test_hub_polls_only_while_jobs_run() -> None:
+    """Idle Hub rows were hitting CAI/CAMGR every 5 seconds."""
+    cai_poll = INDEX[
+        INDEX.index("function caiRowNeedsPoll(") : INDEX.index("function caiRowsNeedPoll(")
+    ]
+    camgr_poll = INDEX[
+        INDEX.index("function camgrRowNeedsPoll(") : INDEX.index("function camgrRowsNeedPoll(")
+    ]
+    check(
+        "Hub polls wait 20 seconds between checks",
+        "const HUB_POLL_MS = 20 * 1000;" in INDEX
+        and INDEX.count("}, HUB_POLL_MS);") >= 3,
+    )
+    check(
+        "CAI replace poll is only for an in-progress replace or integrate",
+        "hrefChecked" not in cai_poll
+        and "autoBurnIn" not in cai_poll
+        and "CAI_PENDING" in cai_poll,
+    )
+    check(
+        "CAMGR transfer poll is only for an in-progress transfer",
+        "transferStatus" in camgr_poll
+        and "waiting_auth" not in camgr_poll
+        and "autoIntegratePending" not in camgr_poll,
+    )
+    check(
+        "a Hub poll does not start when no saved row is in progress",
+        "if (!caiRowsNeedPoll(lastSavedIdRows)) return;" in INDEX
+        and "if (!camgrRowsNeedPoll(lastSavedIdRows)) return;" in INDEX,
+    )
+    check(
+        "a Hub poll does not stack on itself",
+        "if (caiReplacePollInFlight) return;" in INDEX
+        and "if (camgrTransferPollInFlight) return;" in INDEX,
+    )
+
+
 def test_schedule_button_reports_back() -> None:
     """With Job workspace collapsed, the click had no visible result at all."""
     check("the button has a result line", 'id="run-result"' in INDEX)

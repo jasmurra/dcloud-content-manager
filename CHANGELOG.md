@@ -1,3 +1,12 @@
+## 2.0.24 — 2026-10-12
+
+- **CAI and CAMGR Hub polls run only while a job is in progress.** They check every 20 seconds instead of 5. Finished rows, missing dest IDs, and waiting-for-login states do not keep those calls going
+
+## 2.0.23 — 2026-10-12
+
+- **dCloud auto-refresh talks to Cisco SSO, not `/api/public/ui-tokens`.** That wrong call was why a login lasted about an hour and then said Session expired, even with the 45-minute loop running
+- **Validate / Refresh no longer calls leftover access a success.** A spent refresh token is an error, so a failed rotate is visible instead of looking fine until the hour is up
+
 ## 2.0.22 — 2026-10-12
 
 - **dCloud token refresh no longer waits behind CAMGR or CAI.** It runs on its own 30-second loop and rotates at 45 minutes, or five minutes before the access token expires. Saving a job or the sign-in file does not restart that loop

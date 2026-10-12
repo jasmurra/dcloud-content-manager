@@ -18,7 +18,11 @@ from browser_auth.dcloud_token import (
 
 DCLOUD_TOKEN_URL = "https://id.cisco.com/oauth2/default/v1/token"
 DCLOUD_OAUTH_SCOPE = "openid profile email offline_access"
-DCLOUD_SPA_CLIENT_ID = "2fc326b2-f31c-415f-b7e1-bb76e908a79e"
+# Public SPA client_id from dCloud app.bundle.js auth.sso (PRODUCTION).
+# loginWithCurrentSession refreshes with this id, not /api/public/ui-tokens.
+DCLOUD_SPA_CLIENT_ID = "7d20388d-e19b-4db6-a86b-3fefbfcde913"
+# Older authorize URL this tool used. Try it if a saved dc_p_r was minted for it.
+DCLOUD_SPA_CLIENT_ID_LEGACY = "2fc326b2-f31c-415f-b7e1-bb76e908a79e"
 DCLOUD_LOGIN_SCOPE = "openid profile email offline_access cci_admemberOf groups"
 TIMEOUT_SECS = 30
 
@@ -209,24 +213,47 @@ def refresh_dcloud_user_token(
     refresh_token: str,
 ) -> tuple[str, str, int, str | None]:
     """
-    Exchange a dCloud refresh token (dc_p_r) for a new access token via ui-tokens.
-    Same POST body as dCloud app.bundle.js loginWithCurrentSession().
+    Exchange dc_p_r the same way dCloud loginWithCurrentSession does.
+
+    POST id.cisco.com /oauth2/default/v1/token as form data:
+    grant_type=refresh_token, refresh_token, client_id.
+    /api/public/ui-tokens is only for the one-time SSO accessCode exchange.
     Returns (access_token, refresh_token, expires_in, error_message).
     """
-    site_code = (site or "rtp").strip().lower()
-    if site_code not in DCLOUD_SITES:
-        site_code = "rtp"
     refresh = (refresh_token or "").strip()
     if not refresh:
         return "", "", 0, "Refresh token is empty."
 
-    url = f"https://dcloud2-{site_code}.cisco.com/api/public/ui-tokens"
+    access, new_refresh, expires_in, err = _refresh_sso_token(refresh, DCLOUD_SPA_CLIENT_ID)
+    if access:
+        return access, new_refresh, expires_in, None
+    # Only the older client_id can mint a grant Cisco still accepts for that id.
+    if err and "invalid_client" in err.lower():
+        access, new_refresh, expires_in, err2 = _refresh_sso_token(
+            refresh, DCLOUD_SPA_CLIENT_ID_LEGACY
+        )
+        if access:
+            return access, new_refresh, expires_in, None
+        err = err2 or err
+    return "", "", 0, err or "dCloud refresh failed."
+
+
+def _refresh_sso_token(
+    refresh: str,
+    client_id: str,
+) -> tuple[str, str, int, str | None]:
     try:
         response = requests.post(
-            url,
-            json={"refreshToken": refresh},
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
-            verify=False,
+            DCLOUD_TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": client_id,
+            },
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
             timeout=TIMEOUT_SECS,
         )
     except requests.RequestException as exc:
@@ -243,11 +270,11 @@ def refresh_dcloud_user_token(
     except ValueError:
         return "", "", 0, "dCloud refresh response was not JSON."
 
-    access = normalize_dcloud_token(body.get("accessToken") or body.get("access_token") or "")
-    new_refresh = (body.get("refreshToken") or body.get("refresh_token") or refresh).strip()
-    expires_in = int(body.get("expiresIn") or body.get("expires_in") or 3600)
+    access = normalize_dcloud_token(body.get("access_token") or body.get("accessToken") or "")
+    new_refresh = (body.get("refresh_token") or body.get("refreshToken") or refresh).strip()
+    expires_in = int(body.get("expires_in") or body.get("expiresIn") or 3600)
     if not access:
-        return "", "", 0, "dCloud refresh response did not include accessToken."
+        return "", "", 0, "dCloud refresh response did not include access_token."
     return access, new_refresh, expires_in, None
 
 
