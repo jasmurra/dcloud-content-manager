@@ -1349,7 +1349,13 @@
     }
     /* Wins over later display rules like .dev-transfer-field, which set display: flex. */
     .hidden { display: none !important; }
-    .dc-field .hint { margin: 0.25rem 0 0; }
+    .dc-field { min-width: 0; }
+    .dc-field .hint {
+      margin: 0.25rem 0 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .dc-field .hint:empty { display: none; }
     .dc-id-toolbar {
       display: flex;
@@ -14834,8 +14840,6 @@
         if (!input) continue;
         input.value = row.content_id;
         input.classList.remove("stale-id");
-        const hint = document.getElementById(`hint-${site}`);
-        if (hint) hint.textContent = row.name || "";
       }
       syncRunButton();
       const first = SITE_ORDER.map((site) => bySite.get(site)).find(Boolean);
@@ -14855,11 +14859,10 @@
       try {
         const loaded = await loadVms({ keepDemoIds: true });
         if (!loaded) return;
-        const label = names.length === 1 ? names[0] : `${bySite.size} datacenters`;
         const status = $("lookup-status");
         if (status) {
           status.textContent =
-            `Copied “${label}” (${dcs.join(", ")}). Check the VMs to power on, set the dates, then Schedule Exported Session.`;
+            `Copied ${dcs.join(", ")}. Check the VMs to power on, set the dates, then Schedule Exported Session.`;
           status.classList.add("lookup-ready");
         }
         showToast(`Filled ${dcs.join(", ")}. Check the VMs to power on, then Schedule Exported Session.`);

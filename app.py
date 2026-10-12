@@ -361,6 +361,8 @@ DCLOUD_REFRESH_BEFORE_SECONDS = 5 * 60
 # dCloud drops an unused refresh token in about two hours. Rotate it on this
 # interval so an idle tool still has a login later in the day.
 DCLOUD_REFRESH_IDLE_SECONDS = 45 * 60
+# How often the dedicated dCloud loop checks whether a rotate is due.
+DCLOUD_REFRESH_CHECK_SECONDS = 30
 # While signed out, recapture from the tool browser if that profile already exists.
 AUTH_WATCH_SECONDS = 15
 # Reading Chrome's cookie DB hits macOS Keychain, so background loops never do it.
@@ -780,6 +782,20 @@ def _access_token_still_valid(token: str, expires_at: float) -> bool:
     if not expires_at:
         return True
     return time.time() < expires_at - 30
+
+
+def _dcloud_session_needs_refresh() -> bool:
+    """True when the access JWT is near expiry or the refresh token has sat unused."""
+    token, expires_at, refresh, _site = _read_user_session()
+    if not token and not refresh:
+        return False
+    if not _access_token_is_usable(token, expires_at):
+        return True
+    if not refresh:
+        return False
+    with _user_auth_lock:
+        refreshed_at = float(_user_auth.get("refreshed_at") or 0)
+    return not refreshed_at or time.time() - refreshed_at >= DCLOUD_REFRESH_IDLE_SECONDS
 
 
 def _ensure_user_access_token(
@@ -4034,27 +4050,32 @@ def _cai_auto_connect() -> dict[str, Any]:
     return _cai_public_status({"loggedIn": True, "ok": True, "message": message})
 
 
-def _auth_keepalive_loop() -> None:
-    # Signed in, this just keeps the sessions warm. Signed out, it reuses the
-    # tool Chromium profile (no Chrome Keychain) if that login already exists.
-    checked_at = {"camgr": 0.0, "cai": 0.0, "dcloud": 0.0}
-    connected = {"camgr": False, "cai": False, "dcloud": False}
+def _dcloud_keepalive() -> dict[str, Any]:
+    token, _expires_at, refresh, _site = _read_user_session()
+    if not token and not refresh:
+        return {"loggedIn": False}
+    return {"loggedIn": bool(_ensure_user_access_token(force=_dcloud_session_needs_refresh()))}
 
-    def _dcloud_keepalive() -> dict[str, Any]:
-        token, _expires_at, refresh, _site = _read_user_session()
-        if not token and not refresh:
-            return {"loggedIn": False}
-        with _user_auth_lock:
-            refreshed_at = float(_user_auth.get("refreshed_at") or 0)
-        # Rotate a refresh token that has been sitting, instead of waiting
-        # until the access token is five minutes from expiry.
-        idle = bool(refresh) and (not refreshed_at or time.time() - refreshed_at >= DCLOUD_REFRESH_IDLE_SECONDS)
-        return {"loggedIn": bool(_ensure_user_access_token(force=idle))}
+
+def _dcloud_refresh_loop() -> None:
+    # Own thread: a stuck CAMGR/CAI Playwright capture must not skip this rotate.
+    while True:
+        time.sleep(DCLOUD_REFRESH_CHECK_SECONDS)
+        try:
+            _dcloud_keepalive()
+        except Exception:
+            pass
+
+
+def _auth_keepalive_loop() -> None:
+    # Signed in, this just keeps CAMGR and CAI warm. dCloud refresh runs in
+    # _dcloud_refresh_loop so a hidden browser cannot block the token rotate.
+    checked_at = {"camgr": 0.0, "cai": 0.0}
+    connected = {"camgr": False, "cai": False}
 
     probes = {
         "camgr": _camgr_auto_connect,
         "cai": _cai_auto_connect,
-        "dcloud": _dcloud_keepalive,
     }
     while True:
         time.sleep(AUTH_WATCH_SECONDS)
@@ -4077,6 +4098,7 @@ def _start_auth_keepalive() -> None:
             return
         _auth_keepalive_started = True
     threading.Thread(target=_auth_keepalive_loop, daemon=True).start()
+    threading.Thread(target=_dcloud_refresh_loop, daemon=True).start()
 
 
 def _pipeline_has_pending() -> bool:
@@ -5694,7 +5716,7 @@ def _session_user_for_status(token: str) -> dict[str, str]:
 @app.get("/api/auth/status")
 def api_auth_status() -> dict[str, Any]:
     dcloud = dcloud_auth_status(ENV_FILE, ENV_EXAMPLE_FILE)
-    _ensure_user_access_token()
+    _ensure_user_access_token(force=_dcloud_session_needs_refresh())
     with _user_auth_lock:
         expires_at = float(_user_auth.get("expires_at") or 0)
         has_refresh = bool(_user_auth.get("refresh_token"))
@@ -10587,4 +10609,7 @@ if __name__ == "__main__":
         port=port,
         reload=True,
         reload_dirs=reload_dirs,
+        # Session/job JSON and the sign-in browser live in this folder. Watching
+        # them restarts the worker and kills the token-refresh thread.
+        reload_includes=["*.py", "*.html"],
     )

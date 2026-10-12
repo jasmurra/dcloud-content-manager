@@ -1013,10 +1013,19 @@ def test_token_refresh_is_not_raced() -> None:
     keepalive = source[
         source.index("def _auth_keepalive_loop(") : source.index("def _start_auth_keepalive(")
     ]
+    dcloud_loop = source[
+        source.index("def _dcloud_refresh_loop(") : source.index("def _auth_keepalive_loop(")
+    ]
     check(
-        "keepalive refreshes the dCloud token too",
-        '"dcloud": _dcloud_keepalive' in keepalive
-        and "DCLOUD_REFRESH_IDLE_SECONDS" in keepalive,
+        "dCloud token refresh is not on the CAMGR/CAI browser loop",
+        '"dcloud": _dcloud_keepalive' not in keepalive
+        and "def _dcloud_refresh_loop(" in source
+        and "_dcloud_keepalive()" in dcloud_loop
+        and "DCLOUD_REFRESH_IDLE_SECONDS" in source
+        and "DCLOUD_REFRESH_CHECK_SECONDS" in source
+        and "threading.Thread(target=_dcloud_refresh_loop, daemon=True).start()" in source
+        and "force=_dcloud_session_needs_refresh()" in source
+        and 'reload_includes=["*.py", "*.html"]' in source,
     )
     check(
         "jobs use the live session, not a copied refresh token",
@@ -3728,7 +3737,9 @@ def test_cross_dc_lists_have_the_same_instant_filter() -> None:
         and "keepDemoIds" in page
         and "Check only one row per DC" in page
         and 'id="panel-step2"' in page
-        and "Copy to Schedule Sessions" in page,
+        and "Copy to Schedule Sessions" in page
+        and "hint.textContent = row.name" not in page
+        and 'Copied “${label}”' not in page,
     )
     check(
         "list columns can be dragged wider and remember it",

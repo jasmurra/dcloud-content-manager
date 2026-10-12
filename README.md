@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.22** | dCloud token refresh runs on its own loop so CAMGR/CAI cannot skip the 45-minute rotate |
 | **2.0.21** | A favorite VM keeps a star on its WebRDP chip, still in the same blue |
 | **2.0.20** | Expanding an active session on My Content keeps that GET after a refresh or app restart |
 | **2.0.19** | The start and stop date calendar on My Content opens again |

@@ -1,3 +1,8 @@
+## 2.0.22 — 2026-10-12
+
+- **dCloud token refresh no longer waits behind CAMGR or CAI.** It runs on its own 30-second loop and rotates at 45 minutes, or five minutes before the access token expires. Saving a job or the sign-in file does not restart that loop
+- **Copy to Schedule Sessions does not put the demo name under the DC IDs.** That title was stretching the row. The status line still says which DCs were filled
+
 ## 2.0.21 — 2026-10-12
 
 - **A favorite VM keeps a star on its WebRDP chip.** The chip stays the same blue so it does not look like a different status. The Favorites list under the chips is unchanged
