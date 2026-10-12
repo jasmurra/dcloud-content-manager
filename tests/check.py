@@ -822,6 +822,8 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
         and "function collectEndingSoonKeys(" in INDEX
         and "function renderWebrdpJumps(" in INDEX
         and 'class="webrdp-jumps"' in INDEX
+        and "webrdp-fav-mark" in INDEX
+        and "is-favorite" in INDEX
         and "function renderVmFavoriteStrip(" in INDEX
         and "btn-vm-favorite" in INDEX
         and "dcloud-content-manager-vm-favorites-v2" in INDEX
@@ -2235,7 +2237,21 @@ def test_staggered_session_copies_cards() -> None:
         and '"virtualCenter": session_virtual_center(session)' in (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
         and 'source: "session-card"' in INDEX
         and "function persistFoundSessionCard(" in INDEX
-        and "function applySavedSessionCards(" in INDEX,
+        and "function applySavedSessionCards(" in INDEX
+        and "function foundSessionCardReady(" in INDEX
+        and "if (foundSessionCardReady(foundSessionCards.get(key))) return;" in INDEX
+        and "foundSessionVcTried" not in INDEX,
+    )
+    run_node(
+        r"""
+function foundSessionCardReady(dc) {
+  return Boolean(dc) && Array.isArray(dc.vms);
+}
+if (foundSessionCardReady({ vms: [] }) !== true) throw new Error("empty vms is a stored card");
+if (foundSessionCardReady({ virtualCenter: "2" }) !== false) throw new Error("vCenter alone is not a stored card");
+if (foundSessionCardReady(undefined) !== false) throw new Error("missing card is not ready");
+""",
+        "a stored My Content session card is ready without another GET",
     )
     check(
         "cleanup is surveys only",

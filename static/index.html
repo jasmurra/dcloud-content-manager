@@ -967,6 +967,11 @@
       padding: 0 0.7rem;
       font-size: 0.78rem;
     }
+    .webrdp-jumps .webrdp-jump.is-favorite .webrdp-fav-mark {
+      margin-right: 0.28rem;
+      font-size: 0.7rem;
+      line-height: 1;
+    }
     .vm-favorites {
       margin: 0.15rem 0 0.65rem;
     }
@@ -3800,7 +3805,8 @@
       "mine-sessions": { rows: [], fetchedAt: {}, errors: {} },
       "mine-content": { rows: [], fetchedAt: {}, errors: {} },
       events: { rows: [], fetchedAt: {}, errors: {} },
-      // One expanded session card, kept so a page refresh does not download it again.
+      // Expanded My Content session cards. IndexedDB keeps them across a page
+      // refresh and an app restart, so expand does not GET again.
       "session-card": { rows: [], fetchedAt: {}, errors: {} },
     };
     const unifiedGroupOpen = new Map();
@@ -7278,11 +7284,17 @@
     function renderWebrdpJumps(dc) {
       const ready = (dc.vms || []).filter(vmWebrdpReady);
       if (!ready.length) return "";
+      const favoriteNames = new Set(favoritesForCard(dc.site, dc.sessionId).map((item) => item.name));
       const jumps = ready.map((vm) => {
         const label = vmDisplayName(vm);
+        const favorite = favoriteNames.has(label.trim().toLowerCase());
         const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
-        const tip = `Opens dCloud Remote Desktop for ${label}.`;
-        return `<button type="button" class="btn-vm-webrdp webrdp-jump" ${vmData} data-tip="${escapeHtml(tip)}">${escapeHtml(label)}</button>`;
+        const tip = favorite
+          ? `Favorite. Opens dCloud Remote Desktop for ${label}.`
+          : `Opens dCloud Remote Desktop for ${label}.`;
+        const mark = favorite ? `<span class="webrdp-fav-mark" aria-hidden="true">★</span>` : "";
+        const favClass = favorite ? " is-favorite" : "";
+        return `<button type="button" class="btn-vm-webrdp webrdp-jump${favClass}" ${vmData} data-tip="${escapeHtml(tip)}">${mark}${escapeHtml(label)}</button>`;
       }).join("");
       return `<div class="webrdp-jumps"><span class="webrdp-label">WebRDP</span>${jumps}</div>`;
     }
@@ -13688,12 +13700,16 @@
     const foundSessionCards = new Map();
     const foundSessionOpen = new Set();
     const foundVmMoreOpen = new Set();
-    const foundSessionVcTried = new Set();
+
+    function foundSessionCardReady(dc) {
+      return Boolean(dc) && Array.isArray(dc.vms);
+    }
 
     function applySavedSessionCards() {
       for (const dc of finderLists["session-card"]?.rows || []) {
         const key = sessionKey(dc?.site, dc?.sessionId);
         if (!key || key.endsWith(":") || foundSessionCards.has(key)) continue;
+        if (!foundSessionCardReady(dc)) continue;
         foundSessionCards.set(key, dc);
       }
     }
@@ -16469,10 +16485,9 @@
       if (card.open) foundSessionOpen.add(key);
       else foundSessionOpen.delete(key);
       if (!card.open) return;
-      const loadedCard = foundSessionCards.get(key);
-      const hasVc = String(loadedCard?.virtualCenter || "").trim();
-      if (loadedCard && (hasVc || foundSessionVcTried.has(key))) return;
-      foundSessionVcTried.add(key);
+      // A first expand GETs VMs and WebRDP and stores them. Later expands,
+      // including after a refresh or app restart, reuse that copy.
+      if (foundSessionCardReady(foundSessionCards.get(key))) return;
       loadFoundSessionCard(card.dataset.site, card.dataset.session).catch((err) => {
         const body = card.querySelector(".found-session-detail");
         if (body) body.innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;

@@ -1,3 +1,11 @@
+## 2.0.21 — 2026-10-12
+
+- **A favorite VM keeps a star on its WebRDP chip.** The chip stays the same blue so it does not look like a different status. The Favorites list under the chips is unchanged
+
+## 2.0.20 — 2026-10-12
+
+- **Expanding an active session on My Content GETs details once.** That copy is stored with the rest of the last-pull data. A page refresh or app restart shows the same VMs and WebRDP without another GET. Find/Refresh Sessions downloads a live card again
+
 ## 2.0.19 — 2026-10-12
 
 - **The date calendar on My Content opens again.** It was opening inside the hidden Schedule page, so the click did nothing

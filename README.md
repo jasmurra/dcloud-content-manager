@@ -18,6 +18,8 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.21** | A favorite VM keeps a star on its WebRDP chip, still in the same blue |
+| **2.0.20** | Expanding an active session on My Content keeps that GET after a refresh or app restart |
 | **2.0.19** | The start and stop date calendar on My Content opens again |
 | **2.0.18** | A finished integration is not submitted again; burn-in schedules one session per datacenter; the ending-soon banner stays closed for sessions you already dismissed |
 | **2.0.17** | Login closes after the token is saved and refreshes while the tool is open; Chrome updates stay out of Open With; checked VMs still power on after a restart |
