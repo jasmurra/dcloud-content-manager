@@ -1,3 +1,10 @@
+## 2.0.25 — 2026-10-13
+
+- **Load VMs and Load Transfer VMs can take several different demos.** Each demo gets its own section, with its own VMs and destinations. The same demo in several datacenters stays one section. Submit all sends those sections one at a time, and a failure on one demo leaves the others going
+- **Same destinations for every demo checks a datacenter on every loaded demo.** You can still change one demo afterward. A destination that demo cannot use stays off
+- **CAMGR status no longer opens a browser or reads Chrome.** Connect and Add to Hub were stuck while those checks held every connection to the app
+- **Catalog search opens a demo when it is not a scheduled lab.** Instant, Guided, and Business Value demos use View and the dCloud survey. Apex uses Explore, then Try It. A type labeled Demo still schedules
+
 ## 2.0.24 — 2026-10-12
 
 - **CAI and CAMGR Hub polls run only while a job is in progress.** They check every 20 seconds instead of 5. Finished rows, missing dest IDs, and waiting-for-login states do not keep those calls going

@@ -1738,6 +1738,188 @@ def catalog_search(
     return [item for item in items if isinstance(item, dict)], None
 
 
+_CATALOG_VIEW_TYPES = {"INSTANTDEMO", "GUIDEDDEMO", "BUSINESSVALUEDEMO"}
+_CATALOG_METRICS = {
+    "INSTANTDEMO": "instantDemo",
+    "GUIDEDDEMO": "guidedDemo",
+    "BUSINESSVALUEDEMO": "businessValueDemo",
+}
+
+
+def catalog_launch_kind(content_type: str, access_url: str = "") -> str:
+    """DEMO schedules. Apex explores its modes. Instant and guided demos open with View."""
+    kind = str(content_type or "").strip().upper()
+    if kind == "DEMO":
+        return "schedule"
+    if kind == "APEX":
+        return "explore"
+    if kind in _CATALOG_VIEW_TYPES or str(access_url or "").strip():
+        return "view"
+    return ""
+
+
+def catalog_metrics_segment(content_type: str) -> str:
+    return _CATALOG_METRICS.get(str(content_type or "").strip().upper(), "")
+
+
+def catalog_view_payload(
+    answers: dict[str, Any] | None,
+    apex: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The metrics body dCloud posts when View is clicked. Blank answers are left out."""
+    rationale: dict[str, str] = {}
+    for key, value in (answers or {}).items():
+        name = str(key or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,80}", name):
+            continue
+        text = str(value or "").strip()
+        if not text:
+            continue
+        rationale[name] = text[:255]
+    payload: dict[str, Any] = {"rationaleQuestions": rationale}
+    handle = str((apex or {}).get("handle") or "").strip()
+    if handle:
+        payload["apexDemo"] = {
+            "handle": handle[:200],
+            "name": str((apex or {}).get("name") or "")[:300],
+            "subModeName": str(
+                (apex or {}).get("subModeName") or (apex or {}).get("sub_mode_name") or ""
+            )[:300],
+            "mode": str((apex or {}).get("mode") or "DEMO").strip()[:40] or "DEMO",
+        }
+    return payload
+
+
+def _catalog_access_url_ok(url: str) -> bool:
+    parsed = urlparse(str(url or "").strip())
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and (
+        host.endswith(".cisco.com")
+        or host.endswith(".ciscodcloud.com")
+        or host.endswith(".cat-dcloud.com")
+    )
+
+
+def fetch_demo_survey(token: str, site: str) -> tuple[dict[str, Any] | None, str | None]:
+    """GET /api/users/current/scheduling-options — the View survey questions."""
+    url = f"{site_base(site)}/api/users/current/scheduling-options"
+    try:
+        response = _request("GET", url, token, timeout=20)
+    except requests.RequestException as exc:
+        return None, str(exc)
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401)."
+    body = _json_or_text(response)
+    if response.status_code >= 400 or not isinstance(body, dict):
+        return None, api_message(body) or f"HTTP {response.status_code}"
+    block = (body.get("scheduling") or [{}])[0]
+    if not isinstance(block, dict):
+        block = {}
+    questions: list[dict[str, Any]] = []
+    for option in block.get("schedulingOptions") or []:
+        if not isinstance(option, dict):
+            continue
+        choices = []
+        for choice in option.get("values") or []:
+            if not isinstance(choice, dict):
+                continue
+            choices.append(
+                {
+                    "value": str(choice.get("value") or ""),
+                    "label": str(choice.get("title") or choice.get("value") or ""),
+                    "description": str(choice.get("description") or ""),
+                    "children": [
+                        str(child)
+                        for child in (choice.get("children") or [])
+                        if str(child or "").strip()
+                    ],
+                }
+            )
+        questions.append(
+            {
+                "value": str(option.get("value") or ""),
+                "label": str(option.get("description") or option.get("title") or ""),
+                "type": str(option.get("type") or "textbox"),
+                "mandatory": bool(option.get("mandatory")),
+                "options": choices,
+            }
+        )
+    if not questions:
+        return None, "dCloud did not return the demo questions."
+    return {"root": str(block.get("root") or "demo-usage"), "questions": questions}, None
+
+
+def public_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
+    modes = []
+    for mode in item.get("modes") or []:
+        if not isinstance(mode, dict):
+            continue
+        submodes = []
+        for sub in mode.get("subModes") or []:
+            if not isinstance(sub, dict):
+                continue
+            submodes.append(
+                {
+                    "name": str(sub.get("name") or "").strip(),
+                    "description": str(sub.get("description") or "").strip(),
+                    "handle": str(sub.get("handle") or "").strip(),
+                    "contentType": str(sub.get("contentType") or "").strip(),
+                }
+            )
+        modes.append({"name": str(mode.get("name") or "").strip(), "subModes": submodes})
+    content_type = str(item.get("contentType") or "").strip()
+    access_url = str(item.get("accessUrl") or "").strip()
+    return {
+        "id": str(item.get("id") or "").strip(),
+        "name": str(item.get("name") or "").strip(),
+        "contentType": content_type,
+        "accessUrl": access_url if _catalog_access_url_ok(access_url) else "",
+        "launch": catalog_launch_kind(content_type, access_url),
+        "modes": modes,
+    }
+
+
+def submit_catalog_view(
+    token: str,
+    site: str,
+    catalog_id: str,
+    answers: dict[str, Any] | None,
+    apex: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Post the View survey, then return the demo link. The survey is not skipped."""
+    slug = str(catalog_id or "").strip()
+    if not slug:
+        return None, "Catalog ID is required."
+    item = fetch_catalog_item(token, site, {"id": slug})
+    if not item:
+        return None, "That catalog item was not found."
+    public = public_catalog_item(item)
+    access_url = str(public.get("accessUrl") or "")
+    if not access_url:
+        return None, "This catalog item has no view link."
+    segment = catalog_metrics_segment(str(public.get("contentType") or ""))
+    if not segment:
+        return None, "This catalog item opens from Explore or Schedule, not View."
+    payload = catalog_view_payload(answers, apex)
+    if "demo-usage" not in (payload.get("rationaleQuestions") or {}):
+        return None, "Choose the purpose of this demo."
+    url = f"{site_base(site)}/api/metrics/{segment}/{quote(slug)}"
+    try:
+        response = _request("POST", url, token, json_body=payload, timeout=30)
+    except requests.RequestException as exc:
+        return None, str(exc)
+    if response.status_code == 401:
+        return None, "dCloud token was rejected (401)."
+    if response.status_code >= 400:
+        return None, api_message(_json_or_text(response)) or f"HTTP {response.status_code}"
+    return {
+        "id": public.get("id") or slug,
+        "name": public.get("name") or "",
+        "contentType": public.get("contentType") or "",
+        "accessUrl": access_url,
+    }, None
+
+
 def _admin_search_value(item: dict[str, Any], *keys: str) -> str:
     values: list[str] = []
     for key in keys:

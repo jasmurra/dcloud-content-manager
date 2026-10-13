@@ -77,6 +77,11 @@ from dcloud_client import (
     fetch_webrdp_credentials,
     webrdp_connect_url,
     catalog_search,
+    catalog_launch_kind,
+    fetch_demo_survey,
+    fetch_catalog_item,
+    public_catalog_item,
+    submit_catalog_view,
     check_public_session_status,
     delete_saved_content,
     decline_surveys,
@@ -1346,6 +1351,18 @@ class EventSessionActionPayload(TokenPayload):
 
 class CatalogIdsPayload(TokenPayload):
     name: str = ""
+
+
+class CatalogItemPayload(TokenPayload):
+    site: str = "rtp"
+    catalog_id: str = ""
+
+
+class CatalogViewPayload(TokenPayload):
+    site: str = "rtp"
+    catalog_id: str = ""
+    answers: dict[str, str] = Field(default_factory=dict)
+    apex: dict[str, str] = Field(default_factory=dict)
 
 
 class VmActionPayload(TokenPayload):
@@ -4246,29 +4263,17 @@ def _connect_camgr_body(cookie: str = "") -> dict[str, Any]:
         _camgr_mark_unverified(reason)
         raise HTTPException(400, reason)
     header = (cookie or "").strip()
-    probed = probe_camgr_login(header, allow_tab=False, timeout=8)
+    probed = probe_camgr_login(header, allow_tab=False, timeout=8) if header else {"loggedIn": False}
     tool_message = ""
     if not probed.get("loggedIn"):
         tool_header, tool_message = capture_camgr_session()
         if tool_header:
             header = tool_header
-            probed = probe_camgr_login(header, allow_tab=False)
-    tab_message = ""
+            probed = probe_camgr_login(header, allow_tab=False, timeout=8)
     if not probed.get("loggedIn"):
-        # Pick up a CAMGR tab that is already open. Do not spawn extra Chrome
-        # windows — Connect already opened the tool browser for SSO.
-        probed = probe_camgr_login(header, allow_tab=True)
-        if probed.get("loggedIn"):
-            header = str(probed.get("cookie") or header or "").strip() or header
-        else:
-            tab_message = str(probed.get("message") or "")
-    if not probed.get("loggedIn"):
-        imported, _import_message = import_camgr_cookies_from_chrome()
-        if imported:
-            header = imported
-            probed = probe_camgr_login(header, allow_tab=False)
-    if not probed.get("loggedIn"):
-        reason = tool_message or tab_message or probed.get("message") or CAMGR_LOGIN_HINT
+        # The tool window already ran. Chrome Keychain and a Chrome tab scan
+        # block this request for a long time after that window has closed.
+        reason = tool_message or probed.get("message") or CAMGR_LOGIN_HINT
         _camgr_mark_unverified(reason)
         raise HTTPException(400, reason)
     header = str(probed.get("cookie") or header or "").strip() or header
@@ -9002,6 +9007,10 @@ def api_unified_search(body: UnifiedSearchPayload) -> dict[str, Any]:
             "id": str(item.get("id") or "").strip(),
             "name": str(item.get("name") or "").strip(),
             "contentType": str(item.get("contentType") or "").strip(),
+            "launch": catalog_launch_kind(
+                str(item.get("contentType") or ""),
+                str(item.get("accessUrl") or ""),
+            ),
             "updated": str(
                 item.get("modifiedOn") or item.get("updatedOn") or item.get("publishedOn") or ""
             ),
@@ -9051,6 +9060,49 @@ def api_unified_catalog_ids(body: CatalogIdsPayload) -> dict[str, Any]:
     if not ids:
         raise HTTPException(404, "That catalog result has no schedulable demo IDs.")
     return {"ok": True, "name": name, "ids": ids, "lookups": lookups}
+
+
+def _catalog_site(site: str) -> str:
+    code = str(site or "").strip().lower()
+    if code not in SITES:
+        raise HTTPException(400, "Pick a datacenter for the catalog.")
+    return code
+
+
+@app.post("/api/catalog/survey")
+def api_catalog_survey(body: CatalogItemPayload) -> dict[str, Any]:
+    site = _catalog_site(body.site)
+    survey, error = fetch_demo_survey(_resolve_token(body), site)
+    if error or not survey:
+        raise HTTPException(502, error or "dCloud did not return the demo questions.")
+    return {"ok": True, "survey": survey}
+
+
+@app.post("/api/catalog/item")
+def api_catalog_item(body: CatalogItemPayload) -> dict[str, Any]:
+    slug = str(body.catalog_id or "").strip()
+    if not slug:
+        raise HTTPException(400, "Catalog ID is required.")
+    site = _catalog_site(body.site)
+    item = fetch_catalog_item(_resolve_token(body), site, {"id": slug})
+    if not item:
+        raise HTTPException(404, "That catalog item was not found.")
+    return {"ok": True, "item": public_catalog_item(item)}
+
+
+@app.post("/api/catalog/view")
+def api_catalog_view(body: CatalogViewPayload) -> dict[str, Any]:
+    site = _catalog_site(body.site)
+    opened, error = submit_catalog_view(
+        _resolve_token(body),
+        site,
+        body.catalog_id,
+        body.answers,
+        body.apex,
+    )
+    if error or not opened:
+        raise HTTPException(502, error or "The demo could not be opened.")
+    return {"ok": True, **opened}
 
 
 @app.post("/api/sessions/mine")
@@ -9887,8 +9939,9 @@ def api_saved_ids_lookup_roots(body: SavedIdsLookupRootsPayload) -> dict[str, An
 
 @app.get("/api/camgr/status")
 def api_camgr_status() -> dict[str, Any]:
-    # Auto-connect handles the probe and falls back to the Chrome cookie on its own.
-    return _camgr_auto_connect()
+    # The page polls this. A probe or a hidden browser here fills every
+    # connection to the app, and Add to Hub never gets a turn.
+    return _camgr_public_status()
 
 
 @app.post("/api/camgr/connect")

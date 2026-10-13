@@ -1169,6 +1169,40 @@
     .action-modal-card {
       border-color: rgba(251, 191, 36, 0.55);
     }
+    .catalog-launch-card {
+      width: min(100%, 720px);
+      max-height: min(86vh, 760px);
+      overflow: auto;
+      border-color: var(--border);
+    }
+    .catalog-launch-card h2 { color: var(--text); }
+    .survey-question { margin-top: 0.9rem; }
+    .survey-question label { display: block; font-weight: 650; }
+    .survey-choices { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.45rem; }
+    .survey-choice {
+      border-radius: 999px;
+      border: 1px solid #049fd9;
+      background: transparent;
+      color: inherit;
+      padding: 0.35rem 0.9rem;
+    }
+    .survey-choice.is-selected { background: #049fd9; color: #fff; }
+    .survey-options { width: 100%; border-collapse: collapse; margin-top: 0.35rem; }
+    .survey-options tr { cursor: pointer; }
+    .survey-options td { padding: 0.6rem 0.45rem; border-top: 1px solid var(--border); vertical-align: top; }
+    .survey-options tr.is-selected { background: rgba(4, 159, 217, 0.12); }
+    .catalog-mode-chip {
+      display: inline-block;
+      background: #049fd9;
+      color: #fff;
+      border: 0;
+      border-radius: 4px;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.8rem;
+      margin: 0 0.35rem 0.55rem 0;
+    }
+    .catalog-mode-chip.is-selected { outline: 2px solid rgba(4, 159, 217, 0.35); }
+    .survey-note { display: block; margin-top: 0.2rem; }
     .fresh-scope-list {
       display: grid;
       gap: 0.55rem;
@@ -1777,6 +1811,25 @@
       gap: 0.4rem;
       margin: 0.5rem 0 0.35rem;
     }
+    .demo-load-sections { display: grid; gap: 0.65rem; margin-top: 0.65rem; }
+    .demo-master-dests {
+      margin-top: 0.75rem;
+      padding: 0.65rem 0.8rem 0.75rem;
+      border: 1px solid var(--accent, #049fd9);
+      border-radius: 8px;
+      background: rgba(4, 159, 217, 0.06);
+    }
+    .demo-master-dests .hint { margin: 0.15rem 0 0.35rem; }
+    .demo-load-section {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.15rem 0.8rem 0.75rem;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .demo-load-section summary { cursor: pointer; padding: 0.45rem 0; }
+    .demo-load-title { font-weight: 650; }
+    .demo-load-meta { margin-left: 0.45rem; font-weight: 400; }
+    .demo-load-status { margin: 0.15rem 0 0.35rem; }
     .camgr-dest-list label {
       display: inline-flex;
       align-items: center;
@@ -2602,6 +2655,35 @@
       </div>
     </div>
 
+    <div id="catalog-view-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="catalog-view-title">
+      <div class="modal-backdrop" id="catalog-view-backdrop"></div>
+      <div class="modal-card action-modal-card catalog-launch-card">
+        <h2 id="catalog-view-title">Tell us about your demo</h2>
+        <p id="catalog-view-name"></p>
+        <p class="hint">* Required</p>
+        <div id="catalog-view-questions"></div>
+        <p id="catalog-view-status" class="hint" aria-live="polite"></p>
+        <div class="actions">
+          <button type="button" class="secondary" id="catalog-view-cancel">Cancel</button>
+          <button type="button" id="catalog-view-submit" disabled>View</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="catalog-explore-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="catalog-explore-title">
+      <div class="modal-backdrop" id="catalog-explore-backdrop"></div>
+      <div class="modal-card action-modal-card catalog-launch-card">
+        <h2 id="catalog-explore-title">Demo Modes</h2>
+        <p id="catalog-explore-name" class="hint"></p>
+        <div id="catalog-explore-modes"></div>
+        <p id="catalog-explore-status" class="hint" aria-live="polite"></p>
+        <div class="actions">
+          <button type="button" class="secondary" id="catalog-explore-close">Close</button>
+          <button type="button" id="catalog-explore-try" disabled>Try It</button>
+        </div>
+      </div>
+    </div>
+
     <div id="confirm-alert" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-alert-title">
       <div class="modal-backdrop" id="confirm-alert-backdrop"></div>
       <div class="modal-card action-modal-card">
@@ -3364,8 +3446,8 @@
       </p>
       <p class="hint help-text" style="margin-top:0.75rem">
         Use the header checkbox to select rows for Load VMs, CAI replace, or CAMGR transfer.
-        After a spin-up save, check every DC of the <strong>same</strong> demo together — they share the same VMs.
-        Do not mix two different demos.
+        After a spin-up save, check every DC of the <strong>same</strong> demo together — they share one section.
+        Different demos each get their own section, and Submit sends all of them.
         <strong>Remove from List</strong> takes checked rows off this list; <strong>Remove All</strong> clears every row in one confirmation.
         Neither deletes dCloud content.
         Find saved content, then Add, to put more IDs here.
@@ -3381,33 +3463,33 @@
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-camgr-connect" data-tip="Opens CAMGR in a tool-owned Chromium window. Sign in with Cisco SSO/Duo once; later Connect/refresh reuse that profile instead of Chrome Keychain.">Connect to CAMGR</button>
         <a class="secondary" id="btn-camgr-open" href="https://dcloud-camgr.cisco.com/#/cas" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Transfer in a new tab if you want to look at CAMGR. Not required for Connect.">Open CAMGR</a>
-        <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads VMs and destination DCs from CAMGR for the checked saved content rows. Greyed out for ContentDEV rows — use Transfer VMs from Content Dev instead.">Load Transfer VMs</button>
+        <button type="button" class="secondary" id="btn-camgr-load-vms" data-tip="Loads a section per checked demo. The same demo in several datacenters stays one section. ContentDEV rows use Transfer VMs from Content Dev instead.">Load Transfer VMs</button>
         <p class="hint load-target" id="camgr-load-target"></p>
       </div>
       <p id="camgr-status" class="hint" style="margin-top:0.35rem">Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.</p>
       <p class="hint">
-        Check a box in the saved content list above for what you want to transfer, then click
-        <strong>Load Transfer VMs</strong> and pick the destination DCs. Several rows of the same demo can be
-        checked together; two different demos cannot.
+        Check the saved content rows to transfer, then click <strong>Load Transfer VMs</strong>.
+        Each different demo opens its own section with its own VMs and destination DCs.
+        The same demo in several datacenters stays one section.
       </p>
       <p class="hint help-text">
         Transfer VMs are checked for you; destination DCs start unchecked.
         <strong>ContentDEV</strong> transfers land in a vPod, so checking it turns on a vPod dropdown.
         Optionally check <strong>After transfer completes, submit CAI Integrate</strong> to run integration
         to those same DCs when CAMGR shows COMPLETE.
+        When several demos are loaded, <strong>Same destinations for every demo</strong> checks a datacenter on all of them.
+        ContentDEV still needs a vPod inside each demo when that datacenter has more than one.
       </p>
-      <div id="camgr-vm-toolbar" class="list-toolbar chip-toolbar hidden">
-        <p class="hint chip-toolbar-label">Transfer VMs</p>
-        <button type="button" class="secondary" id="btn-camgr-vms-check-all">Check All</button>
-        <button type="button" class="secondary" id="btn-camgr-vms-uncheck-all">Uncheck All</button>
+      <div id="camgr-master-dests" class="demo-master-dests hidden">
+        <div class="list-toolbar chip-toolbar">
+          <p class="hint chip-toolbar-label">Same destinations for every demo</p>
+          <button type="button" class="secondary" id="btn-camgr-master-check-all">Check All</button>
+          <button type="button" class="secondary" id="btn-camgr-master-uncheck-all">Uncheck All</button>
+        </div>
+        <p class="hint">Checking a datacenter here checks it on every demo below. You can still change one demo afterward.</p>
+        <div id="camgr-master-dest-list" class="camgr-dest-list"></div>
       </div>
-      <div id="camgr-vm-list" class="cai-vm-list"></div>
-      <div id="camgr-dest-toolbar" class="list-toolbar chip-toolbar hidden">
-        <p class="hint chip-toolbar-label">Destination DCs</p>
-        <button type="button" class="secondary" id="btn-camgr-dest-check-all">Check All</button>
-        <button type="button" class="secondary" id="btn-camgr-dest-uncheck-all">Uncheck All</button>
-      </div>
-      <div id="camgr-dest-list" class="camgr-dest-list" data-dc-order></div>
+      <div id="camgr-vm-list" class="demo-load-sections"></div>
       <label id="camgr-auto-integrate-wrap" class="camgr-auto-integrate hidden">
         <input type="checkbox" id="camgr-auto-integrate" />
         <span>After transfer completes, submit CAI Integrate to the same destination DCs</span>
@@ -3419,7 +3501,7 @@
         <span>day(s)</span>
       </div>
       <div class="actions">
-        <button type="button" id="btn-camgr-transfer" data-tip="Submits a CAMGR transfer for each checked row to the checked destination DCs. Greyed out for ContentDEV rows — use Submit dev transfer instead.">Submit Transfer</button>
+        <button type="button" id="btn-camgr-transfer" data-tip="Submits every demo section that has destination DCs checked. Each demo keeps the VMs and destinations checked inside its section.">Submit all transfers</button>
       </div>
       <hr class="task-divider" />
       <p class="step-label" style="margin-top:0" id="camgr-dev-title">Transfer VMs from Content Dev to RTP</p>
@@ -3455,29 +3537,36 @@
       <div class="actions" style="margin-top:0">
         <button type="button" id="btn-cai-connect" data-tip="Opens CAI in the tool browser for Cisco SSO/Duo if needed. Later refreshes reuse that login — no Chrome Keychain.">Connect to CAI</button>
         <a class="secondary" id="btn-cai-open" href="https://dcloud-cai.cisco.com/" target="_blank" rel="noopener noreferrer" data-tip="Opens Content Automation Hub in a new tab. Not required for Connect.">Open CAI</a>
-        <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads VM names from CAI for one demo. After a spin-up save, check every DC of that same demo — they share the same VMs. Greyed out for ContentDEV rows; those VMs are discovered in Transfer VMs from Content Dev.">Load VMs</button>
+        <button type="button" class="secondary" id="btn-cai-load-vms" data-tip="Loads a section per checked demo. The same demo in several datacenters shares one VM list. ContentDEV rows are discovered under Transfer VMs from Content Dev.">Load VMs</button>
         <p class="hint load-target" id="cai-load-target"></p>
       </div>
       <p id="cai-status" class="hint" style="margin-top:0.35rem">CAI: on the Cisco network, click Connect to CAI.</p>
       <p class="hint chip-toolbar-label hidden" id="cai-vm-label"></p>
       <p class="hint">
-        Check a box in the saved content list above for what you want to integrate, then click
-        <strong>Load VMs</strong>. Several rows of the same demo can be checked together; two different demos cannot.
+        Check the saved content rows to integrate, then click <strong>Load VMs</strong>.
+        Each different demo opens its own section. The same demo in several datacenters stays one section.
       </p>
       <p class="hint help-text">
         Target ID is the demo this save came from (filled when this tool saved the session). Root ID is the original base; copy it into Target if you want CAI to replace VMs there instead.
       </p>
-      <div id="cai-vm-list" class="cai-vm-list"></div>
-      <p class="step-label hidden" id="cai-integrate-label" style="margin-top:0.85rem">CAI Integrate Destinations</p>
-      <p class="hint help-text hidden" id="cai-integrate-hint">
-        These checkboxes are for <strong>Submit Integration</strong> only (CAI creates a separate task per dest DC, like rtp ⇒ sjc).
-        Load VMs after a CAMGR transfer to show dests. Dest DCs that CAI already integrated are disabled.
-        They are not used for VM replacement.
+      <p class="hint help-text" id="cai-integrate-hint">
+        Integrate destinations sit inside each demo section. CAI creates a separate task per dest DC.
+        Dest DCs that CAI already integrated are disabled. They are not used for VM replacement.
+        When several demos are loaded, <strong>Same destinations for every demo</strong> checks a datacenter on all of them.
       </p>
-      <div id="cai-integrate-list" class="camgr-dest-list" data-dc-order></div>
+      <div id="cai-master-dests" class="demo-master-dests hidden">
+        <div class="list-toolbar chip-toolbar">
+          <p class="hint chip-toolbar-label">Same destinations for every demo</p>
+          <button type="button" class="secondary" id="btn-cai-master-check-all">Check All</button>
+          <button type="button" class="secondary" id="btn-cai-master-uncheck-all">Uncheck All</button>
+        </div>
+        <p class="hint">Checking a datacenter here checks it on every demo below. A destination that demo already integrated stays off.</p>
+        <div id="cai-master-dest-list" class="camgr-dest-list"></div>
+      </div>
+      <div id="cai-vm-list" class="demo-load-sections"></div>
       <div class="actions">
-        <button type="button" id="btn-cai-replace" disabled data-tip="Copies checked VMs into each checked row’s Target ID in that DC. Filled when this tool saved the session; otherwise type the demo ID. Greyed out until VMs are loaded and a Target ID is present.">Submit VM Replacement</button>
-        <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for dest DCs that are not already integrated. Needs a CAMGR transfer first. Already-integrated dests cannot be selected.">Submit Integration</button>
+        <button type="button" id="btn-cai-replace" disabled data-tip="Copies each section’s checked VMs into that demo’s Target ID. Several demos submit together. Greyed out until a section has VMs checked.">Submit all replacements</button>
+        <button type="button" id="btn-cai-integrate" disabled data-tip="Submits CAI Integrate for every demo section that has destination DCs checked. Needs a CAMGR transfer for that demo. Already-integrated dests stay disabled.">Submit all integrations</button>
       </div>
       <hr class="task-divider" />
       <p class="step-label" style="margin-top:0">Integrate Template from Content Dev or a Demo</p>
@@ -3700,7 +3789,7 @@
 
         <hr style="margin:1rem 0;border:0;border-top:1px solid var(--border)" />
         <h3 style="margin:0 0 0.35rem">Catalog Search</h3>
-        <p class="hint">Catalog uses its own search. Enter a name or catalog ID.</p>
+        <p class="hint">Catalog uses its own search. Enter a name or catalog ID. Demo rows schedule a session. Instant Demo and Guided Demo use View, and Apex uses Explore.</p>
         <div class="unified-search-toolbar">
           <label style="flex:1;min-width:16rem">
             <span>Catalog search</span>
@@ -5846,17 +5935,31 @@
       makeColumnsResizable("unified-search-results");
     }
 
+    function catalogTypeLabel(type) {
+      const labels = {
+        DEMO: "Demo",
+        INSTANTDEMO: "Instant Demo",
+        GUIDEDDEMO: "Guided Demo",
+        APEX: "Apex",
+        BUSINESSVALUEDEMO: "Business Value Demo",
+      };
+      const key = String(type || "").toUpperCase();
+      return labels[key] || type || "—";
+    }
+
     function renderUnifiedCatalog(data) {
       const catalog = data.catalog || [];
+      catalogSearchRows = catalog;
+      catalogSearchSite = String((data.sites && data.sites[0]) || "rtp").toLowerCase();
       const errors = data.errors || {};
       const catalogRows = catalog.map((row) => `
         <tr>
           <td>${escapeHtml(row.name || "—")}</td>
           <td class="mono">${escapeHtml(row.id || "—")}</td>
-          <td>${escapeHtml(row.contentType || "—")}</td>
+          <td>${escapeHtml(catalogTypeLabel(row.contentType))}</td>
           <td>${escapeHtml(formatSessionWhen(row.updated) || row.updated || "—")}</td>
           <td><div class="search-result-actions">
-            <button type="button" class="btn-search-catalog-schedule" data-name="${escapeHtml(row.name || "")}">Schedule</button>
+            ${catalogActionButton(row)}
             ${row.profileUrl ? `<a class="secondary" href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer">Open Catalog</a>` : ""}
           </div></td>
         </tr>
@@ -6277,6 +6380,270 @@
     }
 
     let catalogScheduleIds = {};
+    let catalogSearchRows = [];
+    let catalogSearchSite = "rtp";
+    let catalogSurvey = null;
+    let catalogViewTarget = null;
+    let catalogSurveyAnswers = {};
+    let catalogExploreItem = null;
+    let catalogExploreMode = 0;
+    let catalogExploreHandle = "";
+    let catalogViewPopup = null;
+
+    function catalogLaunch(row) {
+      const launch = String(row.launch || "").toLowerCase();
+      if (launch) return launch;
+      const type = String(row.contentType || "").toUpperCase();
+      if (type === "DEMO") return "schedule";
+      if (type === "APEX") return "explore";
+      if (type === "INSTANTDEMO" || type === "GUIDEDDEMO" || type === "BUSINESSVALUEDEMO") return "view";
+      return "";
+    }
+
+    function catalogActionButton(row) {
+      const launch = catalogLaunch(row);
+      const id = escapeHtml(row.id || "");
+      const name = escapeHtml(row.name || "");
+      if (launch === "schedule") {
+        return `<button type="button" class="btn-search-catalog-schedule" data-id="${id}" data-name="${name}">Schedule</button>`;
+      }
+      if (launch === "explore") {
+        return `<button type="button" class="btn-search-catalog-explore" data-id="${id}" data-name="${name}">Explore</button>`;
+      }
+      if (launch === "view") {
+        return `<button type="button" class="btn-search-catalog-view" data-id="${id}" data-name="${name}">View</button>`;
+      }
+      return "";
+    }
+
+    function findCatalogSearchRow(id) {
+      return catalogSearchRows.find((row) => String(row.id || "") === String(id || "")) || null;
+    }
+
+    function closeCatalogView() {
+      if (catalogViewPopup && !catalogViewPopup.closed) {
+        try { catalogViewPopup.close(); } catch { /* the tab may already be gone */ }
+      }
+      catalogViewPopup = null;
+      catalogViewTarget = null;
+      $("catalog-view-modal")?.classList.add("hidden");
+    }
+
+    function visibleSurveyQuestions() {
+      const questions = (catalogSurvey && catalogSurvey.questions) || [];
+      const byId = Object.fromEntries(questions.map((question) => [question.value, question]));
+      const rootId = (catalogSurvey && catalogSurvey.root) || "demo-usage";
+      const root = byId[rootId];
+      if (!root) return questions;
+      const visible = [root];
+      const selected = (root.options || []).find((option) => option.value === catalogSurveyAnswers[rootId]);
+      for (const childId of (selected && selected.children) || []) {
+        if (byId[childId]) visible.push(byId[childId]);
+      }
+      return visible;
+    }
+
+    function surveyReady() {
+      return visibleSurveyQuestions().every(
+        (question) => !question.mandatory || String(catalogSurveyAnswers[question.value] || "").trim(),
+      );
+    }
+
+    function renderCatalogSurvey() {
+      const box = $("catalog-view-questions");
+      if (!box) return;
+      const questions = visibleSurveyQuestions();
+      box.innerHTML = questions.map((question) => {
+        const label = `${escapeHtml(question.label || question.value)}${question.mandatory ? " *" : ""}`;
+        if (question.type === "button-set") {
+          const choices = (question.options || []).map((option) => `
+            <button type="button" class="survey-choice${catalogSurveyAnswers[question.value] === option.value ? " is-selected" : ""}" data-question="${escapeHtml(question.value)}" data-value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</button>
+          `).join("");
+          return `<div class="survey-question"><label>${label}</label><div class="survey-choices">${choices}</div></div>`;
+        }
+        if (question.type === "radio") {
+          const rows = (question.options || []).map((option) => `
+            <tr class="${catalogSurveyAnswers[question.value] === option.value ? "is-selected" : ""}" data-question="${escapeHtml(question.value)}" data-value="${escapeHtml(option.value)}">
+              <td><input type="radio" name="survey-${escapeHtml(question.value)}" value="${escapeHtml(option.value)}" ${catalogSurveyAnswers[question.value] === option.value ? "checked" : ""} /></td>
+              <td><strong>${escapeHtml(option.label)}</strong></td>
+            </tr>
+          `).join("");
+          return `<div class="survey-question"><label>${label}</label><table class="survey-options"><tbody>${rows}</tbody></table></div>`;
+        }
+        return `<div class="survey-question"><label for="survey-text-${escapeHtml(question.value)}">${label}</label><textarea id="survey-text-${escapeHtml(question.value)}" data-question="${escapeHtml(question.value)}" maxlength="255" rows="3">${escapeHtml(catalogSurveyAnswers[question.value] || "")}</textarea></div>`;
+      }).join("");
+      const submit = $("catalog-view-submit");
+      if (submit) submit.disabled = !surveyReady();
+    }
+
+    async function openCatalogView(row, apex = null) {
+      if (!row) return;
+      if (!ensureTokenReady("viewing this demo")) return;
+      catalogViewTarget = {
+        id: row.id || row.handle || "",
+        name: row.name || "",
+        contentType: row.contentType || "",
+        apex,
+      };
+      catalogSurveyAnswers = {};
+      $("catalog-view-name").textContent = catalogViewTarget.name || catalogViewTarget.id;
+      $("catalog-view-status").textContent = "";
+      $("catalog-view-submit").disabled = true;
+      $("catalog-view-modal").classList.remove("hidden");
+      if (!catalogSurvey) {
+        $("catalog-view-questions").innerHTML = `<p class="hint">Loading questions…</p>`;
+        try {
+          const data = await api("/api/catalog/survey", {
+            method: "POST",
+            quiet: true,
+            body: JSON.stringify({ ...tokenPayload(), site: catalogSearchSite }),
+          });
+          catalogSurvey = data.survey;
+        } catch (err) {
+          $("catalog-view-questions").innerHTML = "";
+          $("catalog-view-status").textContent = err.message;
+          return;
+        }
+      }
+      renderCatalogSurvey();
+    }
+
+    async function submitCatalogView() {
+      if (!catalogViewTarget || !surveyReady()) return;
+      const popup = window.open("", "_blank");
+      catalogViewPopup = popup;
+      const submit = $("catalog-view-submit");
+      if (submit) submit.disabled = true;
+      $("catalog-view-status").textContent = "Opening the demo…";
+      const answers = {};
+      for (const question of visibleSurveyQuestions()) {
+        const value = String(catalogSurveyAnswers[question.value] || "").trim();
+        if (value) answers[question.value] = value;
+      }
+      try {
+        const data = await api("/api/catalog/view", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site: catalogSearchSite,
+            catalog_id: catalogViewTarget.id,
+            answers,
+            apex: catalogViewTarget.apex || {},
+          }),
+        });
+        if (!catalogViewTarget) {
+          if (popup && !popup.closed) popup.close();
+          return;
+        }
+        catalogViewPopup = null;
+        if (popup && !popup.closed) popup.location.href = data.accessUrl;
+        $("catalog-view-modal").classList.add("hidden");
+        catalogViewTarget = null;
+        showToast(popup ? "Demo opened in a new tab." : "The browser blocked the new tab.");
+        if (!popup && data.accessUrl) {
+          $("unified-catalog-status").innerHTML = `The browser blocked the new tab. <a href="${escapeHtml(data.accessUrl)}" target="_blank" rel="noopener noreferrer">Open the demo</a>.`;
+        }
+      } catch (err) {
+        if (popup) popup.close();
+        catalogViewPopup = null;
+        $("catalog-view-status").textContent = err.message;
+        if (submit) submit.disabled = !surveyReady();
+      }
+    }
+
+    function closeCatalogExplore() {
+      catalogExploreItem = null;
+      catalogExploreHandle = "";
+      $("catalog-explore-modal")?.classList.add("hidden");
+    }
+
+    function selectedExploreSubmode() {
+      const mode = (catalogExploreItem?.modes || [])[catalogExploreMode] || { subModes: [] };
+      return (mode.subModes || []).find((sub) => sub.handle === catalogExploreHandle) || null;
+    }
+
+    function renderCatalogExplore() {
+      const box = $("catalog-explore-modes");
+      const item = catalogExploreItem;
+      if (!box || !item) return;
+      const modes = item.modes || [];
+      if (!modes.length) {
+        box.innerHTML = `<p class="hint">This Apex item has no demo modes.</p>`;
+        $("catalog-explore-try").disabled = true;
+        return;
+      }
+      if (catalogExploreMode >= modes.length) catalogExploreMode = 0;
+      const chips = modes.map((mode, index) => `
+        <button type="button" class="catalog-mode-chip${index === catalogExploreMode ? " is-selected" : ""}" data-mode="${index}">${escapeHtml(catalogTypeLabel(mode.name))}</button>
+      `).join("");
+      const mode = modes[catalogExploreMode];
+      const rows = (mode.subModes || []).map((sub) => `
+        <tr class="${sub.handle === catalogExploreHandle ? "is-selected" : ""}" data-handle="${escapeHtml(sub.handle)}">
+          <td><input type="radio" name="catalog-explore-mode" value="${escapeHtml(sub.handle)}" ${sub.handle === catalogExploreHandle ? "checked" : ""} /></td>
+          <td><strong>${escapeHtml(sub.name || sub.handle)}</strong></td>
+          <td>${escapeHtml(sub.description || "")}</td>
+          <td>${escapeHtml(catalogTypeLabel(sub.contentType))}</td>
+        </tr>
+      `).join("");
+      box.innerHTML = `
+        <div>${chips}</div>
+        <table class="survey-options">
+          <tbody>${rows || `<tr><td>No demos in this mode.</td></tr>`}</tbody>
+        </table>
+      `;
+      $("catalog-explore-try").disabled = !selectedExploreSubmode();
+    }
+
+    async function openCatalogExplore(row) {
+      if (!row) return;
+      if (!ensureTokenReady("exploring this demo")) return;
+      catalogExploreItem = null;
+      catalogExploreMode = 0;
+      catalogExploreHandle = "";
+      $("catalog-explore-name").textContent = row.name || row.id || "";
+      $("catalog-explore-status").textContent = "Loading demo modes…";
+      $("catalog-explore-modes").innerHTML = "";
+      $("catalog-explore-try").disabled = true;
+      $("catalog-explore-modal").classList.remove("hidden");
+      try {
+        const data = await api("/api/catalog/item", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({ ...tokenPayload(), site: catalogSearchSite, catalog_id: row.id }),
+        });
+        catalogExploreItem = data.item;
+        const first = (((data.item || {}).modes || [])[0] || {}).subModes || [];
+        catalogExploreHandle = first[0]?.handle || "";
+        $("catalog-explore-status").textContent = "";
+        renderCatalogExplore();
+      } catch (err) {
+        $("catalog-explore-status").textContent = err.message;
+      }
+    }
+
+    function tryCatalogExplore() {
+      const sub = selectedExploreSubmode();
+      if (!sub) return;
+      const mode = (catalogExploreItem?.modes || [])[catalogExploreMode] || {};
+      if (String(sub.contentType || "").toUpperCase() === "DEMO") {
+        closeCatalogExplore();
+        const button = document.createElement("button");
+        scheduleCatalogSearchResult(sub.name || catalogExploreItem?.name || "", button);
+        return;
+      }
+      const apex = {
+        handle: catalogExploreItem?.id || "",
+        name: catalogExploreItem?.name || "",
+        subModeName: sub.name || "",
+        mode: mode.name || "DEMO",
+      };
+      closeCatalogExplore();
+      openCatalogView(
+        { id: sub.handle, name: sub.name || catalogExploreItem?.name || "", contentType: sub.contentType },
+        apex,
+      );
+    }
 
     function closeCatalogSchedulePicker() {
       catalogScheduleIds = {};
@@ -8794,19 +9161,37 @@
       if (!rows.length) {
         return { text: `Check a row in Saved content above to pick the demo to load ${what} from.`, warn: false };
       }
-      if (new Set(rows.map(demoGroupKey)).size > 1) {
-        return { text: "Two different demos are checked in Saved content above — leave only one.", warn: true };
-      }
-      if (rows.some((row) => Boolean(camgrCdevHomeDc(row.site)))) {
+      const usable = rows.filter((row) => !camgrCdevHomeDc(row.site));
+      if (!usable.length) {
         return { text: "ContentDEV is checked — use Transfer VMs from Content Dev instead.", warn: true };
       }
-      const first = rows[0];
+      const groups = new Map();
+      for (const row of usable) {
+        const key = demoGroupKey(row);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+      }
+      if (groups.size > 1) {
+        const names = [...groups.values()].map((group) => String(group[0].name || "").trim() || `${String(group[0].site || "").toUpperCase()} ${group[0].saved_id}`);
+        const skippedDev = rows.some((row) => Boolean(camgrCdevHomeDc(row.site)));
+        return {
+          text: `Loads ${what} for ${groups.size} demos, each in its own section: ${names.join(", ")}.`,
+          hint: skippedDev
+            ? "ContentDEV stays on Transfer VMs from Content Dev. The same demo in several datacenters stays one section."
+            : "The same demo in several datacenters stays one section.",
+          warn: false,
+        };
+      }
+      const first = usable[0];
       const name = String(first.name || "").trim();
-      const sites = [...new Set(rows.map((row) => String(row.site || "").toUpperCase()).filter(Boolean))];
+      const sites = [...new Set(usable.map((row) => String(row.site || "").toUpperCase()).filter(Boolean))];
       const extra = sites.length > 1 ? ` (same demo in ${sites.slice(1).join(", ")})` : "";
+      const skippedDev = rows.some((row) => Boolean(camgrCdevHomeDc(row.site)));
       return {
         text: `Loads ${what} from ${sites[0]} ${first.saved_id}${name ? ` — ${name}` : ""}${extra}.`,
-        hint: "Check a different row in Saved content above to change it.",
+        hint: skippedDev
+          ? "ContentDEV stays on Transfer VMs from Content Dev."
+          : "Check a different row in Saved content above to change it.",
         warn: false,
       };
     }
@@ -8834,39 +9219,30 @@
       const integrateBtn = $("btn-cai-integrate");
       const loadBtn = $("btn-cai-load-vms");
       const rows = selectedSavedIdRows().filter((row) => row.saved_id);
-      const sameDemo = rows.length > 0 && new Set(rows.map(demoGroupKey)).size === 1;
-      const cdevSelected = rows.some((row) => Boolean(camgrCdevHomeDc(row.site)));
+      const usable = rows.filter((row) => row.saved_id && !camgrCdevHomeDc(row.site));
       syncLoadTargetNotes(rows);
-      if (loadBtn) loadBtn.disabled = !rows.length || cdevSelected;
-      const hasTarget = rows.length > 0 && rows.every((row) => String(row.target_id || "").trim());
-      const hasVms = selectedCaiVms().length > 0;
-      if (replaceBtn) {
-        replaceBtn.disabled = !(sameDemo && hasTarget && hasVms);
-      }
-      const dests = selectedCaiIntegrateDcs();
-      const destBoxes = [...document.querySelectorAll(".cai-integrate-box")];
-      const hasTransfer = selectedRowsHaveCamgrTransfer(rows);
-      if (integrateBtn) {
-        integrateBtn.disabled = !(sameDemo && dests.length && hasTransfer) || cdevSelected;
-      }
+      if (loadBtn) loadBtn.disabled = !usable.length;
+      const replaceReady = [...document.querySelectorAll("#cai-vm-list .demo-load-section")].some((section) =>
+        section.querySelector(".cai-vm-box:checked")
+      );
+      if (replaceBtn) replaceBtn.disabled = !replaceReady;
+      const integrateReady = [...document.querySelectorAll("#cai-vm-list .demo-load-section")].some((section) =>
+        section.querySelector(".cai-integrate-box:checked:not(:disabled)")
+      );
+      if (integrateBtn) integrateBtn.disabled = !integrateReady;
       const camgrLoad = $("btn-camgr-load-vms");
       const camgrTransfer = $("btn-camgr-transfer");
-      if (camgrLoad) camgrLoad.disabled = !rows.length || cdevSelected;
-      if (camgrTransfer) camgrTransfer.disabled = !rows.length || cdevSelected;
+      if (camgrLoad) camgrLoad.disabled = !usable.length;
+      const transferReady = [...document.querySelectorAll("#camgr-vm-list .demo-load-section")].some((section) =>
+        section.querySelector(".camgr-dest-box:checked:not(:disabled)")
+      );
+      if (camgrTransfer) camgrTransfer.disabled = !transferReady;
       const useRootBtn = $("btn-use-root-as-target");
       if (useRootBtn) {
         useRootBtn.disabled = !rows.some((row) => {
           const root = String(row.root_id || "").trim();
           return root && root !== String(row.target_id || "").trim() && root !== String(row.saved_id || "").trim();
         });
-      }
-      if (destBoxes.length && alreadyIntegratedDestSet(rows).size && destBoxes.every((el) => el.disabled)) {
-        const done = sortByDatacenter([...alreadyIntegratedDestSet(rows)])
-          .map((dc) => dc.toUpperCase()).join(", ");
-        const hint = $("cai-integrate-hint");
-        if (hint && done) {
-          hint.classList.remove("hidden");
-        }
       }
     }
 
@@ -8979,62 +9355,406 @@
       noteLog(`Removed ${data.removed || rows.length} row(s) from the saved content list.`);
     }
 
-    function selectedCaiIntegrateDcs() {
-      return [...document.querySelectorAll(".cai-integrate-box:checked:not(:disabled)")].map((el) => el.value).filter(Boolean);
+    const camgrDemoLoads = new Map();
+    const caiDemoLoads = new Map();
+
+    function demoLoadGroups(rows) {
+      const groups = new Map();
+      for (const row of rows || []) {
+        if (!row?.saved_id || camgrCdevHomeDc(row.site)) continue;
+        const key = demoGroupKey(row);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+      }
+      return [...groups.entries()];
     }
 
-    function renderCaiIntegrateList(dcs, { defaultIds = [], integratedIds = [] } = {}) {
-      const root = $("cai-integrate-list");
-      if (!root) return;
-      const items = sortByDatacenter(dcs || [], (item) => item.id || item);
-      $("cai-integrate-label")?.classList.toggle("hidden", !items.length);
-      $("cai-integrate-hint")?.classList.toggle("hidden", !items.length);
-      if (!items.length) {
-        root.innerHTML = "";
-        syncHubActionButtons();
+    function demoSectionTitle(rows) {
+      const name = String(rows[0]?.name || "").trim();
+      return name || describeSavedRow(rows[0] || {});
+    }
+
+    function demoSectionMeta(rows) {
+      return rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id}`).join(" · ");
+    }
+
+    function selectedCaiIntegrateDcs(section) {
+      const root = section || document;
+      return [...root.querySelectorAll(".cai-integrate-box:checked:not(:disabled)")].map((el) => el.value).filter(Boolean);
+    }
+
+    function selectedCaiVms(section) {
+      const root = section || document;
+      return [...root.querySelectorAll(".cai-vm-box:checked")].map((el) => el.value).filter(Boolean);
+    }
+
+    const MASTER_DEST = {
+      camgr: { rootId: "camgr-vm-list", barId: "camgr-master-dests", listId: "camgr-master-dest-list", box: ".camgr-dest-box" },
+      cai: { rootId: "cai-vm-list", barId: "cai-master-dests", listId: "cai-master-dest-list", box: ".cai-integrate-box" },
+    };
+
+    function sectionDestBoxes(kind) {
+      const cfg = MASTER_DEST[kind];
+      if (!cfg) return [];
+      return [...document.querySelectorAll(`#${cfg.rootId} .demo-load-section ${cfg.box}`)];
+    }
+
+    function renderMasterDests(kind) {
+      const cfg = MASTER_DEST[kind];
+      const bar = cfg && $(cfg.barId);
+      const list = cfg && $(cfg.listId);
+      if (!bar || !list) return;
+      const sections = document.querySelectorAll(`#${cfg.rootId} .demo-load-section`);
+      const enabled = sectionDestBoxes(kind).filter((box) => !box.disabled);
+      const show = sections.length > 1 && enabled.length > 0;
+      bar.classList.toggle("hidden", !show);
+      if (!show) {
+        list.innerHTML = "";
         return;
       }
-      const selected = new Set(selectedCaiIntegrateDcs());
-      const defaults = new Set((defaultIds || []).map((id) => String(id || "").toLowerCase()));
-      const useDefaults = selected.size === 0;
-      const done = new Set([
-        ...alreadyIntegratedDestSet(selectedSavedIdRows()),
-        ...(integratedIds || []).map((id) => String(id.id || id || "").toLowerCase()),
-      ]);
-      const remaining = items.filter((item) => !done.has(String(item.id || item || "").toLowerCase()));
-      root.innerHTML = items.map((item) => {
-        const id = String(item.id || item || "").toLowerCase();
-        const label = item.label || String(item.id || item || "").toUpperCase();
-        const already = done.has(id);
-        const checked = already
-          ? ""
-          : (selected.has(id) || (useDefaults && remaining.length && (defaults.has(id) || !defaults.size)) ? " checked" : "");
-        const extra = already ? " (already integrated)" : "";
-        return `
-          <label class="${already ? "cai-dest-done" : ""}">
-            <input type="checkbox" class="cai-integrate-box" value="${escapeHtml(id)}" ${checked} ${already ? "disabled" : ""} />
-            ${escapeHtml(label)}${extra}
-          </label>
-        `;
-      }).join("");
-      syncHubActionButtons();
-    }
-
-    function selectedCaiVms() {
-      return [...document.querySelectorAll(".cai-vm-box:checked")].map((el) => el.value).filter(Boolean);
-    }
-
-    function renderCaiVmList(names) {
-      const root = $("cai-vm-list");
-      if (!root) return;
-      const selected = new Set(selectedCaiVms());
-      root.innerHTML = (names || []).map((name) => `
+      const byValue = new Map();
+      for (const box of enabled) {
+        const value = String(box.value || "");
+        const key = value.toUpperCase();
+        if (!value || byValue.has(key)) continue;
+        const raw = box.dataset.label || box.closest("label")?.textContent || value;
+        byValue.set(key, { value, label: String(raw).replace(/\s*\(already integrated\)\s*$/i, "").trim() });
+      }
+      const items = sortByDatacenter([...byValue.values()], (item) => item.label || item.value);
+      list.innerHTML = items.map((item) => `
         <label>
-          <input type="checkbox" class="cai-vm-box" value="${escapeHtml(name)}" ${selected.has(name) ? "checked" : ""} />
-          ${escapeHtml(name)}
+          <input type="checkbox" class="master-dest-box" value="${escapeHtml(item.value)}" />
+          ${escapeHtml(item.label)}
         </label>
       `).join("");
+      syncMasterDestChecks(kind);
+    }
+
+    function syncMasterDestChecks(kind) {
+      const cfg = MASTER_DEST[kind];
+      const list = cfg && $(cfg.listId);
+      if (!list) return;
+      const boxes = sectionDestBoxes(kind);
+      list.querySelectorAll(".master-dest-box").forEach((master) => {
+        const key = String(master.value || "").toUpperCase();
+        const matches = boxes.filter((box) => !box.disabled && String(box.value || "").toUpperCase() === key);
+        const checked = matches.filter((box) => box.checked).length;
+        master.checked = matches.length > 0 && checked === matches.length;
+        master.indeterminate = checked > 0 && checked < matches.length;
+      });
+    }
+
+    function applyMasterDest(kind, value, on) {
+      const key = String(value || "").toUpperCase();
+      sectionDestBoxes(kind).forEach((box) => {
+        if (box.disabled || String(box.value || "").toUpperCase() !== key) return;
+        box.checked = on;
+      });
+      if (kind === "camgr") {
+        syncCamgrVpodSelects();
+        syncCamgrIntegrateOption();
+      }
+      syncMasterDestChecks(kind);
       syncHubActionButtons();
+    }
+
+    function applyMasterDestAll(kind, on) {
+      sectionDestBoxes(kind).forEach((box) => {
+        if (!box.disabled) box.checked = on;
+      });
+      if (kind === "camgr") {
+        syncCamgrVpodSelects();
+        syncCamgrIntegrateOption();
+      }
+      syncMasterDestChecks(kind);
+      syncHubActionButtons();
+    }
+
+    function renderCaiDemoSections() {
+      const root = $("cai-vm-list");
+      if (!root) return;
+      const prior = new Map();
+      root.querySelectorAll(".demo-load-section").forEach((section) => {
+        prior.set(section.dataset.demoKey, {
+          open: section.open,
+          vms: new Set(selectedCaiVms(section)),
+          dests: new Set(selectedCaiIntegrateDcs(section)),
+        });
+      });
+      root.innerHTML = [...caiDemoLoads.entries()].map(([key, entry]) => {
+        const saved = prior.get(key);
+        const fresh = !saved;
+        const done = new Set([
+          ...(entry.integratedIds || []).map((id) => String(id || "").toLowerCase()),
+          ...alreadyIntegratedDestSet(entry.rows),
+        ]);
+        const vms = (entry.vms || []).map((name) => `
+          <label>
+            <input type="checkbox" class="cai-vm-box" value="${escapeHtml(name)}" ${saved && saved.vms.has(name) ? "checked" : ""} />
+            ${escapeHtml(name)}
+          </label>
+        `).join("");
+        const destItems = sortByDatacenter(entry.integrateDcs || [], (item) => item.id || item);
+        const dests = destItems.map((item) => {
+          const id = String(item.id || item || "").toLowerCase();
+          const label = item.label || id.toUpperCase();
+          const already = done.has(id);
+          const checked = already ? "" : (fresh || saved.dests.has(id) ? " checked" : "");
+          return `
+            <label class="${already ? "cai-dest-done" : ""}">
+              <input type="checkbox" class="cai-integrate-box" value="${escapeHtml(id)}" ${checked} ${already ? "disabled" : ""} />
+              ${escapeHtml(label)}${already ? " (already integrated)" : ""}
+            </label>
+          `;
+        }).join("");
+        return `
+          <details class="demo-load-section" data-demo-key="${escapeHtml(key)}" ${(saved ? saved.open : true) ? "open" : ""}>
+            <summary><span class="demo-load-title">${escapeHtml(entry.title)}</span><span class="hint demo-load-meta">${escapeHtml(demoSectionMeta(entry.rows))}</span></summary>
+            <p class="demo-load-status hint">${escapeHtml(entry.status || "")}</p>
+            <p class="hint chip-toolbar-label">VMs</p>
+            <div class="cai-vm-list">${vms || `<p class="hint">No VMs returned for this demo.</p>`}</div>
+            <p class="hint chip-toolbar-label">Integrate destinations</p>
+            <div class="camgr-dest-list">${dests || `<p class="hint">No integrate destinations yet. Transfer this demo in CAMGR first.</p>`}</div>
+            <div class="actions">
+              <button type="button" class="secondary" data-cai-submit="replace">Submit this replacement</button>
+              <button type="button" class="secondary" data-cai-submit="integrate">Submit this integration</button>
+            </div>
+          </details>
+        `;
+      }).join("");
+      renderMasterDests("cai");
+      syncHubActionButtons();
+    }
+
+    async function loadCaiVms() {
+      const rows = selectedSavedIdRows().filter((row) => row.saved_id);
+      const groups = demoLoadGroups(rows);
+      if (!rows.length) {
+        showError("No saved content rows to load VMs from.", { scrollTo: "#saved-ids-table" });
+        return;
+      }
+      if (!groups.length) {
+        showError(
+          "Load VMs is for saved demos in CAI. ContentDEV VMs are listed under Transfer VMs from Content Dev — pick the vPod and click Discover VMs.",
+          { scrollTo: "#camgr-dev-vpod" }
+        );
+        return;
+      }
+      $("btn-cai-load-vms").disabled = true;
+      const failures = [];
+      try {
+        for (const [key, group] of groups) {
+          const first = group[0];
+          try {
+            const data = await api("/api/cai/vms", {
+              method: "POST",
+              quiet: true,
+              body: JSON.stringify({
+                site: first.site,
+                saved_id: first.saved_id,
+                items: group.map((row) => ({ site: row.site, saved_id: row.saved_id })),
+              }),
+            });
+            const integrated = (data.integratedDcs || []).map((item) => String(item.id || item || "").toLowerCase()).filter(Boolean);
+            caiDemoLoads.set(key, {
+              title: demoSectionTitle(group),
+              rows: group,
+              vms: data.vms || [],
+              integrateDcs: data.integrateDcs || [],
+              integratedIds: integrated,
+              status: "",
+            });
+            updateCaiStatus({ loggedIn: true, configured: true, message: data.title || "CAI: VMs loaded." });
+            noteLog(`Loaded ${(data.vms || []).length} CAI VM(s) for ${demoSectionTitle(group)}.`);
+          } catch (err) {
+            failures.push(`${demoSectionTitle(group)}: ${err.message}`);
+            if (/CAI session/i.test(err.message) || err.status === 401) {
+              updateCaiStatus({ loggedIn: false, message: err.message });
+              break;
+            }
+          }
+        }
+        renderCaiDemoSections();
+        if (failures.length) showError(failures.join(" "));
+      } finally {
+        syncHubActionButtons();
+      }
+    }
+
+    function caiSectionsFor(kind, onlyKey) {
+      return [...document.querySelectorAll("#cai-vm-list .demo-load-section")].map((section) => {
+        if (onlyKey && section.dataset.demoKey !== onlyKey) return null;
+        const entry = caiDemoLoads.get(section.dataset.demoKey);
+        if (!entry) return null;
+        const vms = selectedCaiVms(section);
+        const dcs = selectedCaiIntegrateDcs(section);
+        if (kind === "replace" && !vms.length) return null;
+        if (kind === "integrate" && !dcs.length) return null;
+        return { section, entry, vms, dcs };
+      }).filter(Boolean);
+    }
+
+    async function fillSectionTargets(rows) {
+      for (const row of rows) {
+        const site = String(row.site || "").toLowerCase();
+        const savedId = String(row.saved_id || "");
+        const input = [...document.querySelectorAll(".saved-id-target")].find(
+          (el) => el.dataset.site === site && el.dataset.savedId === savedId
+        );
+        if (input) row.target_id = String(input.value || "").trim();
+        if (String(row.target_id || "").trim()) continue;
+        const found = await api("/api/saved-ids/lookup-parent", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({ job_id: jobId || "", site: row.site, saved_id: row.saved_id }),
+        });
+        if (found.publishedId) {
+          applyTargetIdToRow(row, String(found.publishedId).trim());
+          if (found.job) renderJob(found.job, { forceCards: true });
+          else if (found.savedIds) applySavedIds(found.savedIds);
+        } else if (found.job) {
+          renderJob(found.job, { forceCards: true });
+        } else if (found.savedIds) {
+          applySavedIds(found.savedIds);
+        }
+      }
+    }
+
+    async function submitCaiReplace(onlyKey) {
+      const plans = caiSectionsFor("replace", onlyKey);
+      if (!plans.length) {
+        showError("Load VMs and check the ones to replace in a demo section.");
+        return;
+      }
+      const lines = [];
+      const ready = [];
+      for (const plan of plans) {
+        try {
+          await fillSectionTargets(plan.entry.rows);
+        } catch (err) {
+          plan.entry.status = err.message;
+          continue;
+        }
+        const missing = plan.entry.rows.filter((row) => !String(row.target_id || "").trim());
+        if (missing.length) {
+          plan.entry.status = `Needs a Target ID for ${missing.map(describeSavedRow).join("; ")}.`;
+          continue;
+        }
+        ready.push(plan);
+        lines.push(
+          `${plan.entry.title}\n`
+          + plan.entry.rows.map((row) => `  ${row.site.toUpperCase()} ${row.saved_id} → ${row.target_id}`).join("\n")
+          + `\n  VMs: ${plan.vms.join(", ")}`
+        );
+      }
+      renderCaiDemoSections();
+      if (!ready.length) {
+        showError("No demo section is ready for VM replacement. A section needs checked VMs and a Target ID.");
+        return;
+      }
+      if (!await confirmAction(
+        `Submit CAI VM replacement for ${ready.length} demo section(s)?\n\n${lines.join("\n\n")}\n\nEach demo uses only the VMs checked in its section.`,
+        { title: "Submit all replacements" }
+      )) {
+        return;
+      }
+      $("btn-cai-replace").disabled = true;
+      const failures = [];
+      try {
+        for (const plan of ready) {
+          try {
+            const data = await api("/api/cai/replace", {
+              method: "POST",
+              quiet: true,
+              body: JSON.stringify({ job_id: jobId || "", vms: plan.vms, items: plan.entry.rows }),
+            });
+            if (data.job) renderJob(data.job, { forceCards: true });
+            else if (data.savedIds) applySavedIds(data.savedIds);
+            plan.entry.status = data.errors?.length
+              ? data.errors.join(" ")
+              : "VM replacement submitted.";
+            if (data.errors?.length) failures.push(`${plan.entry.title}: ${data.errors.join(" ")}`);
+            noteLog(`CAI replacement submitted for ${plan.entry.title}.`);
+            startCaiReplacePoll();
+          } catch (err) {
+            plan.entry.status = err.message;
+            failures.push(`${plan.entry.title}: ${err.message}`);
+            if (/CAI session/i.test(err.message) || err.status === 401) {
+              updateCaiStatus({ loggedIn: false, message: err.message });
+              break;
+            }
+          }
+        }
+        renderCaiDemoSections();
+        if (failures.length) showError(failures.join(" "));
+        else showToast("CAI replacement submitted.", { kind: "ok" });
+      } finally {
+        syncHubActionButtons();
+      }
+    }
+
+    async function submitCaiIntegrate(onlyKey) {
+      const plans = caiSectionsFor("integrate", onlyKey);
+      if (!plans.length) {
+        showError("Load VMs and check an integrate destination in a demo section.");
+        return;
+      }
+      const ready = [];
+      const lines = [];
+      for (const plan of plans) {
+        if (!selectedRowsHaveCamgrTransfer(plan.entry.rows)) {
+          plan.entry.status = "Submit integration after a CAMGR transfer. This demo has no transfer in the CAMGR status column.";
+          continue;
+        }
+        ready.push(plan);
+        lines.push(`${plan.entry.title}\n  ${demoSectionMeta(plan.entry.rows)} → ${plan.dcs.map((dc) => dc.toUpperCase()).join(", ")}`);
+      }
+      renderCaiDemoSections();
+      if (!ready.length) {
+        showError("No demo section is ready to integrate. Each one needs a CAMGR transfer and a destination DC.");
+        return;
+      }
+      if (!await confirmAction(
+        `Submit CAI integration for ${ready.length} demo section(s)?\n\n${lines.join("\n\n")}\n\nEach demo uses only the destinations checked in its section.`,
+        { title: "Submit all integrations" }
+      )) {
+        return;
+      }
+      $("btn-cai-integrate").disabled = true;
+      const failures = [];
+      try {
+        for (const plan of ready) {
+          try {
+            const data = await api("/api/cai/integrate", {
+              method: "POST",
+              quiet: true,
+              body: JSON.stringify({
+                job_id: jobId || "",
+                dcs: plan.dcs,
+                items: plan.entry.rows.map((row) => ({ site: row.site, saved_id: row.saved_id })),
+              }),
+            });
+            if (data.job) renderJob(data.job, { forceCards: true });
+            else if (data.savedIds) applySavedIds(data.savedIds);
+            plan.entry.status = data.errors?.length ? data.errors.join(" ") : "Integration submitted.";
+            if (data.errors?.length) failures.push(`${plan.entry.title}: ${data.errors.join(" ")}`);
+            noteLog(`CAI integration submitted for ${plan.entry.title}.`);
+            startCaiReplacePoll();
+          } catch (err) {
+            plan.entry.status = err.message;
+            failures.push(`${plan.entry.title}: ${err.message}`);
+            if (/CAI session/i.test(err.message) || err.status === 401) {
+              updateCaiStatus({ loggedIn: false, message: err.message });
+              break;
+            }
+          }
+        }
+        renderCaiDemoSections();
+        if (failures.length) showError(failures.join(" "));
+        else showToast("CAI integration submitted.", { kind: "ok" });
+      } finally {
+        syncHubActionButtons();
+      }
     }
 
     function stopCaiReplacePoll() {
@@ -9050,160 +9770,6 @@
       caiReplacePollTimer = setInterval(() => {
         refreshCaiReplacements().catch(() => {});
       }, HUB_POLL_MS);
-    }
-
-    async function refreshCaiStatus() {
-      try {
-        const data = await api("/api/cai/status", { quiet: true });
-        updateCaiStatus(data);
-        return data;
-      } catch (err) {
-        updateCaiStatus({ loggedIn: false, message: err.message });
-        return null;
-      }
-    }
-
-    async function connectCai() {
-      $("btn-cai-connect").disabled = true;
-      try {
-        const data = await api("/api/cai/connect", { method: "POST", body: "{}" });
-        updateCaiStatus(data);
-        noteLog(data.message || "Connected to CAI.");
-      } catch (err) {
-        updateCaiStatus({ loggedIn: false, message: err.message });
-      } finally {
-        $("btn-cai-connect").disabled = false;
-      }
-    }
-
-    async function loadCaiVms() {
-      const rows = requireSameDemoRows("No saved content rows to load VMs from.", "load VMs");
-      if (!rows) return;
-      if (rows.some((row) => Boolean(camgrCdevHomeDc(row.site)))) {
-        showError(
-          "Load VMs is for saved demos in CAI. ContentDEV VMs are listed under Transfer VMs from Content Dev — pick the vPod and click Discover VMs.",
-          { scrollTo: "#camgr-dev-vpod" }
-        );
-        return;
-      }
-      $("btn-cai-load-vms").disabled = true;
-      try {
-        const first = rows[0];
-        const data = await api("/api/cai/vms", {
-          method: "POST",
-          body: JSON.stringify({
-            site: first.site,
-            saved_id: first.saved_id,
-            items: rows.map((row) => ({ site: row.site, saved_id: row.saved_id })),
-          }),
-        });
-        caiVmSourceKey = demoGroupKey(first);
-        lastCaiIntegratedDcs = (data.integratedDcs || []).map((item) => String(item.id || item || "").toLowerCase()).filter(Boolean);
-        renderCaiVmList(data.vms || []);
-        renderCaiIntegrateList(data.integrateDcs || [], { integratedIds: data.integratedDcs || [] });
-        setCaiVmLabel(rows, first);
-        updateCaiStatus({ loggedIn: true, configured: true, message: data.title || "CAI: VMs loaded." });
-        const integrateCount = (data.integrateDcs || []).length;
-        const already = sortByDatacenter(lastCaiIntegratedDcs).map((dc) => dc.toUpperCase());
-        const demoName = String(first.name || "").trim();
-        noteLog(
-          `Loaded ${(data.vms || []).length} CAI VM(s)`
-          + (integrateCount ? ` and ${integrateCount} integrate DC(s)` : "")
-          + ` from ${demoName || describeSavedRow(first)}`
-          + (rows.length > 1 ? ` (${rows.length} DCs of the same demo)` : "")
-          + "."
-        );
-        if (already.length) {
-          noteLog(`CAI already integrated: ${already.join(", ")}. Those dests cannot be submitted again.`);
-        }
-      } catch (err) {
-        showError(err.message);
-        if (/CAI session/i.test(err.message)) updateCaiStatus({ loggedIn: false, message: err.message });
-      } finally {
-        syncHubActionButtons();
-      }
-    }
-
-    async function submitCaiReplace() {
-      const rows = requireSameDemoRows("Check at least one saved content row.", "submit VM replacement");
-      if (!rows) return;
-      const vms = selectedCaiVms();
-      if (!vms.length) {
-        showError("Load VMs and check the ones to replace.");
-        return;
-      }
-      if (caiVmSourceKey && demoGroupKey(rows[0]) !== caiVmSourceKey) {
-        showError("Load VMs again for this demo. The VM list is from a different demo than the rows you checked.", { scrollTo: "#btn-cai-load-vms" });
-        return;
-      }
-      for (const row of rows) {
-        if (String(row.target_id || "").trim()) continue;
-        try {
-          const found = await api("/api/saved-ids/lookup-parent", {
-            method: "POST",
-            body: JSON.stringify({
-              job_id: jobId || "",
-              site: row.site,
-              saved_id: row.saved_id,
-            }),
-          });
-          if (found.publishedId) {
-            applyTargetIdToRow(row, String(found.publishedId).trim());
-            if (found.job) renderJob(found.job, { forceCards: true });
-            else if (found.savedIds) applySavedIds(found.savedIds);
-            noteLog(`${describeSavedRow(row)}: using target ID ${row.target_id}.`);
-          } else if (found.job) {
-            renderJob(found.job, { forceCards: true });
-          } else if (found.savedIds) {
-            applySavedIds(found.savedIds);
-          }
-        } catch (err) {
-          showError(err.message);
-          return;
-        }
-      }
-      const missingTarget = rows.filter((row) => !String(row.target_id || "").trim());
-      if (missingTarget.length) {
-        showError(
-          "Enter a Target ID for VM replacement (the demo CAI should copy VMs into). "
-          + "dCloud does not always expose a parent; this tool fills it when it saved the session. Missing for: "
-          + missingTarget.map(describeSavedRow).join("; ")
-          + ".",
-          { scrollTo: "#saved-ids-table" }
-        );
-        return;
-      }
-      const preview = rows.map((row) => `${row.site.toUpperCase()} ${row.saved_id} → ${row.target_id} (${vms.join(", ")})`).join("\n");
-      if (!await confirmAction(
-        `Submit CAI VM replacement for ${rows.length} saved content item(s)?\n\n${preview}\n\nThis copies the checked VMs into the target demo in the same DC. A wrong Target ID fails in CAI.`,
-        { title: "Submit VM Replacement" }
-      )) {
-        return;
-      }
-      $("btn-cai-replace").disabled = true;
-      try {
-        const data = await api("/api/cai/replace", {
-          method: "POST",
-          body: JSON.stringify({
-            job_id: jobId || "",
-            vms,
-            items: rows,
-          }),
-        });
-        if (data.job) renderJob(data.job, { forceCards: true });
-        else if (data.savedIds) applySavedIds(data.savedIds);
-        if (data.errors?.length) showError(data.errors.join(" "));
-        noteLog(`CAI replacement submitted for ${data.submitted?.length || 0} row(s).`);
-        startCaiReplacePoll();
-        showToast(data.errors?.length
-          ? data.errors.join(" ")
-          : "CAI replacement submitted.", { kind: data.errors?.length ? "err" : "ok" });
-      } catch (err) {
-        notifyRequestError(err);
-        if (/CAI session/i.test(err.message)) updateCaiStatus({ loggedIn: false, message: err.message });
-      } finally {
-        syncHubActionButtons();
-      }
     }
 
     async function refreshCaiReplacements() {
@@ -9240,54 +9806,27 @@
       }
     }
 
-    async function submitCaiIntegrate() {
-      const rows = requireSameDemoRows("Check at least one saved content row.", "submit integration");
-      if (!rows) return;
-      const dcs = selectedCaiIntegrateDcs();
-      if (!selectedRowsHaveCamgrTransfer(rows)) {
-        showError(
-          "Submit integration after a CAMGR transfer. The checked saved content has no transfer in the CAMGR status column.",
-          { scrollTo: "#btn-camgr-load-vms" }
-        );
-        return;
-      }
-      const already = alreadyIntegratedDestSet(rows);
-      const remaining = dcs.filter((dc) => !already.has(String(dc || "").toLowerCase()));
-      if (!remaining.length) {
-        const labels = sortByDatacenter([...already]).map((dc) => dc.toUpperCase()).join(", ") || "those DCs";
-        showError(`This demo has already been integrated into ${labels}. Unintegrated dests can still be selected if CAI lists them.`);
-        return;
-      }
-      const preview = rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id} → ${remaining.join(", ").toUpperCase()}`).join("\n");
-      if (!await confirmAction(
-        `Submit CAI integration for ${rows.length} saved content item(s)?\n\n${preview}\n\nSame as selecting dest DCs and clicking Integrate on the CAI demo page.`,
-        { title: "Submit Integration" }
-      )) {
-        return;
-      }
-      $("btn-cai-integrate").disabled = true;
+    async function refreshCaiStatus() {
       try {
-        const data = await api("/api/cai/integrate", {
-          method: "POST",
-          body: JSON.stringify({
-            job_id: jobId || "",
-            dcs: remaining,
-            items: rows.map((row) => ({ site: row.site, saved_id: row.saved_id })),
-          }),
-        });
-        if (data.job) renderJob(data.job, { forceCards: true });
-        else if (data.savedIds) applySavedIds(data.savedIds);
-        if (data.errors?.length) showError(data.errors.join(" "));
-        noteLog(`CAI integration submitted for ${data.submitted?.length || 0} row(s).`);
-        startCaiReplacePoll();
-        showToast(data.errors?.length
-          ? data.errors.join(" ")
-          : "CAI integration submitted.", { kind: data.errors?.length ? "err" : "ok" });
+        const data = await api("/api/cai/status", { quiet: true });
+        updateCaiStatus(data);
+        return data;
       } catch (err) {
-        notifyRequestError(err);
-        if (/CAI session/i.test(err.message)) updateCaiStatus({ loggedIn: false, message: err.message });
+        updateCaiStatus({ loggedIn: false, message: err.message });
+        return null;
+      }
+    }
+
+    async function connectCai() {
+      $("btn-cai-connect").disabled = true;
+      try {
+        const data = await api("/api/cai/connect", { method: "POST", body: "{}" });
+        updateCaiStatus(data);
+        noteLog(data.message || "Connected to CAI.");
+      } catch (err) {
+        updateCaiStatus({ loggedIn: false, message: err.message });
       } finally {
-        syncHubActionButtons();
+        $("btn-cai-connect").disabled = false;
       }
     }
 
@@ -9558,12 +10097,14 @@
       }
     }
 
-    function selectedCamgrVms() {
-      return [...document.querySelectorAll(".camgr-vm-box:checked")].map((el) => el.value).filter(Boolean);
+    function selectedCamgrVms(section) {
+      const root = section || document.getElementById("camgr-vm-list") || document;
+      return [...root.querySelectorAll(".camgr-vm-box:checked")].map((el) => el.value).filter(Boolean);
     }
 
-    function selectedCamgrDests() {
-      return [...document.querySelectorAll(".camgr-dest-box:checked:not(:disabled)")].map((el) => {
+    function selectedCamgrDests(section) {
+      const root = section || document.getElementById("camgr-vm-list") || document;
+      return [...root.querySelectorAll(".camgr-dest-box:checked:not(:disabled)")].map((el) => {
         const guid = String(el.value || "");
         if (!guid) return "";
         const vpod = el.closest(".camgr-dest-item")?.querySelector(".camgr-dest-vpod")?.value || "";
@@ -9571,18 +10112,8 @@
       }).filter(Boolean);
     }
 
-    function setCamgrVmChecks(checked) {
-      document.querySelectorAll(".camgr-vm-box").forEach((box) => { box.checked = checked; });
-    }
-
-    function setCamgrDestChecks(checked) {
-      document.querySelectorAll(".camgr-dest-box:not(:disabled)").forEach((box) => { box.checked = checked; });
-      syncCamgrVpodSelects();
-      syncCamgrIntegrateOption();
-    }
-
     function syncCamgrVpodSelects() {
-      document.querySelectorAll("#camgr-dest-list .camgr-dest-item").forEach((item) => {
+      document.querySelectorAll("#camgr-vm-list .camgr-dest-item").forEach((item) => {
         const select = item.querySelector(".camgr-dest-vpod");
         if (!select) return;
         const box = item.querySelector(".camgr-dest-box");
@@ -9590,68 +10121,28 @@
       });
     }
 
-    function camgrDestsMissingVpod() {
-      return [...document.querySelectorAll("#camgr-dest-list .camgr-dest-item")].filter((item) => {
+    function camgrDestsMissingVpod(onlyKey) {
+      return [...document.querySelectorAll("#camgr-vm-list .camgr-dest-item")].filter((item) => {
+        if (onlyKey && item.closest(".demo-load-section")?.dataset.demoKey !== onlyKey) return false;
         const select = item.querySelector(".camgr-dest-vpod");
         const box = item.querySelector(".camgr-dest-box");
         return select && box?.checked && !select.value;
-      }).map((item) => String(item.querySelector(".camgr-dest-box")?.dataset.label || ""));
+      }).map((item) => {
+        const demo = item.closest(".demo-load-section")?.querySelector(".demo-load-title")?.textContent || "";
+        const label = String(item.querySelector(".camgr-dest-box")?.dataset.label || "");
+        return demo ? `${demo}: ${label}` : label;
+      });
     }
 
-    function renderCamgrVmList(vms, { checkAll } = {}) {
-      const root = $("camgr-vm-list");
-      if (!root) return;
-      const selected = new Set(selectedCamgrVms());
-      const names = [];
-      const seen = new Set();
-      for (const vm of vms || []) {
-        const name = typeof vm === "string" ? vm : String(vm.name || "");
-        if (!name || seen.has(name)) continue;
-        seen.add(name);
-        names.push({ name, os: typeof vm === "string" ? "" : String(vm.os || "") });
-      }
-      const autoCheck = Boolean(checkAll) || (!selected.size && names.length);
-      root.innerHTML = names.map((vm) => {
-        const checked = autoCheck || selected.has(vm.name) ? " checked" : "";
-        return `
-          <label>
-            <input type="checkbox" class="camgr-vm-box" value="${escapeHtml(vm.name)}"${checked} />
-            ${escapeHtml(vm.name)}${vm.os ? ` <span class="hint">${escapeHtml(vm.os)}</span>` : ""}
-          </label>
-        `;
-      }).join("");
-      $("camgr-vm-toolbar")?.classList.toggle("hidden", !names.length);
-    }
-
-    function camgrCdevHomeDc(guid) {
-      const code = String(guid || "").trim().toUpperCase().split(":")[0];
-      return code.startsWith("CDEV.") ? code.slice(5) : "";
-    }
-
-    function renderCamgrDestList(servers, { sourceGuids = [] } = {}) {
-      const root = $("camgr-dest-list");
-      if (!root) return;
-      const sources = (sourceGuids.length ? sourceGuids : camgrDestSourceGuids).map((g) => String(g).toUpperCase());
-      camgrDestSourceGuids = sources;
-      const previous = new Map();
-      for (const token of selectedCamgrDests()) {
-        const parts = String(token).split(":");
-        const vpod = parts.length > 1 && /^\d+$/.test(parts[parts.length - 1]) ? parts.pop() : "";
-        previous.set(parts.join(":").toUpperCase(), vpod);
-      }
-      const items = sortByDatacenter(servers || [], (server) =>
-        server.homeDc || server.dc || server.guid || server.label
-      );
-      root.innerHTML = items.map((server) => {
+    function camgrDestHtml(servers, sourceGuids, previous) {
+      const sources = (sourceGuids || []).map((guid) => String(guid).toUpperCase());
+      const items = sortByDatacenter(servers || [], (server) => server.homeDc || server.dc || server.guid || server.label);
+      return items.map((server) => {
         const guid = String(server.guid || server.dc || "");
         const label = String(server.label || server.dc || guid);
         const home = String(server.homeDc || camgrCdevHomeDc(guid) || "");
-        // ContentDEV.RTP only takes content from RTP, so it is off the table from any other DC.
         const wrongSource = Boolean(home) && sources.length > 0 && sources.some((src) => src !== home);
-        const wasChecked = !wrongSource && previous.has(guid.toUpperCase());
-        const checked = wasChecked ? " checked" : "";
-        const vpods = server.vpods || [];
-        let picker = "";
+        const prior = previous.get(guid.toUpperCase());
         if (wrongSource) {
           const from = sources.join(", ");
           return `
@@ -9663,14 +10154,13 @@
             </span>
           `;
         }
+        const vpods = server.vpods || [];
+        let picker = "";
+        const wasChecked = Boolean(prior?.checked);
         if (vpods.length) {
-          const prior = previous.get(guid.toUpperCase()) || "";
-          // A single vPod is preselected; with several, the user picks which one receives the VMs.
           const auto = vpods.length === 1 ? String(vpods[0].value || "") : "";
-          const current = prior || auto;
-          const placeholder = vpods.length === 1
-            ? ""
-            : `<option value=""${current ? "" : " selected"}>Choose a vPod…</option>`;
+          const current = prior?.vpod || auto;
+          const placeholder = vpods.length === 1 ? "" : `<option value=""${current ? "" : " selected"}>Choose a vPod…</option>`;
           const options = vpods.map((vpod) => {
             const value = String(vpod.value || "");
             const text = String(vpod.label || vpod.name || value);
@@ -9682,18 +10172,85 @@
         return `
           <span class="camgr-dest-item">
             <label>
-              <input type="checkbox" class="camgr-dest-box" value="${escapeHtml(guid)}" data-label="${escapeHtml(label)}"${checked} />
+              <input type="checkbox" class="camgr-dest-box" value="${escapeHtml(guid)}" data-label="${escapeHtml(label)}"${wasChecked ? " checked" : ""} />
               ${escapeHtml(label)}
             </label>
             ${picker}
           </span>
         `;
       }).join("");
-      $("camgr-dest-toolbar")?.classList.toggle("hidden", !items.length);
-      $("camgr-auto-integrate-wrap")?.classList.toggle("hidden", !items.length);
-      $("camgr-burn-in-wrap")?.classList.toggle("hidden", !items.length);
+    }
+
+    function renderCamgrDemoSections() {
+      const root = $("camgr-vm-list");
+      if (!root) return;
+      const prior = new Map();
+      root.querySelectorAll(".demo-load-section").forEach((section) => {
+        const dests = new Map();
+        section.querySelectorAll(".camgr-dest-box").forEach((box) => {
+          const vpod = box.closest(".camgr-dest-item")?.querySelector(".camgr-dest-vpod")?.value || "";
+          dests.set(String(box.value || "").toUpperCase(), { checked: box.checked, vpod });
+        });
+        prior.set(section.dataset.demoKey, {
+          open: section.open,
+          vms: new Set(selectedCamgrVms(section)),
+          dests,
+        });
+      });
+      const any = camgrDemoLoads.size > 0;
+      $("camgr-auto-integrate-wrap")?.classList.toggle("hidden", !any);
+      $("camgr-burn-in-wrap")?.classList.toggle("hidden", !any);
+      root.innerHTML = [...camgrDemoLoads.entries()].map(([key, entry]) => {
+        const saved = prior.get(key);
+        const fresh = !saved;
+        const names = [];
+        const seen = new Set();
+        for (const vm of entry.vms || []) {
+          const name = typeof vm === "string" ? vm : String(vm.name || "");
+          if (!name || seen.has(name)) continue;
+          seen.add(name);
+          names.push({ name, os: typeof vm === "string" ? "" : String(vm.os || "") });
+        }
+        const vms = names.map((vm) => {
+          const checked = fresh || saved.vms.has(vm.name) ? " checked" : "";
+          return `
+            <label>
+              <input type="checkbox" class="camgr-vm-box" value="${escapeHtml(vm.name)}"${checked} />
+              ${escapeHtml(vm.name)}${vm.os ? ` <span class="hint">${escapeHtml(vm.os)}</span>` : ""}
+            </label>
+          `;
+        }).join("");
+        return `
+          <details class="demo-load-section" data-demo-key="${escapeHtml(key)}" ${(saved ? saved.open : true) ? "open" : ""}>
+            <summary><span class="demo-load-title">${escapeHtml(entry.title)}</span><span class="hint demo-load-meta">${escapeHtml(demoSectionMeta(entry.rows))}</span></summary>
+            <p class="demo-load-status hint">${escapeHtml(entry.status || "")}</p>
+            <div class="list-toolbar chip-toolbar">
+              <p class="hint chip-toolbar-label">Transfer VMs</p>
+              <button type="button" class="secondary" data-camgr-check="vms" data-on="1">Check All</button>
+              <button type="button" class="secondary" data-camgr-check="vms" data-on="0">Uncheck All</button>
+            </div>
+            <div class="cai-vm-list">${vms || `<p class="hint">No transfer VMs returned for this demo.</p>`}</div>
+            <div class="list-toolbar chip-toolbar">
+              <p class="hint chip-toolbar-label">Destination DCs</p>
+              <button type="button" class="secondary" data-camgr-check="dests" data-on="1">Check All</button>
+              <button type="button" class="secondary" data-camgr-check="dests" data-on="0">Uncheck All</button>
+            </div>
+            <div class="camgr-dest-list">${camgrDestHtml(entry.servers, entry.sourceGuids, saved ? saved.dests : new Map())}</div>
+            <div class="actions">
+              <button type="button" class="secondary" data-camgr-submit="1">Submit this transfer</button>
+            </div>
+          </details>
+        `;
+      }).join("");
       syncCamgrVpodSelects();
       syncCamgrIntegrateOption();
+      renderMasterDests("camgr");
+      syncHubActionButtons();
+    }
+
+    function camgrCdevHomeDc(guid) {
+      const code = String(guid || "").trim().toUpperCase().split(":")[0];
+      return code.startsWith("CDEV.") ? code.slice(5) : "";
     }
 
     function syncCamgrIntegrateOption() {
@@ -9919,16 +10476,24 @@
       }, HUB_POLL_MS);
     }
 
+    let camgrStatusInFlight = null;
+
     async function refreshCamgrStatus() {
-      try {
-        const data = await api("/api/camgr/status", { quiet: true });
-        updateCamgrStatus(data);
-        if (data.loggedIn) await loadCamgrDevSources();
-        return data;
-      } catch (err) {
-        updateCamgrStatus({ loggedIn: false, message: err.message });
-        return null;
-      }
+      if (camgrStatusInFlight) return camgrStatusInFlight;
+      camgrStatusInFlight = (async () => {
+        try {
+          const data = await api("/api/camgr/status", { quiet: true });
+          updateCamgrStatus(data);
+          if (data.loggedIn) await loadCamgrDevSources();
+          return data;
+        } catch (err) {
+          updateCamgrStatus({ loggedIn: false, message: err.message });
+          return null;
+        } finally {
+          camgrStatusInFlight = null;
+        }
+      })();
+      return camgrStatusInFlight;
     }
 
     async function connectCamgr() {
@@ -9952,107 +10517,153 @@
       }
     }
 
-    function rejectCdevCamgrDemoAction(action) {
-      const rows = selectedSavedIdRows().filter((row) => row.saved_id);
-      if (!rows.some((row) => Boolean(camgrCdevHomeDc(row.site)))) return false;
-      showError(
-        `${action} is for saved demos. ContentDEV uses Transfer VMs from Content Dev — pick the vPod and click Discover VMs.`,
-        { scrollTo: "#camgr-dev-vpod" }
-      );
-      return true;
+    function camgrSectionPlans(onlyKey) {
+      return [...document.querySelectorAll("#camgr-vm-list .demo-load-section")].map((section) => {
+        if (onlyKey && section.dataset.demoKey !== onlyKey) return null;
+        const entry = camgrDemoLoads.get(section.dataset.demoKey);
+        if (!entry) return null;
+        const vms = selectedCamgrVms(section);
+        const dcs = selectedCamgrDests(section);
+        if (!dcs.length) return null;
+        return { section, entry, vms, dcs };
+      }).filter(Boolean);
     }
 
     async function loadCamgrVms() {
-      if (rejectCdevCamgrDemoAction("Load Transfer VMs")) return;
-      const rows = requireSameDemoRows("Check at least one saved content row to load transfer VMs.", "load transfer VMs");
-      if (!rows) return;
+      const rows = selectedSavedIdRows().filter((row) => row.saved_id);
+      const groups = demoLoadGroups(rows);
+      if (!rows.length) {
+        showError("Check at least one saved content row to load transfer VMs.", { scrollTo: "#saved-ids-table" });
+        return;
+      }
+      if (!groups.length) {
+        showError(
+          "Load Transfer VMs is for saved demos. ContentDEV uses Transfer VMs from Content Dev — pick the vPod and click Discover VMs.",
+          { scrollTo: "#camgr-dev-vpod" }
+        );
+        return;
+      }
+      const skipped = rows.filter((row) => camgrCdevHomeDc(row.site));
       $("btn-camgr-load-vms").disabled = true;
+      const failures = [];
+      let serversForDev = [];
       try {
-        const data = await api("/api/camgr/vms", {
-          method: "POST",
-          body: JSON.stringify({
-            site: rows[0].site,
-            saved_id: rows[0].saved_id,
-            items: rows.map((row) => ({ site: row.site, saved_id: row.saved_id })),
-          }),
-        });
-        renderCamgrVmList(data.vms || [], { checkAll: true });
-        renderCamgrDestList(data.servers || [], { sourceGuids: data.camgrDcs || [] });
-        populateCamgrDevSources(data.servers || []);
-        updateCamgrStatus({ loggedIn: true, configured: true, message: data.title || "CAMGR: VMs loaded." });
-        noteLog(`Loaded ${(data.vms || []).length} CAMGR VM(s) from ${rows.length} saved content row(s).`);
-      } catch (err) {
-        showError(err.message);
-        if (/CAMGR session|Content Automation Manager/i.test(err.message)) {
-          updateCamgrStatus({ loggedIn: false, message: err.message });
+        for (const [key, group] of groups) {
+          const first = group[0];
+          try {
+            const data = await api("/api/camgr/vms", {
+              method: "POST",
+              quiet: true,
+              body: JSON.stringify({
+                site: first.site,
+                saved_id: first.saved_id,
+                items: group.map((row) => ({ site: row.site, saved_id: row.saved_id })),
+              }),
+            });
+            camgrDemoLoads.set(key, {
+              title: demoSectionTitle(group),
+              rows: group,
+              vms: data.vms || [],
+              servers: data.servers || [],
+              sourceGuids: data.camgrDcs || group.map((row) => row.site),
+              status: "",
+            });
+            if ((data.servers || []).length) serversForDev = data.servers;
+            updateCamgrStatus({ loggedIn: true, configured: true, message: data.title || "CAMGR: VMs loaded." });
+            noteLog(`Loaded ${(data.vms || []).length} CAMGR VM(s) for ${demoSectionTitle(group)}.`);
+          } catch (err) {
+            failures.push(`${demoSectionTitle(group)}: ${err.message}`);
+            if (/CAMGR session|Content Automation Manager/i.test(err.message) || err.status === 401) {
+              updateCamgrStatus({ loggedIn: false, message: err.message });
+              break;
+            }
+          }
         }
+        if (serversForDev.length) populateCamgrDevSources(serversForDev);
+        renderCamgrDemoSections();
+        if (skipped.length) {
+          noteLog(`Skipped ContentDEV ${skipped.map((row) => `${String(row.site).toUpperCase()} ${row.saved_id}`).join(", ")}. Use Transfer VMs from Content Dev for those.`);
+        }
+        if (failures.length) showError(failures.join(" "));
       } finally {
         syncHubActionButtons();
       }
     }
 
-    async function submitCamgrTransfer() {
-      if (rejectCdevCamgrDemoAction("Submit Transfer")) return;
-      const rows = requireSameDemoRows("Check at least one saved content row.", "submit a transfer");
-      if (!rows) return;
-      const vms = selectedCamgrVms();
-      const dcs = selectedCamgrDests();
-      if (!dcs.length) {
-        showError("Load transfer VMs and check at least one destination DC.");
+    async function submitCamgrTransfer(onlyKey) {
+      const plans = camgrSectionPlans(onlyKey);
+      if (!plans.length) {
+        showError("Load transfer VMs and check a destination in a demo section.");
         return;
       }
-      const needVpod = camgrDestsMissingVpod();
+      const needVpod = camgrDestsMissingVpod(onlyKey);
       if (needVpod.length) {
         showActionAlert(
           `Pick a vPod for ${needVpod.join(", ")}. ContentDEV and InfraDEV transfers land in a vPod, `
           + "so CAMGR needs to know which one gets these VMs.",
-          { title: "Choose a vPod", scrollTo: "#camgr-dest-list" }
+          { title: "Choose a vPod", scrollTo: "#camgr-vm-list" }
         );
         noteLog(`Transfer not submitted — no vPod chosen for ${needVpod.join(", ")}.`);
         return;
       }
-      const autoIntegrate = $("camgr-auto-integrate")?.checked || false;
-      const autoBurnIn = autoIntegrate && ($("camgr-burn-in")?.checked || false);
       const burnInDays = Math.max(1, Number.parseInt($("camgr-burn-in-days")?.value || "1", 10) || 1);
-      const vmLabel = vms.length ? vms.join(", ") : "all VMs";
-      const preview = rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id} → ${dcs.join(", ")} (${vmLabel})`).join("\n");
+      const lines = plans.map((plan) => {
+        const integrate = Boolean($("camgr-auto-integrate")?.checked) && plan.dcs.some((dc) => !camgrCdevHomeDc(dc));
+        const burn = integrate && Boolean($("camgr-burn-in")?.checked);
+        const vmLabel = plan.vms.length ? plan.vms.join(", ") : "all VMs";
+        let line = `${plan.entry.title}\n  ${demoSectionMeta(plan.entry.rows)} → ${plan.dcs.join(", ")} (${vmLabel})`;
+        if (integrate) line += "\n  Then integrate those destinations when CAMGR is COMPLETE.";
+        if (burn) line += `\n  Then schedule a ${burnInDays}-day burn-in.`;
+        return line;
+      });
       if (!await confirmAction(
-        `Submit CAMGR transfer for ${rows.length} saved content item(s)?\n\n${preview}`
-        + (autoIntegrate ? `\n\nWhen CAMGR is COMPLETE, automatically Submit CAI Integrate to the same DCs (${dcs.join(", ")}).` : "")
-        + (autoBurnIn ? `\n\nWhen integration finishes, schedule each new demo for a ${burnInDays}-day burn-in at the next available time.` : ""),
-        { title: "Submit Transfer" }
+        `Submit CAMGR transfer for ${plans.length} demo section(s)?\n\n${lines.join("\n\n")}\n\nEach demo uses only the VMs and destinations checked in its section.`,
+        { title: plans.length === 1 ? "Submit this transfer" : "Submit all transfers" }
       )) {
         return;
       }
       $("btn-camgr-transfer").disabled = true;
+      const failures = [];
+      let submitted = 0;
       try {
-        const data = await api("/api/camgr/transfer", {
-          method: "POST",
-          body: JSON.stringify({
-            job_id: jobId || "",
-            vm_names: vms,
-            dcs,
-            auto_integrate: autoIntegrate,
-            auto_burn_in: autoBurnIn,
-            burn_in_days: burnInDays,
-            items: rows,
-          }),
-        });
-        if (data.job) renderJob(data.job, { forceCards: true });
-        else applySavedIds(data.savedIds);
-        if (data.errors?.length) showError(data.errors.join(" "));
-        noteLog(`CAMGR transfer submitted for ${data.submitted?.length || 0} row(s).`);
-        if (autoIntegrate) noteLog("CAI Integrate will submit to those same DCs when CAMGR is COMPLETE.");
-        if (autoBurnIn) noteLog(`Each new integrated demo will be scheduled as a regular ${burnInDays}-day burn-in session at its next available time.`);
-        startCamgrTransferPoll();
-        showToast(data.errors?.length
-          ? data.errors.join(" ")
-          : "CAMGR transfer submitted.", { kind: data.errors?.length ? "err" : "ok" });
-      } catch (err) {
-        notifyRequestError(err);
-        if (/CAMGR session|Content Automation Manager/i.test(err.message)) {
-          updateCamgrStatus({ loggedIn: false, message: err.message });
+        for (const plan of plans) {
+          const autoIntegrate = Boolean($("camgr-auto-integrate")?.checked) && plan.dcs.some((dc) => !camgrCdevHomeDc(dc));
+          const autoBurnIn = autoIntegrate && Boolean($("camgr-burn-in")?.checked);
+          try {
+            const data = await api("/api/camgr/transfer", {
+              method: "POST",
+              quiet: true,
+              body: JSON.stringify({
+                job_id: jobId || "",
+                vm_names: plan.vms,
+                dcs: plan.dcs,
+                auto_integrate: autoIntegrate,
+                auto_burn_in: autoBurnIn,
+                burn_in_days: burnInDays,
+                items: plan.entry.rows,
+              }),
+            });
+            if (data.job) renderJob(data.job, { forceCards: true });
+            else if (data.savedIds) applySavedIds(data.savedIds);
+            plan.entry.status = data.errors?.length ? data.errors.join(" ") : "Transfer submitted.";
+            if (data.errors?.length) failures.push(`${plan.entry.title}: ${data.errors.join(" ")}`);
+            else submitted += 1;
+            noteLog(`CAMGR transfer submitted for ${plan.entry.title}.`);
+            if (autoIntegrate) noteLog(`${plan.entry.title}: CAI Integrate will submit when CAMGR is COMPLETE.`);
+            if (autoBurnIn) noteLog(`${plan.entry.title}: each new integrated demo will be scheduled as a regular ${burnInDays}-day burn-in.`);
+            startCamgrTransferPoll();
+          } catch (err) {
+            plan.entry.status = err.message;
+            failures.push(`${plan.entry.title}: ${err.message}`);
+            if (/CAMGR session|Content Automation Manager/i.test(err.message) || err.status === 401) {
+              updateCamgrStatus({ loggedIn: false, message: err.message });
+              break;
+            }
+          }
         }
+        renderCamgrDemoSections();
+        if (failures.length) showError(failures.join(" "));
+        else if (submitted) showToast("CAMGR transfer submitted.", { kind: "ok" });
       } finally {
         syncHubActionButtons();
       }
@@ -16635,8 +17246,24 @@
     $("saved-ids-body").addEventListener("change", (ev) => {
       if (ev.target.classList.contains("saved-id-select")) syncSavedIdHeadCheck();
     });
-    $("cai-vm-list")?.addEventListener("change", () => syncHubActionButtons());
-    $("cai-integrate-list")?.addEventListener("change", () => syncHubActionButtons());
+    $("cai-vm-list")?.addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("cai-integrate-box")) syncMasterDestChecks("cai");
+      syncHubActionButtons();
+    });
+    $("cai-master-dest-list")?.addEventListener("change", (ev) => {
+      if (!ev.target.classList.contains("master-dest-box")) return;
+      applyMasterDest("cai", ev.target.value, ev.target.checked);
+    });
+    $("btn-cai-master-check-all")?.addEventListener("click", () => applyMasterDestAll("cai", true));
+    $("btn-cai-master-uncheck-all")?.addEventListener("click", () => applyMasterDestAll("cai", false));
+    $("cai-vm-list")?.addEventListener("click", (ev) => {
+      const submit = ev.target.closest("[data-cai-submit]");
+      if (!submit) return;
+      const key = submit.closest(".demo-load-section")?.dataset.demoKey;
+      if (!key) return;
+      const run = submit.dataset.caiSubmit === "integrate" ? submitCaiIntegrate : submitCaiReplace;
+      run(key).catch((err) => showError(err.message));
+    });
     $("saved-ids-body").addEventListener("click", (ev) => {
       const useRoot = ev.target.closest(".btn-use-root");
       if (useRoot) {
@@ -16674,10 +17301,40 @@
     $("btn-camgr-connect").addEventListener("click", () => connectCamgr().catch((err) => showError(err.message)));
     $("btn-camgr-load-vms").addEventListener("click", () => loadCamgrVms().catch((err) => showError(err.message)));
     $("btn-camgr-transfer").addEventListener("click", () => submitCamgrTransfer().catch((err) => showError(err.message)));
-    $("btn-camgr-vms-check-all").addEventListener("click", () => setCamgrVmChecks(true));
-    $("btn-camgr-vms-uncheck-all").addEventListener("click", () => setCamgrVmChecks(false));
-    $("btn-camgr-dest-check-all").addEventListener("click", () => setCamgrDestChecks(true));
-    $("btn-camgr-dest-uncheck-all").addEventListener("click", () => setCamgrDestChecks(false));
+    $("camgr-vm-list").addEventListener("click", (ev) => {
+      const check = ev.target.closest("[data-camgr-check]");
+      const section = ev.target.closest(".demo-load-section");
+      if (check && section) {
+        const on = check.dataset.on === "1";
+        const boxes = check.dataset.camgrCheck === "vms"
+          ? section.querySelectorAll(".camgr-vm-box")
+          : section.querySelectorAll(".camgr-dest-box:not(:disabled)");
+        boxes.forEach((box) => { box.checked = on; });
+        syncCamgrVpodSelects();
+        syncCamgrIntegrateOption();
+        if (check.dataset.camgrCheck === "dests") syncMasterDestChecks("camgr");
+        syncHubActionButtons();
+        return;
+      }
+      const submit = ev.target.closest("[data-camgr-submit]");
+      if (submit && section) {
+        submitCamgrTransfer(section.dataset.demoKey).catch((err) => showError(err.message));
+      }
+    });
+    $("camgr-vm-list").addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("camgr-dest-box") || ev.target.classList.contains("camgr-dest-vpod")) {
+        syncCamgrVpodSelects();
+        syncCamgrIntegrateOption();
+        if (ev.target.classList.contains("camgr-dest-box")) syncMasterDestChecks("camgr");
+      }
+      syncHubActionButtons();
+    });
+    $("camgr-master-dest-list")?.addEventListener("change", (ev) => {
+      if (!ev.target.classList.contains("master-dest-box")) return;
+      applyMasterDest("camgr", ev.target.value, ev.target.checked);
+    });
+    $("btn-camgr-master-check-all")?.addEventListener("click", () => applyMasterDestAll("camgr", true));
+    $("btn-camgr-master-uncheck-all")?.addEventListener("click", () => applyMasterDestAll("camgr", false));
     $("camgr-dev-vpod").addEventListener("change", () => {
       renderCamgrDevVmList([]);
       syncCamgrDevTransferButton();
@@ -16688,10 +17345,6 @@
     $("btn-camgr-dev-vms-uncheck-all").addEventListener("click", () => setCamgrDevVmChecks(false));
     $("btn-camgr-dev-transfer").addEventListener("click", () => submitCamgrDevTransfer());
     $("camgr-dev-vm-list").addEventListener("change", () => syncCamgrDevTransferButton());
-    $("camgr-dest-list").addEventListener("change", (ev) => {
-      if (ev.target.classList.contains("camgr-dest-box")) syncCamgrVpodSelects();
-      syncCamgrIntegrateOption();
-    });
     $("camgr-auto-integrate").addEventListener("change", () => syncCamgrIntegrateOption());
     $("camgr-burn-in").addEventListener("change", () => syncCamgrIntegrateOption());
     $("camgr-burn-in-days").addEventListener("change", () => {
@@ -17021,6 +17674,10 @@
     $("unified-catalog-results").addEventListener("click", (ev) => {
       const catalogButton = ev.target.closest(".btn-search-catalog-schedule");
       if (catalogButton) scheduleCatalogSearchResult(catalogButton.dataset.name || "", catalogButton);
+      const viewButton = ev.target.closest(".btn-search-catalog-view");
+      if (viewButton) openCatalogView(findCatalogSearchRow(viewButton.dataset.id));
+      const exploreButton = ev.target.closest(".btn-search-catalog-explore");
+      if (exploreButton) openCatalogExplore(findCatalogSearchRow(exploreButton.dataset.id));
     });
     $("catalog-schedule-sites")?.addEventListener("change", () => syncCatalogScheduleContinue());
     $("catalog-schedule-all")?.addEventListener("click", () => {
@@ -17035,6 +17692,45 @@
     $("catalog-schedule-vms")?.addEventListener("click", () => continueCatalogSchedule(true));
     $("catalog-schedule-cancel")?.addEventListener("click", () => closeCatalogSchedulePicker());
     $("catalog-schedule-backdrop")?.addEventListener("click", () => closeCatalogSchedulePicker());
+    $("catalog-view-questions")?.addEventListener("click", (ev) => {
+      const choice = ev.target.closest("[data-question][data-value]");
+      if (!choice || !$("catalog-view-questions").contains(choice)) return;
+      catalogSurveyAnswers[choice.dataset.question] = choice.dataset.value;
+      const root = (catalogSurvey && catalogSurvey.root) || "demo-usage";
+      if (choice.dataset.question === root) {
+        for (const question of (catalogSurvey && catalogSurvey.questions) || []) {
+          if (question.value !== root && question.type !== "textbox") delete catalogSurveyAnswers[question.value];
+        }
+      }
+      renderCatalogSurvey();
+    });
+    $("catalog-view-questions")?.addEventListener("input", (ev) => {
+      const field = ev.target.closest("textarea[data-question]");
+      if (!field) return;
+      catalogSurveyAnswers[field.dataset.question] = field.value;
+      const submit = $("catalog-view-submit");
+      if (submit) submit.disabled = !surveyReady();
+    });
+    $("catalog-view-cancel")?.addEventListener("click", () => closeCatalogView());
+    $("catalog-view-backdrop")?.addEventListener("click", () => closeCatalogView());
+    $("catalog-view-submit")?.addEventListener("click", () => submitCatalogView());
+    $("catalog-explore-modes")?.addEventListener("click", (ev) => {
+      const chip = ev.target.closest("[data-mode]");
+      if (chip) {
+        catalogExploreMode = Number(chip.dataset.mode) || 0;
+        const mode = (catalogExploreItem?.modes || [])[catalogExploreMode] || { subModes: [] };
+        catalogExploreHandle = (mode.subModes || [])[0]?.handle || "";
+        renderCatalogExplore();
+        return;
+      }
+      const row = ev.target.closest("tr[data-handle]");
+      if (!row) return;
+      catalogExploreHandle = row.dataset.handle || "";
+      renderCatalogExplore();
+    });
+    $("catalog-explore-close")?.addEventListener("click", () => closeCatalogExplore());
+    $("catalog-explore-backdrop")?.addEventListener("click", () => closeCatalogExplore());
+    $("catalog-explore-try")?.addEventListener("click", () => tryCatalogExplore());
     $("details-modal-body").addEventListener("click", (ev) => {
       const reveal = ev.target.closest(".btn-reveal-secret");
       if (!reveal) return;
@@ -17149,7 +17845,7 @@
         "#saved-ids-table",
         "#camgr-dev-vpod",
         "#camgr-dev-vm-list",
-        "#camgr-dest-list",
+        "#camgr-vm-list",
         "#cai-template-mode",
         "#cai-template-vm",
         "#cai-template-dests",

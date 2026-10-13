@@ -2636,7 +2636,7 @@ def test_load_vms_button_stays_on_top() -> None:
                 {"site": "rtp", "saved_id": "2", "name": "Another demo"},
             ],
             "VMs",
-            "Two different demos",
+            "own section",
         ),
         ([{"site": "CDEV.RTP", "saved_id": "9", "name": "dev"}], "transfer VMs", "ContentDEV"),
     ]
@@ -2651,7 +2651,7 @@ for (const [rows, what, expected] of cases) {{
   }}
 }}
 const mixed = loadTargetNote(cases[3][0], "VMs");
-if (!mixed.warn) {{ console.error("mixed demos should warn"); process.exit(1); }}
+if (mixed.warn) {{ console.error("mixed demos each get a section, so the note should not warn"); process.exit(1); }}
 const single = loadTargetNote(cases[1][0], "VMs");
 if (single.warn) {{ console.error("a single demo should not warn"); process.exit(1); }}
 // The "change it" sentence goes on its own line, so it must not be glued
@@ -2673,6 +2673,29 @@ if (!single.text.trimEnd().endsWith(".")) {{
     check(
         "the hint line renders as its own block",
         ".load-target .load-target-hint" in INDEX and "load-target-hint" in INDEX,
+    )
+    check(
+        "Load VMs builds one section per demo",
+        "demoLoadGroups" in js_function("loadCamgrVms")
+        and "demoLoadGroups" in js_function("loadCaiVms")
+        and "requireSameDemoRows" not in js_function("loadCamgrVms")
+        and "requireSameDemoRows" not in js_function("loadCaiVms"),
+    )
+    check(
+        "a master destination list checks that datacenter on every demo",
+        'id="camgr-master-dests"' in INDEX
+        and 'id="cai-master-dests"' in INDEX
+        and "if (box.disabled" in js_function("applyMasterDest")
+        and "master.indeterminate" in js_function("syncMasterDestChecks"),
+    )
+    check(
+        "Submit all sends one request per demo section",
+        "for (const plan of plans)" in js_function("submitCamgrTransfer")
+        and "/api/camgr/transfer" in js_function("submitCamgrTransfer")
+        and "for (const plan of ready)" in js_function("submitCaiIntegrate")
+        and "/api/cai/integrate" in js_function("submitCaiIntegrate")
+        and "for (const plan of ready)" in js_function("submitCaiReplace")
+        and "/api/cai/replace" in js_function("submitCaiReplace"),
     )
 
     hint_src = js_function("scheduleCopyHintText")
@@ -2817,6 +2840,26 @@ def test_event_management_section() -> None:
         and "Load/Refresh Both" in INDEX
         and 'id="btn-unified-search-refresh"' not in INDEX
         and 'id="catalog-schedule-modal"' in INDEX
+        and 'id="catalog-view-modal"' in INDEX
+        and 'id="catalog-explore-modal"' in INDEX
+        and "Tell us about your demo" in INDEX
+        and "btn-search-catalog-view" in INDEX
+        and "btn-search-catalog-explore" in INDEX
+        and "Try It" in INDEX
+        and dcloud_client.catalog_launch_kind("DEMO") == "schedule"
+        and dcloud_client.catalog_launch_kind("INSTANTDEMO") == "view"
+        and dcloud_client.catalog_launch_kind("GUIDEDDEMO") == "view"
+        and dcloud_client.catalog_launch_kind("APEX", "https://idac.cat-dcloud.com/x") == "explore"
+        and dcloud_client.catalog_metrics_segment("INSTANTDEMO") == "instantDemo"
+        and dcloud_client.catalog_metrics_segment("GUIDEDDEMO") == "guidedDemo"
+        and dcloud_client.catalog_view_payload(
+            {"demo-usage": "learning-enablement", "learningEnablementOption": "for-me", "additional-info": "  "},
+            None,
+        )["rationaleQuestions"] == {"demo-usage": "learning-enablement", "learningEnablementOption": "for-me"}
+        and dcloud_client.catalog_view_payload(
+            {"demo-usage": "customer-demo"},
+            {"handle": "launchpad", "name": "Launchpad", "subModeName": "Instant", "mode": "DEMO"},
+        )["apexDemo"]["subModeName"] == "Instant"
         and "Continue scheduling" in INDEX
         and "Continue + VMs" in INDEX
         and "Uncheck all" in INDEX
@@ -3484,7 +3527,15 @@ def test_tool_owned_browser_avoids_keychain() -> None:
     check(
         "Connect to CAMGR does not spawn extra Chrome tabs",
         "connect_camgr_via_chrome_tab" not in connect_fn
-        and "open_if_missing" not in connect_fn,
+        and "open_if_missing" not in connect_fn
+        and "import_camgr_cookies_from_chrome" not in connect_fn
+        and "allow_tab=True" not in connect_fn
+        and "return _camgr_public_status()" in source[
+            source.index("def api_camgr_status(") : source.index("def api_camgr_connect(")
+        ]
+        and "_camgr_auto_connect()" not in source[
+            source.index("def api_camgr_status(") : source.index("def api_camgr_connect(")
+        ],
     )
     end_fn = source[source.index("def _end_job(") : source.index("def _extend_job(")]
     check(
