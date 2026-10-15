@@ -1,3 +1,7 @@
+## 2.0.27 — 2026-10-15
+
+- **A demo that is not in the catalog can still be scheduled.** Empty datacenters say not published. Type or paste the IDs you have. The boxes stay on one line
+
 ## 2.0.26 — 2026-10-15
 
 - **CAMGR Connect finishes after the sign-in window closes.** If that window goes away before a session is saved, the Hub stops saying it will connect when it is ready. Click Connect again

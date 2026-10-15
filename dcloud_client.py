@@ -2434,6 +2434,17 @@ def find_admin_demo_by_name(
     return None, [], last_err
 
 
+def _unpublished_catalog_note(err: str | None) -> str:
+    """A datacenter with no catalog ID is something to type, not a search failure."""
+    text = str(err or "").strip()
+    lowered = text.lower()
+    if "401" in text or "token was rejected" in lowered:
+        return text
+    if "timed out" in lowered or "failed to establish" in lowered or "connection" in lowered:
+        return text
+    return "not published"
+
+
 def lookup_demo_id_for_site(
     token: str,
     site: str,
@@ -2467,7 +2478,7 @@ def lookup_demo_id_for_site(
     exact: list[dict[str, Any]] = []
     last_err: str | None = None
     items: list[dict[str, Any]] = []
-    for strategy in ("SUBSTRING", "EXACT"):
+    for strategy in ("SUBSTRING", "RELEVANCY"):
         found, err = catalog_search(token, site, name, strategy)
         last_err = err or last_err
         if found:
@@ -2477,7 +2488,7 @@ def lookup_demo_id_for_site(
 
     if not exact:
         result["source"] = "not_found"
-        result["note"] = last_err or "no exact catalog match"
+        result["note"] = _unpublished_catalog_note(last_err)
         return result
 
     exact.sort(key=lambda item: 0 if str(item.get("contentType") or "").upper() == "DEMO" else 1)
@@ -2514,7 +2525,7 @@ def lookup_demo_id_for_site(
         return result
 
     result["source"] = "not_found"
-    result["note"] = last_err or "in catalog, but no numeric content ID"
+    result["note"] = _unpublished_catalog_note(last_err)
     return result
 
 
@@ -2531,7 +2542,7 @@ def lookup_demo_ids_across_sites(
 
     items: list[dict[str, Any]] = []
     last_err: str | None = None
-    for strategy in ("SUBSTRING", "EXACT"):
+    for strategy in ("SUBSTRING", "RELEVANCY"):
         found, err = catalog_search(token, catalog_site, name, strategy)
         last_err = err or last_err
         if found:
@@ -2554,7 +2565,7 @@ def lookup_demo_ids_across_sites(
                     "owner": "",
                     "state": "",
                     "catalogId": str(item.get("id") or ""),
-                    "note": "not available in global catalog",
+                    "note": "not published",
                 }
                 for site in SITES
             }
@@ -2614,7 +2625,7 @@ def lookup_demo_ids_across_sites(
     if last_err and all(not row.get("id") for row in results.values()):
         for row in results.values():
             if not row.get("note"):
-                row["note"] = last_err
+                row["note"] = _unpublished_catalog_note(last_err)
     return results
 
 

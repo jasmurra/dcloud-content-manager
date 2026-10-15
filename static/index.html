@@ -1391,6 +1391,10 @@
       white-space: nowrap;
     }
     .dc-field .hint:empty { display: none; }
+    /* Pasting an ID clears that box's note. Keep every input on the same line. */
+    #schedule-dc-fields { align-items: flex-start; }
+    #schedule-dc-fields .dc-field .hint { min-height: 1.15em; }
+    #schedule-dc-fields .dc-field .hint:empty { display: block; }
     .dc-id-toolbar {
       display: flex;
       align-items: baseline;
@@ -7189,14 +7193,51 @@
       input.value = "";
       input.classList.remove("stale-id");
       const hint = document.getElementById(`hint-${input.dataset.dc}`);
-      if (hint) hint.textContent = "";
+      if (hint) {
+        hint.textContent = "";
+        delete hint.dataset.miss;
+      }
     }
 
     function clearDemoIdFields() {
       document.querySelectorAll(".demo-id").forEach(clearOneDemoId);
       const status = $("lookup-status");
-      if (status) status.textContent = "";
+      if (status) {
+        status.textContent = "";
+        delete status.dataset.lookupBase;
+        delete status.dataset.lookupReady;
+        status.classList.remove("lookup-ready");
+      }
       syncRunButton();
+    }
+
+    function hintForMissingCatalogId(note, hasValue) {
+      if (hasValue) return "";
+      const text = String(note || "");
+      if (/401|token was rejected|timed out|failed to establish|connection/i.test(text)) return text;
+      if (/skipped/i.test(text)) return text;
+      return "not published";
+    }
+
+    function refreshScheduleReadyNote() {
+      const status = $("lookup-status");
+      if (!status || status.dataset.lookupReady !== "1") return;
+      const base = status.dataset.lookupBase || "";
+      const fields = [...document.querySelectorAll(".demo-id")];
+      const filled = fields.filter((el) => el.value.trim());
+      const missing = fields
+        .filter((el) => !el.value.trim() && document.getElementById(`hint-${el.dataset.dc}`)?.dataset.miss === "1")
+        .map((el) => String(el.dataset.dc || "").toUpperCase());
+      const unpublished = missing.length ? ` ${missing.join(", ")} not published.` : "";
+      if (!filled.length) {
+        status.textContent = `${base}${unpublished}`.trim();
+        status.classList.remove("lookup-ready");
+        return;
+      }
+      const dcs = filled.map((el) => String(el.dataset.dc || "").toUpperCase()).join(", ");
+      status.textContent =
+        `${base}${unpublished} Ready to schedule ${dcs} — check the VMs to power on, set the dates, then Schedule.`;
+      status.classList.add("lookup-ready");
     }
 
     // DCs about to be scheduled with a demo ID that already has a card on this job.
@@ -7249,9 +7290,16 @@
           mismatches.push(site.toUpperCase());
           el.classList.add("stale-id");
         }
-        if (hint) hint.textContent = info.note || "";
+        if (hint) {
+          if (info.id) {
+            hint.textContent = info.note || "";
+            delete hint.dataset.miss;
+          } else {
+            hint.textContent = hintForMissingCatalogId(info.note, Boolean(el.value.trim()));
+            hint.dataset.miss = hint.textContent === "not published" ? "1" : "";
+          }
+        }
         if (info.id) notes.push(`${site.toUpperCase()} ${info.id}`);
-        else if (info.note) notes.push(`${site.toUpperCase()} —`);
       });
       const filled = [...document.querySelectorAll(".demo-id")].filter((el) => el.value.trim());
       // The catalog lookup just filled the per-DC IDs, so open the section and
@@ -7262,30 +7310,31 @@
       if (filled.length && loadPanel) loadPanel.open = true;
       const status = $("lookup-status");
       if (!status) return;
+      let base = "";
+      let ready = false;
       if (data.name && notes.length && !skipCatalog) {
         if (mismatches.length) {
-          status.textContent =
+          base =
             `Looked up “${data.name}” (${notes.join(" · ")}) but these DCs still show old IDs: `
             + `${mismatches.join(", ")}. Restart start.command, reload this page, then Load VMs again.`;
         } else {
-          status.textContent = `Looked up “${data.name}” — demo IDs filled in: ${notes.join(" · ")}.`;
+          base = `Looked up “${data.name}” — ${notes.join(" · ")}.`;
+          ready = true;
         }
       } else if ($("skip-catalog").checked) {
-        status.textContent = data.demoId
+        base = data.demoId
           ? `Filled ${source.toUpperCase()} from this session (${data.demoId}). Catalog search skipped.`
           : "Catalog search skipped — paste content IDs below.";
+        ready = true;
       } else if (data.demoId) {
-        status.textContent = `Filled ${source.toUpperCase()} from this session (${data.demoId}).`;
-      } else {
-        status.textContent = "";
+        base = `Filled ${source.toUpperCase()} from this session (${data.demoId}).`;
+        ready = true;
       }
-      const ready = filled.length > 0 && mismatches.length === 0;
-      status.classList.toggle("lookup-ready", ready);
-      if (ready) {
-        const dcs = filled.map((el) => String(el.dataset.dc || "").toUpperCase()).join(", ");
-        status.textContent +=
-          ` Ready to schedule ${dcs} — check the VMs to power on, set the dates, then Schedule.`;
-      }
+      status.dataset.lookupBase = base;
+      status.dataset.lookupReady = ready ? "1" : "";
+      status.textContent = base;
+      status.classList.remove("lookup-ready");
+      refreshScheduleReadyNote();
     }
 
     function badgeClass(phase) {
@@ -16817,6 +16866,17 @@
       if (!btn) return;
       clearOneDemoId(btn.closest(".dc-field")?.querySelector(".demo-id"));
       syncRunButton();
+      refreshScheduleReadyNote();
+    });
+    $("schedule-dc-fields")?.addEventListener("input", (ev) => {
+      const input = ev.target.closest(".demo-id");
+      if (!input) return;
+      const hint = document.getElementById(`hint-${input.dataset.dc}`);
+      if (hint) {
+        if (input.value.trim()) hint.textContent = "";
+        else if (hint.dataset.miss === "1") hint.textContent = "not published";
+      }
+      refreshScheduleReadyNote();
     });
     $("export-sessions").addEventListener("change", () => syncRunButton());
     $("days").addEventListener("change", () => syncScheduleStop());

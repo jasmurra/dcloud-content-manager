@@ -2576,6 +2576,46 @@ def test_demo_id_fields_can_be_cleared() -> None:
         and ".dc-field .clear-demo-id" in INDEX
         and "button.linkish" in INDEX,
     )
+    from dcloud_client import _unpublished_catalog_note
+
+    check(
+        "a catalog miss is not published",
+        _unpublished_catalog_note("Field 'strategy' must be one of the valid values") == "not published",
+    )
+    check(
+        "a rejected token still shows",
+        "401" in _unpublished_catalog_note("dCloud token was rejected (401)."),
+    )
+    lookup = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    lookup = lookup[lookup.index("def lookup_demo_id_for_site") : lookup.index("BLOCKING_TIMESLOT_TYPES")]
+    check("catalog ID lookup does not send EXACT", '"EXACT"' not in lookup)
+    check(
+        "empty DCs say not published and typed IDs stay",
+        "not published." in js_function("refreshScheduleReadyNote")
+        and "Others not published." not in INDEX
+        and "hint.dataset.miss" in INDEX
+        and "#schedule-dc-fields { align-items: flex-start; }" in INDEX
+        and "#schedule-dc-fields .dc-field .hint:empty { display: block; }" in INDEX,
+    )
+    run_node(
+        js_function("hintForMissingCatalogId")
+        + """
+const cases = [
+  ["Field 'strategy' must be one of the valid values", false, "not published"],
+  ["dCloud token was rejected (401).", false, "dCloud token was rejected (401)."],
+  ["catalog search skipped", false, "catalog search skipped"],
+  ["anything", true, ""],
+];
+for (const [note, hasValue, want] of cases) {
+  const got = hintForMissingCatalogId(note, hasValue);
+  if (got !== want) {
+    console.error(`expected "${want}" for "${note}" (filled=${hasValue}), got "${got}"`);
+    process.exit(1);
+  }
+}
+""",
+        "missing catalog IDs say not published",
+    )
 
 
 def test_cancel_wording_for_scheduled_cards() -> None:
