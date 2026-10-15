@@ -4027,7 +4027,7 @@ def _camgr_auto_connect() -> dict[str, Any]:
         _camgr_mark_unverified(off_network_message("CAMGR"))
         return _camgr_public_status()
     cookie = _camgr_cookie()
-    probed = probe_camgr_login(cookie)
+    probed = probe_camgr_login(cookie, allow_tab=False, timeout=8)
     if probed.get("loggedIn"):
         header = str(probed.get("cookie") or cookie or "").strip()
         _set_camgr_cookie(header, probed.get("message") or "", str(probed.get("user") or ""))

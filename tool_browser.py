@@ -905,9 +905,27 @@ def request_sign_in_window() -> None:
     _user_needs_window.set()
 
 
+def tool_chrome_is_running() -> bool:
+    """True when the tool profile has a browser process, hidden or visible."""
+    needle = str(PROFILE_DIR)
+    try:
+        out = subprocess.check_output(["ps", "-ax", "-o", "command="], text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    for line in out.splitlines():
+        if needle in line and "--type=" not in line:
+            return True
+    return False
+
+
 def headed_is_open() -> bool:
     with _headed_open_lock:
-        return _headed_open
+        open_ = _headed_open
+    # A capture that died after opening the window leaves the flag set. The
+    # process list is what the Hub should trust.
+    if not open_:
+        return False
+    return tool_chrome_is_running()
 
 
 def _set_headed_open(value: bool) -> None:
@@ -916,35 +934,57 @@ def _set_headed_open(value: bool) -> None:
         _headed_open = value
 
 
+def _replace_launch_lock() -> None:
+    """Drop a lock whose owner died inside Playwright and never released it."""
+    global _launch_lock
+    _launch_lock = threading.Lock()
+
+
 class _BrowserTurn:
     """One Chromium profile at a time. A visible sign-in preempts a silent refresh."""
 
     def __init__(self, headed: bool):
         self.headed = headed
         self.held = False
+        self._lock: threading.Lock | None = None
 
     def __enter__(self) -> "_BrowserTurn":
         if self.headed:
             _user_needs_window.set()
+            lock = _launch_lock
             try:
-                _launch_lock.acquire()
+                got = lock.acquire(timeout=20)
             except BaseException:
                 _user_needs_window.clear()
                 raise
+            if not got:
+                # Nothing is on screen, so the previous capture is not using the
+                # profile. A new lock lets this click open the window.
+                if not tool_chrome_is_running():
+                    _set_headed_open(False)
+                    _replace_launch_lock()
+                    lock = _launch_lock
+                    got = lock.acquire(timeout=2)
+                if not got:
+                    _user_needs_window.clear()
+                    return self
+            self._lock = lock
             self.held = True
             _user_needs_window.clear()
             return self
         if _user_needs_window.is_set() or not _launch_lock.acquire(blocking=False):
             return self
+        self._lock = _launch_lock
         self.held = True
         if _user_needs_window.is_set():
             self.release()
         return self
 
     def release(self) -> None:
-        if self.held:
-            _launch_lock.release()
+        if self.held and self._lock is not None:
+            self._lock.release()
             self.held = False
+            self._lock = None
 
     def __exit__(self, *_args: object) -> None:
         self.release()
@@ -1328,8 +1368,11 @@ def capture_site_cookies(
                 started = time.time()
                 saw_idp = False
                 opened_target_after_sso = False
+                target_opened_at = 0.0
                 reopened_blank = False
                 raised_for_target = False
+                duo_clicks = 0
+                last_duo_click = 0.0
                 while time.time() < deadline:
                     if not headed and _user_needs_window.is_set():
                         return None, "A sign-in window was requested."
@@ -1346,7 +1389,8 @@ def capture_site_cookies(
                             if opened is not None:
                                 reopened_blank = True
                                 page = opened
-                                opened_target_after_sso = True
+                                opened_target_after_sso = _page_on_hosts(opened, hosts)
+                                target_opened_at = time.time()
                                 _hold_window_open(context)
                                 if not raised_for_target:
                                     raised_for_target = True
@@ -1367,13 +1411,23 @@ def capture_site_cookies(
                             return None, "A sign-in is needed in the tool browser."
                         time.sleep(1.2)
                         continue
+                    try:
+                        browser = context.browser
+                        if headed and browser is not None and not browser.is_connected():
+                            return None, (
+                                "The sign-in window closed before CAMGR saved the session. "
+                                "Click Connect again."
+                            )
+                    except Exception:
+                        pass
                     on_target = any(_page_on_hosts(item, hosts) for item in pages)
-                    if (
-                        headed
-                        and not on_target
-                        and not opened_target_after_sso
-                        and (saw_idp or time.time() - started > SSO_SETTLE_SECONDS)
-                    ):
+                    # A failed hop used to count as "already opened", and Connect
+                    # then waited out the whole timeout on a page that was not CAMGR.
+                    need_target = headed and not on_target and (
+                        not opened_target_after_sso
+                        or time.time() - target_opened_at > 12
+                    )
+                    if need_target and (saw_idp or time.time() - started > SSO_SETTLE_SECONDS):
                         # Duo can finish and leave its own tab up. Open the site
                         # we still need a cookie from instead of waiting that out.
                         nav = _work_page(context) or page
@@ -1384,10 +1438,26 @@ def capture_site_cookies(
                             opened = _open_target_page(context, url)
                             if opened is not None:
                                 page = opened
-                        opened_target_after_sso = True
-                        if not raised_for_target:
+                        opened_target_after_sso = any(
+                            _page_on_hosts(item, hosts) for item in _login_pages(context)
+                        )
+                        target_opened_at = time.time()
+                        if opened_target_after_sso and not raised_for_target:
                             raised_for_target = True
                             _raise_tool_window()
+                        if _advance_duo_prompt(page):
+                            time.sleep(0.8)
+                        continue
+                    if (
+                        headed
+                        and on_target
+                        and duo_clicks < 2
+                        and time.time() - last_duo_click > 3
+                        and _advance_duo_prompt(page)
+                    ):
+                        duo_clicks += 1
+                        last_duo_click = time.time()
+                        time.sleep(0.8)
                         continue
                     # A cookie saved from an earlier visit is not proof that
                     # this window has reached the site. Closing on that cookie

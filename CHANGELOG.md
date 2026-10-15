@@ -1,3 +1,8 @@
+## 2.0.26 — 2026-10-15
+
+- **CAMGR Connect finishes after the sign-in window closes.** If that window goes away before a session is saved, the Hub stops saying it will connect when it is ready. Click Connect again
+- **After Duo, Connect opens CAMGR again if the first hop never lands.** It also presses the Log in or Continue button on that page. A background check does not scan Chrome while you are signing in
+
 ## 2.0.25 — 2026-10-13
 
 - **Load VMs and Load Transfer VMs can take several different demos.** Each demo gets its own section, with its own VMs and destinations. The same demo in several datacenters stays one section. Submit all sends those sections one at a time, and a failure on one demo leaves the others going

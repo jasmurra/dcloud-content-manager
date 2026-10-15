@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.26** | CAMGR Connect finishes after the sign-in window closes, and opens CAMGR again if Duo never lands there |
 | **2.0.25** | Several different demos load and submit together; catalog View and Explore open non-scheduled demos; CAMGR status no longer blocks the Hub |
 | **2.0.24** | CAI and CAMGR Hub polls run only while a job is in progress, every 20 seconds |
 | **2.0.23** | Auto-refresh renews the dCloud login at Cisco SSO, so a session no longer dies after one hour |

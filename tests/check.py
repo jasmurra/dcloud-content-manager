@@ -3530,6 +3530,9 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         and "open_if_missing" not in connect_fn
         and "import_camgr_cookies_from_chrome" not in connect_fn
         and "allow_tab=True" not in connect_fn
+        and "probe_camgr_login(cookie, allow_tab=False, timeout=8)" in source
+        and "target_opened_at" in camgr_wait
+        and "is_connected()" in camgr_wait
         and "return _camgr_public_status()" in source[
             source.index("def api_camgr_status(") : source.index("def api_camgr_connect(")
         ]
