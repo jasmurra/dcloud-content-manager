@@ -4020,9 +4020,13 @@ def _require_camgr_cookie() -> str:
 
 def _camgr_auto_connect() -> dict[str, Any]:
     """Re-probe CAMGR and, if that fails, pull a fresh Chrome cookie. Never raises."""
+    # Read the flag and release the lock before status. Status takes this
+    # same lock, and a normal Lock deadlocks the thread that already holds it.
+    # That left Connect stuck on "Opening the tool browser" after the window closed.
     with _camgr_open_lock:
-        if _camgr_open.get("running"):
-            return _camgr_public_status()
+        running = bool(_camgr_open.get("running"))
+    if running:
+        return _camgr_public_status()
     if not host_resolves(CAMGR_HOST):
         _camgr_mark_unverified(off_network_message("CAMGR"))
         return _camgr_public_status()

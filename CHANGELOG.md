@@ -1,3 +1,7 @@
+## 2.0.28 — 2026-10-19
+
+- **CAMGR Connect no longer freezes the Hub.** A background check was taking a lock it already held, so the status line stayed on "Opening the tool browser" after the sign-in window closed
+
 ## 2.0.27 — 2026-10-15
 
 - **A demo that is not in the catalog can still be scheduled.** Empty datacenters say not published. Type or paste the IDs you have. The boxes stay on one line

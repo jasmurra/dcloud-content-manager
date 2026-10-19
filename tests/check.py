@@ -3376,6 +3376,12 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "import_camgr_cookies_from_chrome" not in camgr_auto
         and "capture_camgr_session(headed=False)" in camgr_auto,
     )
+    open_guard = camgr_auto.split("with _camgr_open_lock:", 1)[1].split("if running:", 1)[0]
+    check(
+        "CAMGR keepalive releases the open lock before building status",
+        'running = bool(_camgr_open.get("running"))' in open_guard
+        and "return _camgr_public_status()" not in open_guard,
+    )
     check(
         "background CAI refresh does not decrypt Chrome cookies",
         "import_cai_cookies_from_chrome" not in cai_auto
