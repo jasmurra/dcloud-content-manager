@@ -1,3 +1,7 @@
+## 2.0.31 — 2026-10-20
+
+- **Quick tasks on Schedule.** One row at the top takes a datacenter, a demo or session ID, and a number of days. Schedule starts a regular session now. Extend adds those days to the current end. Schedule (Export) starts with the VMs powered off
+
 ## 2.0.30 — 2026-10-20
 
 - **A loaded CAI or CAMGR demo can be removed.** Each loaded demo has a Remove button. That takes it off the list and does not change dCloud

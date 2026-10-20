@@ -7607,6 +7607,7 @@ def _attach_card(
         "contentExport": True,
         "attached": True,
         "monitorOnly": monitor_only,
+        **_session_schedule_fields(details),
     }
 
 

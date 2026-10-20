@@ -1470,6 +1470,33 @@ def test_page_markup_is_balanced() -> None:
     )
 
 
+def test_quick_tasks_on_schedule() -> None:
+    """A one-row stand-in for the old /sch and /ext commands, at the top of Schedule."""
+    start = INDEX.index('id="view-schedule"')
+    tasks = INDEX.index('id="quick-tasks"', start)
+    panel = INDEX.index('id="panel-step3"', start)
+    check("quick tasks sit above the schedule form", tasks < panel)
+    check(
+        "quick tasks are site, id, days, then schedule, extend, and export",
+        'id="quick-site"' in INDEX
+        and 'id="quick-id"' in INDEX
+        and 'id="quick-days"' in INDEX
+        and ">Schedule</button>" in INDEX[tasks:panel]
+        and ">Extend</button>" in INDEX[tasks:panel]
+        and ">Schedule (Export)</button>" in INDEX[tasks:panel]
+        and "function quickSchedule(" in INDEX
+        and "function quickExtend(" in INDEX
+        and "content_export: exported" in INDEX
+        and "extra_minutes: extraMinutes" in INDEX,
+    )
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    card = source[source.index("def _attach_card(") : source.index("def _enrich_attached_card(")]
+    check(
+        "an attached session keeps its current end so quick extend can add days",
+        "_session_schedule_fields(details)" in card,
+    )
+
+
 def test_task_groups_collapse() -> None:
     """Mario's ask: the two Hub task sections fold away like the panels do."""
     for group, title in (
