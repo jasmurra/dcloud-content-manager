@@ -1,3 +1,7 @@
+## 2.0.32 — 2026-10-20
+
+- **Quick tasks stay off the workspace.** Schedule and Extend no longer ask to confirm or add a session card. A toast shows the session ID when it finishes
+
 ## 2.0.31 — 2026-10-20
 
 - **Quick tasks on Schedule.** One row at the top takes a datacenter, a demo or session ID, and a number of days. Schedule starts a regular session now. Extend adds those days to the current end. Schedule (Export) starts with the VMs powered off

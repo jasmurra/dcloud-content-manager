@@ -1486,8 +1486,27 @@ def test_quick_tasks_on_schedule() -> None:
         and ">Schedule (Export)</button>" in INDEX[tasks:panel]
         and "function quickSchedule(" in INDEX
         and "function quickExtend(" in INDEX
+        and 'api("/api/quick/schedule"' in INDEX
+        and 'api("/api/quick/extend"' in INDEX
         and "content_export: exported" in INDEX
-        and "extra_minutes: extraMinutes" in INDEX,
+        and "Session scheduled." in INDEX
+        and "Session extended." in INDEX
+        and "confirmAction(" not in INDEX[
+            INDEX.index("async function quickSchedule(") : INDEX.index("async function startJob(")
+        ]
+        and "/api/jobs" not in INDEX[
+            INDEX.index("async function quickSchedule(") : INDEX.index("async function startJob(")
+        ],
+    )
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    quick = source[source.index("def api_quick_schedule(") : source.index("def api_quick_extend(")]
+    extend = source[source.index("def api_quick_extend(") : source.index("def _discard_job(")]
+    check(
+        "quick schedule and extend do not create a workspace job",
+        "schedule_exported_session(" in quick
+        and "_persist_job(" not in quick
+        and "_attach_job(" not in extend
+        and "probe_max_extend_stop(" in extend,
     )
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     card = source[source.index("def _attach_card(") : source.index("def _enrich_attached_card(")]

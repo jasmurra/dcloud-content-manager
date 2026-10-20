@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.32** | Quick tasks schedule or extend without a confirm, and the toast shows the session ID |
 | **2.0.31** | Quick tasks on Schedule: one row to schedule, extend, or schedule an export |
 | **2.0.30** | A loaded CAI or CAMGR demo can be removed from its list without changing dCloud |
 | **2.0.29** | A saved dCloud login stays signed in until the hour is almost up, and Delete Checked refreshes the saved-content list |

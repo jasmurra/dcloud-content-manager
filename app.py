@@ -1202,6 +1202,19 @@ class ExtendPayload(TokenPayload):
     extra_minutes: int = Field(default=0, ge=0, le=60 * 24 * 30)
 
 
+class QuickSchedulePayload(TokenPayload):
+    site: str
+    demo_id: str
+    days: int = Field(default=1, ge=1, le=30)
+    content_export: bool = False
+
+
+class QuickExtendPayload(TokenPayload):
+    site: str
+    session_id: str
+    days: int = Field(default=1, ge=1, le=30)
+
+
 class AttachSession(BaseModel):
     site: str
     session_id: str = ""
@@ -8074,6 +8087,85 @@ def api_resolve_monitor(body: ResolveMonitorPayload) -> dict[str, Any]:
             "No running session matched that demo ID or session ID in the selected DC.",
         )
     return {"ok": True, "sessions": sessions}
+
+
+@app.post("/api/quick/schedule")
+def api_quick_schedule(body: QuickSchedulePayload) -> dict[str, Any]:
+    """Schedule one session and return its id. Does not add a workspace card."""
+    token = _resolve_token(body)
+    result = schedule_exported_session(
+        token,
+        body.site,
+        body.demo_id,
+        days=body.days,
+        content_export=body.content_export,
+        auto_next_available=True,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, str(result.get("message") or "Schedule failed."))
+    return {
+        "ok": True,
+        "sessionId": str(result.get("sessionId") or "").strip(),
+        "site": str(result.get("site") or body.site or "").strip().lower(),
+    }
+
+
+@app.post("/api/quick/extend")
+def api_quick_extend(body: QuickExtendPayload) -> dict[str, Any]:
+    """Extend one running session. Does not add a workspace card or ask to confirm."""
+    token = _resolve_token(body)
+    site = (body.site or "").strip().lower()
+    identifier = str(body.session_id or "").strip()
+    sessions, err = resolve_monitor_sessions(token, site, identifier)
+    if err:
+        raise HTTPException(400, err)
+    if not sessions:
+        raise HTTPException(404, "No running session matched that demo ID or session ID.")
+    if len(sessions) > 1:
+        ids = ", ".join(str(row.get("sessionId") or "") for row in sessions[:8] if row.get("sessionId"))
+        raise HTTPException(
+            400,
+            f"Several sessions match {identifier} in {site.upper()}: {ids}. Enter one session ID.",
+        )
+    session_id = str(sessions[0].get("sessionId") or "").strip()
+    details, detail_err = fetch_session(token, site, session_id)
+    if detail_err or not isinstance(details, dict):
+        raise HTTPException(400, detail_err or "Could not read that session.")
+    current_stop = str(details.get("stop") or "").strip()
+    stamp, stop_err = resolve_extended_stop_by_minutes(
+        current_stop=current_stop,
+        extra_minutes=int(body.days) * 24 * 60,
+        session_start=str(details.get("start") or ""),
+    )
+    if stop_err or not stamp:
+        raise HTTPException(400, stop_err or "Could not compute a new end time.")
+    probe = probe_max_extend_stop(
+        token,
+        site,
+        session_id,
+        requested_stop=stamp,
+        current_stop=current_stop,
+    )
+    if probe.get("applied"):
+        return {
+            "ok": True,
+            "sessionId": session_id,
+            "site": site,
+            "partial": False,
+            "stop": str(probe.get("stop") or stamp),
+        }
+    if probe.get("offer") and probe.get("suggested_stop"):
+        applied = extend_session(token, site, session_id, stop_at=str(probe["suggested_stop"]))
+        if not applied.get("ok"):
+            raise HTTPException(400, str(applied.get("message") or "Extend failed."))
+        return {
+            "ok": True,
+            "sessionId": session_id,
+            "site": site,
+            "partial": True,
+            "stop": str(applied.get("stop") or probe["suggested_stop"]),
+        }
+    raise HTTPException(400, str(probe.get("message") or "Extend failed."))
 
 
 def _discard_job(job: dict[str, Any]) -> None:

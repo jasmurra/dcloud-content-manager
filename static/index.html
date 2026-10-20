@@ -11906,56 +11906,35 @@
       }
     }
 
+    function quickTaskLabel(site, sessionId) {
+      return [String(site || "").toUpperCase(), String(sessionId || "").trim()].filter(Boolean).join(" ");
+    }
+
     async function quickSchedule(exported) {
       if (!ensureTokenReady("scheduling sessions")) return;
       const input = quickTaskInput();
       if (!input) return;
       const { site, id, days } = input;
-      const kind = exported ? "exported" : "regular";
-      const off = exported ? " VMs stay powered off." : "";
-      if (!await confirmAction(
-        `Schedule a ${days}-day ${kind} session of demo ${id} in ${site.toUpperCase()}, starting now?${off}`,
-        { title: exported ? "Schedule Exported Session" : "Schedule Session", okLabel: "Schedule" },
-      )) {
-        return;
-      }
-      const start = new Date();
-      const stop = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
-      const demoIdsForTask = { sjc: "", rtp: "", lon: "", sng: "", syd: "" };
-      demoIdsForTask[site] = id;
       setQuickTaskBusy(true);
       showError("");
-      setRunResult("");
-      runWatch = null;
       try {
-        const job = await api("/api/jobs", {
+        const data = await api("/api/quick/schedule", {
           method: "POST",
+          quiet: true,
           body: JSON.stringify({
             ...tokenPayload(),
-            job_id: appendToCurrentJob() ? jobId : "",
-            demo_ids: demoIdsForTask,
-            selected_vms: [],
-            skip_power_on: true,
+            site,
+            demo_id: id,
             days,
-            start_at: start.toISOString(),
-            stop_at: stop.toISOString(),
-            delay_minutes: 0,
-            session_count: 1,
-            active_timeout_minutes: 90,
             content_export: exported,
-            auto_next_available: true,
-            schedule_decisions: [],
           }),
         });
-        startRunWatch(job);
-        setJobId(job.id);
-        lastLogLen = 0;
-        renderJob(job, { forceCards: true });
-        startPolling();
-        showToast("Scheduling submitted.");
-        noteLog(`Quick task: ${kind} session of demo ${id} in ${site.toUpperCase()} for ${days} day(s).`);
+        const sessionId = String(data.sessionId || "").trim();
+        const label = quickTaskLabel(data.site || site, sessionId);
+        showToast(label ? `Session scheduled. ${label}` : "Session scheduled.");
+        noteLog(`Quick task scheduled ${label || site.toUpperCase()} from demo ${id} for ${days} day(s).`);
       } catch (err) {
-        notifyRequestError(err);
+        showToast(err.message || "Schedule failed.", { kind: "err" });
       } finally {
         setQuickTaskBusy(false);
       }
@@ -11969,108 +11948,23 @@
       setQuickTaskBusy(true);
       showError("");
       try {
-        const resolved = await api("/api/sessions/resolve-monitor", {
+        const data = await api("/api/quick/extend", {
           method: "POST",
-          body: JSON.stringify({ ...tokenPayload(), site, identifier: id }),
-        });
-        const sessions = (resolved.sessions || []).filter((row) => row.sessionId);
-        if (sessions.length > 1) {
-          const list = sessions.map((row) => row.sessionId).join(", ");
-          showError(
-            `Several sessions match ${id} in ${site.toUpperCase()}: ${list}. Enter one session ID to extend.`,
-            { scrollTo: "#quick-id" },
-          );
-          return;
-        }
-        const session = sessions[0];
-        const sessionId = String(session.sessionId);
-        const name = String(session.name || "").trim();
-        const label = `${site.toUpperCase()} session ${sessionId}${name ? ` (${name})` : ""}`;
-        if (!await confirmAction(
-          `Extend ${label} by ${days} day${days === 1 ? "" : "s"} from its current end?`,
-          { title: "Extend Session", okLabel: "Extend" },
-        )) {
-          return;
-        }
-        let job;
-        try {
-          job = await api("/api/jobs/attach", {
-            method: "POST",
-            body: JSON.stringify({
-              ...tokenPayload(),
-              job_id: jobId || "",
-              sessions: [{ site, session_id: sessionId }],
-              selected_vms: [],
-              monitor_only: false,
-            }),
-          });
-        } catch (err) {
-          if (!/already on this job/i.test(err.message) || !jobId) throw err;
-          job = lastRenderedJob;
-        }
-        if (job?.id) {
-          setJobId(job.id);
-          renderJob(job, { forceCards: true });
-        }
-        const current = findDcCard(site, sessionId);
-        if (!current?.scheduleStop && jobId) {
-          job = await api(`/api/jobs/${jobId}/refresh-status`, {
-            method: "POST",
-            body: JSON.stringify({ ...tokenPayload(), site, session_id: sessionId }),
-          });
-          renderJob(job, { forceCards: true });
-        }
-        if (!canExtendSession(findDcCard(site, sessionId))) {
-          showError(`${label} is not active yet, so it cannot be extended.`);
-          return;
-        }
-        const extraMinutes = days * 24 * 60;
-        noteLog(`Checking how far ${label} can extend…`);
-        const probed = await api(`/api/jobs/${jobId}/probe-extend`, {
-          method: "POST",
+          quiet: true,
           body: JSON.stringify({
             ...tokenPayload(),
-            sessions: [{ site, session_id: sessionId }],
-            extra_minutes: extraMinutes,
+            site,
+            session_id: id,
+            days,
           }),
         });
-        renderJob(probed, { forceCards: true });
-        startPolling();
-        const rows = Array.isArray(probed.extendProbe) ? probed.extendProbe : [];
-        const offers = rows.filter((row) => row.offer && row.suggested_stop);
-        const applied = rows.filter((row) => row.applied);
-        const failed = rows.filter((row) => !row.applied && !row.offer);
-        if (!offers.length) {
-          if (failed.length) showError(failed.map((row) => row.message || "Extend failed.").filter(Boolean).join("\n"));
-          if (applied.length) showToast("Session extended.");
-          return;
-        }
-        const offerList = offers.map((row) => `• ${label}: ${formatSessionWhen(row.suggested_stop)}`).join("\n");
-        const proceed = await confirmAction(
-          `You can only go out this far — resources are booked after the session.\n\n${offerList}\n\nExtend to that time?`,
-          { title: "Extend as Far as Available", okLabel: "Extend to That Time" },
-        );
-        if (!proceed) {
-          noteLog("Shorter extend declined.");
-          return;
-        }
-        const extended = await api(`/api/jobs/${jobId}/extend-sessions`, {
-          method: "POST",
-          body: JSON.stringify({
-            ...tokenPayload(),
-            extra_minutes: 0,
-            sessions: offers.map((row) => ({
-              site: row.site,
-              session_id: row.session_id,
-              stop_at: row.suggested_stop,
-            })),
-          }),
-        });
-        renderJob(extended, { forceCards: true });
-        startPolling();
-        showToast("Session extended to the farthest available time.");
+        const sessionId = String(data.sessionId || id).trim();
+        const label = quickTaskLabel(data.site || site, sessionId);
+        const lead = data.partial ? "Session extended as far as available." : "Session extended.";
+        showToast(label ? `${lead} ${label}` : lead);
+        noteLog(`Quick task extended ${label} by ${days} day(s).`);
       } catch (err) {
-        notifyRequestError(err);
+        showToast(err.message || "Extend failed.", { kind: "err" });
       } finally {
         setQuickTaskBusy(false);
       }
