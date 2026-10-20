@@ -1,3 +1,7 @@
+## 2.0.30 — 2026-10-20
+
+- **A loaded CAI or CAMGR demo can be removed.** Each loaded demo has a Remove button. That takes it off the list and does not change dCloud
+
 ## 2.0.29 — 2026-10-20
 
 - **A saved dCloud login stays signed in.** A session that never recorded its last renew no longer spends the refresh token or opens a sign-in window on every check. The page stays on that login until the hour is almost up

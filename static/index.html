@@ -1830,9 +1830,16 @@
       padding: 0.15rem 0.8rem 0.75rem;
       background: rgba(255, 255, 255, 0.02);
     }
-    .demo-load-section summary { cursor: pointer; padding: 0.45rem 0; }
+    .demo-load-section summary {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.45rem 0;
+    }
     .demo-load-title { font-weight: 650; }
-    .demo-load-meta { margin-left: 0.45rem; font-weight: 400; }
+    .demo-load-meta { font-weight: 400; }
+    .demo-load-remove { margin-left: auto; }
     .demo-load-status { margin: 0.15rem 0 0.35rem; }
     .camgr-dest-list label {
       display: inline-flex;
@@ -9427,6 +9434,22 @@
       return rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id}`).join(" · ");
     }
 
+    function demoRemoveButton(kind) {
+      const where = kind === "camgr" ? "CAMGR" : "CAI";
+      return `<button type="button" class="secondary demo-load-remove" data-demo-remove="${kind}" data-tip="Takes this demo off the ${where} list. Does not change dCloud.">Remove</button>`;
+    }
+
+    function removeLoadedDemo(kind, key) {
+      const loads = kind === "camgr" ? camgrDemoLoads : caiDemoLoads;
+      const entry = loads.get(key);
+      if (!entry) return;
+      loads.delete(key);
+      if (kind === "camgr") renderCamgrDemoSections();
+      else renderCaiDemoSections();
+      const where = kind === "camgr" ? "CAMGR" : "CAI";
+      noteLog(`Removed ${entry.title || "demo"} from the ${where} list. Nothing was changed in dCloud.`);
+    }
+
     function selectedCaiIntegrateDcs(section) {
       const root = section || document;
       return [...root.querySelectorAll(".cai-integrate-box:checked:not(:disabled)")].map((el) => el.value).filter(Boolean);
@@ -9558,7 +9581,7 @@
         }).join("");
         return `
           <details class="demo-load-section" data-demo-key="${escapeHtml(key)}" ${(saved ? saved.open : true) ? "open" : ""}>
-            <summary><span class="demo-load-title">${escapeHtml(entry.title)}</span><span class="hint demo-load-meta">${escapeHtml(demoSectionMeta(entry.rows))}</span></summary>
+            <summary><span class="demo-load-title">${escapeHtml(entry.title)}</span><span class="hint demo-load-meta">${escapeHtml(demoSectionMeta(entry.rows))}</span>${demoRemoveButton("cai")}</summary>
             <p class="demo-load-status hint">${escapeHtml(entry.status || "")}</p>
             <p class="hint chip-toolbar-label">VMs</p>
             <div class="cai-vm-list">${vms || `<p class="hint">No VMs returned for this demo.</p>`}</div>
@@ -10271,7 +10294,7 @@
         }).join("");
         return `
           <details class="demo-load-section" data-demo-key="${escapeHtml(key)}" ${(saved ? saved.open : true) ? "open" : ""}>
-            <summary><span class="demo-load-title">${escapeHtml(entry.title)}</span><span class="hint demo-load-meta">${escapeHtml(demoSectionMeta(entry.rows))}</span></summary>
+            <summary><span class="demo-load-title">${escapeHtml(entry.title)}</span><span class="hint demo-load-meta">${escapeHtml(demoSectionMeta(entry.rows))}</span>${demoRemoveButton("camgr")}</summary>
             <p class="demo-load-status hint">${escapeHtml(entry.status || "")}</p>
             <div class="list-toolbar chip-toolbar">
               <p class="hint chip-toolbar-label">Transfer VMs</p>
@@ -17333,6 +17356,14 @@
     $("btn-cai-master-check-all")?.addEventListener("click", () => applyMasterDestAll("cai", true));
     $("btn-cai-master-uncheck-all")?.addEventListener("click", () => applyMasterDestAll("cai", false));
     $("cai-vm-list")?.addEventListener("click", (ev) => {
+      const remove = ev.target.closest("[data-demo-remove]");
+      if (remove) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const key = remove.closest(".demo-load-section")?.dataset.demoKey;
+        if (key) removeLoadedDemo(remove.dataset.demoRemove, key);
+        return;
+      }
       const submit = ev.target.closest("[data-cai-submit]");
       if (!submit) return;
       const key = submit.closest(".demo-load-section")?.dataset.demoKey;
@@ -17378,6 +17409,14 @@
     $("btn-camgr-load-vms").addEventListener("click", () => loadCamgrVms().catch((err) => showError(err.message)));
     $("btn-camgr-transfer").addEventListener("click", () => submitCamgrTransfer().catch((err) => showError(err.message)));
     $("camgr-vm-list").addEventListener("click", (ev) => {
+      const remove = ev.target.closest("[data-demo-remove]");
+      if (remove) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const key = remove.closest(".demo-load-section")?.dataset.demoKey;
+        if (key) removeLoadedDemo(remove.dataset.demoRemove, key);
+        return;
+      }
       const check = ev.target.closest("[data-camgr-check]");
       const section = ev.target.closest(".demo-load-section");
       if (check && section) {

@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.30** | A loaded CAI or CAMGR demo can be removed from its list without changing dCloud |
 | **2.0.29** | A saved dCloud login stays signed in until the hour is almost up, and Delete Checked refreshes the saved-content list |
 | **2.0.28** | CAMGR Connect no longer freezes the Hub after the sign-in window closes |
 | **2.0.27** | Unpublished demos still schedule: type the other IDs, and pasting one no longer shifts the boxes |

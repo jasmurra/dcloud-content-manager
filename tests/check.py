@@ -1506,6 +1506,21 @@ def test_task_groups_collapse() -> None:
         "an error can still scroll to a button inside a collapsed group",
         'node.tagName === "DETAILS"' in goto and "parentElement" in goto,
     )
+    check(
+        "a loaded CAI or CAMGR demo can be taken off its list",
+        'demoRemoveButton("cai")' in INDEX
+        and 'demoRemoveButton("camgr")' in INDEX
+        and "function removeLoadedDemo(" in INDEX
+        and "loads.delete(key)" in INDEX
+        and "ev.preventDefault()" in INDEX[
+            INDEX.index('$("cai-vm-list")?.addEventListener("click"')
+            : INDEX.index('$("saved-ids-body").addEventListener("click"')
+        ]
+        and "ev.preventDefault()" in INDEX[
+            INDEX.index('$("camgr-vm-list").addEventListener("click"')
+            : INDEX.index('$("camgr-vm-list").addEventListener("change"')
+        ],
+    )
 
 
 def test_ended_card_is_not_a_dead_end() -> None:
