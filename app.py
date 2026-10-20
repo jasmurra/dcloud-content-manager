@@ -714,10 +714,20 @@ def _sync_user_session_from_disk() -> None:
         return
     file_refreshed = float(data.get("refreshed_at") or 0)
     file_refresh = (data.get("refresh_token") or "").strip()
+    file_access = (data.get("access_token") or "").strip()
+    file_exp = float(data.get("expires_at") or 0)
     with _user_auth_lock:
         mem_refreshed = float(_user_auth.get("refreshed_at") or 0)
         mem_refresh = (_user_auth.get("refresh_token") or "").strip()
-    if file_refreshed > mem_refreshed + 0.01 or (file_refresh and not mem_refresh):
+        mem_access = (_user_auth.get("access_token") or "").strip()
+        mem_exp = float(_user_auth.get("expires_at") or 0)
+    file_ok = _access_token_still_valid(file_access, file_exp)
+    mem_ok = _access_token_still_valid(mem_access, mem_exp)
+    if (
+        file_refreshed > mem_refreshed + 0.01
+        or (file_refresh and not mem_refresh)
+        or (file_ok and not mem_ok)
+    ):
         _load_persisted_session()
 
 
@@ -817,7 +827,12 @@ def _dcloud_session_needs_refresh() -> bool:
         return False
     with _user_auth_lock:
         refreshed_at = float(_user_auth.get("refreshed_at") or 0)
-    return not refreshed_at or time.time() - refreshed_at >= DCLOUD_REFRESH_IDLE_SECONDS
+    # A missing timestamp used to force a renew on every status poll. That spent
+    # the one-time refresh token and opened a sign-in window while the access
+    # token was still good, so the page showed signed out until a restart.
+    if not refreshed_at:
+        return False
+    return time.time() - refreshed_at >= DCLOUD_REFRESH_IDLE_SECONDS
 
 
 def _ensure_user_access_token(
@@ -837,12 +852,15 @@ def _ensure_user_access_token(
         # session after the wait in case someone else just refreshed it.
         with _token_refresh_lock:
             token, expires_at, refresh, site = _read_user_session()
-            if not force and _access_token_is_usable(token, expires_at):
+            if _access_token_is_usable(token, expires_at) and not _dcloud_session_needs_refresh():
                 return token
             if refresh:
                 access = _refresh_with_any_site(refresh, site, progress)
                 if access:
                     return access
+    token, expires_at, _refresh, _site = _read_user_session()
+    if _access_token_still_valid(token, expires_at):
+        return token
     if tool_browser_profile_exists() and not headed_is_open() and _playwright_refresh_allowed("dcloud"):
         try:
             access, new_refresh, found_site, _message = capture_dcloud_tokens(
@@ -859,6 +877,18 @@ def _ensure_user_access_token(
     # Refresh can fail while the access token still has time left. Dropping it
     # here blanks the token field. An idle refresh (force) must not do that either.
     return token if _access_token_still_valid(token, expires_at) else ""
+
+
+def _stamp_refresh_time_if_missing() -> None:
+    """Remember now as the last renew when a good session never recorded one."""
+    token, expires_at, refresh, _site = _read_user_session()
+    if not refresh or not _access_token_still_valid(token, expires_at):
+        return
+    with _user_auth_lock:
+        if float(_user_auth.get("refreshed_at") or 0):
+            return
+        _user_auth["refreshed_at"] = time.time()
+    _persist_user_session()
 
 
 def _refresh_error_left_token_unused(err: str) -> bool:
@@ -4090,6 +4120,7 @@ def _cai_auto_connect() -> dict[str, Any]:
 
 def _dcloud_keepalive() -> dict[str, Any]:
     _sync_user_session_from_disk()
+    _stamp_refresh_time_if_missing()
     token, _expires_at, refresh, _site = _read_user_session()
     if not token and not refresh:
         return {"loggedIn": False}
@@ -5743,6 +5774,8 @@ def _session_user_for_status(token: str) -> dict[str, str]:
 @app.get("/api/auth/status")
 def api_auth_status() -> dict[str, Any]:
     dcloud = dcloud_auth_status(ENV_FILE, ENV_EXAMPLE_FILE)
+    _sync_user_session_from_disk()
+    _stamp_refresh_time_if_missing()
     _ensure_user_access_token(force=_dcloud_session_needs_refresh())
     with _user_auth_lock:
         expires_at = float(_user_auth.get("expires_at") or 0)

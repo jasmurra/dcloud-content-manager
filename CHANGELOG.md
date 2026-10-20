@@ -1,3 +1,8 @@
+## 2.0.29 — 2026-10-20
+
+- **A saved dCloud login stays signed in.** A session that never recorded its last renew no longer spends the refresh token or opens a sign-in window on every check. The page stays on that login until the hour is almost up
+- **Delete Checked refreshes the saved-content list.** Rows that dCloud already removed leave the page, and the list is pulled again instead of showing the previous copy
+
 ## 2.0.28 — 2026-10-19
 
 - **CAMGR Connect no longer freezes the Hub.** A background check was taking a lock it already held, so the status line stayed on "Opening the tool browser" after the sign-in window closed

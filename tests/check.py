@@ -1006,6 +1006,37 @@ def test_token_refresh_is_not_raced() -> None:
         "a token inside the refresh window is still a login",
         app._access_token_still_valid("t", soon) is True,
     )
+    saved_auth = dict(app._user_auth)
+    try:
+        app._user_auth.update(
+            {
+                "access_token": "t",
+                "refresh_token": "r",
+                "expires_at": later,
+                "refreshed_at": 0,
+            }
+        )
+        check(
+            "a live token with no renew time is not refreshed on every poll",
+            app._dcloud_session_needs_refresh() is False,
+        )
+    finally:
+        app._user_auth.clear()
+        app._user_auth.update(saved_auth)
+    ensure_fn = source[
+        source.index("def _ensure_user_access_token(") : source.index("def _stamp_refresh_time_if_missing(")
+    ]
+    check(
+        "a live access token is returned before a sign-in browser opens",
+        ensure_fn.index("if _access_token_still_valid(token, expires_at):")
+        < ensure_fn.index("capture_dcloud_tokens("),
+    )
+    status_fn = source[source.index("def api_auth_status(") : source.index("def api_login_url(")]
+    check(
+        "auth status reloads a session another process already renewed",
+        "_sync_user_session_from_disk()" in status_fn
+        and "file_ok and not mem_ok" in source,
+    )
     check(
         "an expired token is not still a login",
         app._access_token_still_valid("t", time.time() - 60) is False,
@@ -2837,6 +2868,10 @@ def test_event_management_section() -> None:
         and "findSessions({ refresh: true })" in INDEX
         and 'id="btn-refresh-workspace-sessions"' in INDEX
         and 'findSavedContents("schedule", { refresh: true })' in INDEX
+        and "function dropDeletedSavedContent(" in INDEX
+        and 'findSavedContents("schedule", { refresh: true, clearError: false })' in INDEX[
+            INDEX.index("async function deleteSavedItems(") : INDEX.index("async function deleteSelectedSaved(")
+        ]
         and 'id="btn-saved-ids-find-refresh"' in INDEX
         and "Showing the last pull" in INDEX
         and '"fetchedAt": fetched_at' in source

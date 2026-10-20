@@ -15380,6 +15380,21 @@
       await addSavedIdItems(selected);
     }
 
+    function dropDeletedSavedContent(results) {
+      const gone = new Set(
+        (results || [])
+          .filter((row) => row.ok && row.site && (row.contentId || row.content_id))
+          .map((row) => `${String(row.site).toLowerCase()}:${String(row.contentId || row.content_id)}`),
+      );
+      if (!gone.size || !finderLists["mine-content"]) return;
+      finderLists["mine-content"].rows = finderLists["mine-content"].rows.filter((row) => {
+        const key = `${String(row.site || "").toLowerCase()}:${String(row.contentId || "")}`;
+        return !gone.has(key);
+      });
+      const sites = [...gone].map((key) => key.split(":")[0]);
+      persistFinderRows("mine-content", sites);
+    }
+
     async function deleteSavedItems(items) {
       if (!ensureTokenReady("deleting saved content")) return;
       const selected = (items || []).filter((row) => row.site && row.content_id);
@@ -15418,7 +15433,8 @@
         if (data.job) renderJob(data.job, { forceCards: true });
         else if (data.savedIds) applySavedIds(data.savedIds);
         else await loadSavedIds();
-        await findSavedContents("schedule");
+        dropDeletedSavedContent(data.results);
+        await findSavedContents("schedule", { refresh: true, clearError: false });
         if (failed.length && data.deleted) {
           showToast(`Deleted ${data.deleted}, ${failed.length} failed.`, { kind: "warn" });
         } else if (failed.length) {
