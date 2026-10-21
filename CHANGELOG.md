@@ -1,3 +1,9 @@
+## 2.1.0 — 2026-10-21
+
+- **Expo is a left-nav page after Hub.** It uses the same dCloud login. The item only appears when that login can open Expo
+- **Expo resets wait 10 seconds apart.** Refresh stays available, sessions already sent are skipped, and the page does not poll Expo on its own
+- **A CAI error opens its log.** The Error label and the VM chip link to the same CAI log page
+
 ## 2.0.33 — 2026-10-21
 
 - **Unchecking saved content removes that loaded demo.** Clearing the box for a saved row takes that demo off the CAI and CAMGR lists. It does not change dCloud

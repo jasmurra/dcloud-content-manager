@@ -639,6 +639,74 @@
     .vm-fav-order button {
       min-height: 0;
     }
+    .expo-stats { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.4rem 0 0.7rem; }
+    .expo-stat {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.15rem 0.65rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .expo-stat strong { color: var(--text); }
+    .expo-stat.hot { border-color: rgba(251, 191, 36, 0.45); color: var(--warn); }
+    .expo-stat.hot strong { color: var(--warn); }
+    .expo-badge {
+      display: inline-block;
+      padding: 0.08rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .expo-badge.running { background: rgba(61, 214, 140, 0.15); color: var(--ok); }
+    .expo-badge.starting { background: rgba(125, 211, 252, 0.15); color: #7dd3fc; }
+    .expo-badge.stopping { background: rgba(251, 191, 36, 0.16); color: var(--warn); }
+    .expo-badge.error { background: rgba(248, 113, 113, 0.15); color: var(--err); }
+    .expo-badge.neutral { background: rgba(139, 156, 179, 0.15); color: var(--muted); }
+    .expo-badge.in-progress { background: rgba(4, 159, 217, 0.14); color: var(--accent); }
+    .expo-action-banner {
+      border: 1px solid rgba(4, 159, 217, 0.35);
+      background: rgba(4, 159, 217, 0.1);
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.88rem;
+      margin-bottom: 0.75rem;
+    }
+    .expo-table-wrap { overflow: auto; max-height: 70vh; }
+    .expo-table-wrap tbody tr.clickable { cursor: pointer; }
+    .expo-table-wrap tbody tr.clickable:hover,
+    .expo-table-wrap tbody tr.selected { background: rgba(4, 159, 217, 0.1); }
+    .expo-demo-sessions {
+      background: var(--bg);
+      padding: 0.75rem 0.85rem 1rem;
+    }
+    .expo-page-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .expo-page-nav h2 { margin: 0; }
+    .expo-learn { color: var(--accent); font-size: 0.82rem; }
+    .expo-result-ok { color: var(--ok); }
+    .expo-result-err { color: var(--err); }
+    .expo-hot { color: var(--warn); font-weight: 700; }
+    .expo-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0.65rem 0;
+    }
+    .expo-toolbar label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td {
       border-bottom: 1px solid var(--border);
@@ -2090,6 +2158,13 @@
     .replace-status.xfring, .replace-status.xfred, .replace-status.importing { color: var(--warn); }
     .replace-status.completed, .replace-status.complete { color: var(--ok); }
     .replace-status.error { color: var(--err); }
+    a.replace-status {
+      text-decoration: none;
+    }
+    a.replace-status:hover {
+      text-decoration: underline;
+    }
+    a.replace-status.error { color: var(--err); }
     .layout-toolbar {
       display: flex;
       flex-wrap: wrap;
@@ -2266,6 +2341,10 @@
     }
     hbr-nav-item::part(base) {
       border-radius: 12px;
+    }
+    hbr-nav-item.hidden,
+    hbr-nav-item[hidden] {
+      display: none !important;
     }
     hbr-nav-item[active]::part(base),
     hbr-nav-item[selected]::part(base) {
@@ -2528,6 +2607,10 @@
       <hbr-nav-item data-view="hub">
         <hbr-icon slot="prefix" name="nav-inventory"></hbr-icon>
         <span slot="content">Hub</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="expo" class="hidden" hidden>
+        <hbr-icon slot="prefix" name="squares-four"></hbr-icon>
+        <span slot="content">Expo</span>
       </hbr-nav-item>
       <hbr-nav-item data-view="events">
         <hbr-icon slot="prefix" name="nav-users"></hbr-icon>
@@ -3701,6 +3784,107 @@
       </details>
       </div>
     </details>
+    </section>
+
+    <section class="app-view" id="view-expo" data-view="expo">
+    <h2 class="view-title">Expo</h2>
+    <p class="hint" id="expo-user">Uses the same dCloud login as the rest of this app. The page is only listed if that login can open Expo.</p>
+    <div id="expo-action-banner" class="expo-action-banner hidden"></div>
+    <div id="expo-expos-view">
+      <details class="panel panel-collapse" id="panel-expo" open>
+        <summary class="panel-collapse-summary">My Expos</summary>
+        <div class="panel-collapse-body">
+          <div class="list-toolbar">
+            <button type="button" id="btn-expo-load">Load my expos</button>
+            <button type="button" class="secondary" id="btn-expo-refresh-list">Refresh</button>
+          </div>
+          <p class="step-label" style="margin-top:0.85rem">In Progress</p>
+          <div class="expo-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Date Start</th>
+                  <th>Created By</th>
+                </tr>
+              </thead>
+              <tbody id="expo-rows">
+                <tr><td colspan="4" class="muted">No expos loaded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="step-label" style="margin-top:1.1rem">Complete</p>
+          <div class="expo-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Date Start</th>
+                  <th>Created By</th>
+                </tr>
+              </thead>
+              <tbody id="expo-complete-rows">
+                <tr><td colspan="4" class="muted">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </div>
+    <div id="expo-manage-view" class="hidden">
+      <div class="expo-page-nav">
+        <button type="button" class="secondary" id="btn-expo-back">Expos</button>
+        <div>
+          <h2 id="expo-manage-title">Manage expo</h2>
+          <div class="expo-learn" id="expo-manage-sub"></div>
+        </div>
+        <button type="button" class="secondary" id="btn-expo-refresh" style="margin-left:auto">Refresh</button>
+      </div>
+      <div class="expo-stats" id="expo-stats"></div>
+      <details class="panel panel-collapse" id="panel-expo-manage" open>
+        <summary class="panel-collapse-summary">Demos in Expo</summary>
+        <div class="panel-collapse-body">
+          <div class="list-toolbar">
+            <button type="button" id="btn-expo-reset-top">Reset selected</button>
+            <button type="button" class="danger" id="btn-expo-end-top">End engagement selected</button>
+          </div>
+          <div class="expo-table-wrap" id="expo-demos-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Demo ID</th>
+                  <th>Data Center</th>
+                  <th>Original Name</th>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Content Pool</th>
+                  <th>Target</th>
+                  <th>Running</th>
+                  <th>In-use</th>
+                  <th>Starting</th>
+                  <th>Error</th>
+                  <th>Idle</th>
+                </tr>
+              </thead>
+              <tbody id="expo-demo-rows"></tbody>
+            </table>
+          </div>
+          <div class="expo-toolbar">
+            <label><input type="checkbox" id="expo-select-all" /> Select all visible sessions</label>
+            <button type="button" class="secondary" id="btn-expo-select-idle">Select running, no user</button>
+            <button type="button" class="secondary" id="btn-expo-select-none">Clear</button>
+            <span id="expo-selected-count" class="hint" style="margin:0"></span>
+          </div>
+          <div class="list-toolbar">
+            <button type="button" id="btn-expo-reset">Reset selected</button>
+            <button type="button" class="danger" id="btn-expo-end">End engagement selected</button>
+          </div>
+        </div>
+      </details>
+    </div>
     </section>
 
     <section class="app-view" id="view-events" data-view="events">
@@ -8985,6 +9169,7 @@
       if (CAI_PENDING.includes(String(row.replaceStatus || ""))) return true;
       const vmChips = row.replaceVmStatus || [];
       if (vmChips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")))) return true;
+      if (vmChips.some((chip) => String(chip.status || chip.phase || "") === "error" && !caiLogHref(chip.href) && !chip.logChecked)) return true;
       if (CAI_PENDING.includes(String(row.integrateStatus || ""))) return true;
       const chips = row.integrateDcStatus || [];
       return chips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")));
@@ -9907,6 +10092,12 @@
     function startCaiReplacePoll() {
       if (caiReplacePollTimer) return;
       if (!caiRowsNeedPoll(lastSavedIdRows)) return;
+      const needsLog = (lastSavedIdRows || []).some((row) =>
+        (row.replaceVmStatus || []).some((chip) =>
+          String(chip.status || chip.phase || "") === "error" && !caiLogHref(chip.href) && !chip.logChecked
+        )
+      );
+      if (needsLog) refreshCaiReplacements().catch(() => {});
       caiReplacePollTimer = setInterval(() => {
         refreshCaiReplacements().catch(() => {});
       }, HUB_POLL_MS);
@@ -10996,13 +11187,25 @@
       }${chipHtml ? `<div class="camgr-dc-chips">${chipHtml}</div>` : ""}</div>`;
     }
 
+    function caiLogHref(href) {
+      const value = String(href || "").trim();
+      return /^https:\/\/dcloud-cai\.cisco\.com\/log\/\d+\/?$/.test(value) ? value : "";
+    }
+
     function caiVmChipsHtml(row) {
       const chips = Array.isArray(row?.replaceVmStatus) ? row.replaceVmStatus : [];
       if (!chips.length) return "";
       const done = chips.filter((chip) => chip.done).length;
       const pills = chips.map((chip) => {
         const phase = escapeHtml(chip.phase || chip.status || "");
-        return `<span class="camgr-dc-chip${chip.done ? " done" : ""} ${phase}" data-tip="${escapeHtml(chip.tip || chip.label || "")}">${escapeHtml(chip.label || chip.vm || "")}</span>`;
+        const tip = escapeHtml(chip.tip || chip.label || "");
+        const label = escapeHtml(chip.label || chip.vm || "");
+        const cls = `camgr-dc-chip${chip.done ? " done" : ""} ${phase}`;
+        const href = caiLogHref(chip.href);
+        if (href) {
+          return `<a class="${cls}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-tip="${tip}">${label}</a>`;
+        }
+        return `<span class="${cls}" data-tip="${tip}">${label}</span>`;
       }).join("");
       // CAI queues one task per VM, so each VM gets its own pill.
       const tip = String(row.replaceMessage || "").trim() || `${done} of ${chips.length} VM(s) done`;
@@ -11028,9 +11231,18 @@
         return `<span class="${cls}" data-tip="${tip}">${label}</span>`;
       }).join("");
       if (!line && !chipHtml && !vmHtml) return `<span class="hint">—</span>`;
-      return `<div class="camgr-status-cell">${
-        line ? `<span class="replace-status ${escapeHtml(caiClass)}">${escapeHtml(line)}</span>` : ""
-      }${vmHtml}${chipHtml ? `<div class="camgr-dc-chips">${chipHtml}</div>` : ""}</div>`;
+      const logHref = caiLogHref(
+        (Array.isArray(row?.replaceVmStatus) ? row.replaceVmStatus : []).find((chip) =>
+          String(chip.status || chip.phase || "") === "error" && caiLogHref(chip.href)
+        )?.href
+      );
+      const statusClass = `replace-status ${escapeHtml(caiClass)}`;
+      const statusHtml = !line
+        ? ""
+        : logHref
+          ? `<a class="${statusClass}" href="${escapeHtml(logHref)}" target="_blank" rel="noopener noreferrer" data-tip="Open the CAI log for this error.">${escapeHtml(line)}</a>`
+          : `<span class="${statusClass}">${escapeHtml(line)}</span>`;
+      return `<div class="camgr-status-cell">${statusHtml}${vmHtml}${chipHtml ? `<div class="camgr-dc-chips">${chipHtml}</div>` : ""}</div>`;
     }
 
     function renderSavedIdRows(rows) {
@@ -11309,6 +11521,7 @@
       updateCaiStatus(data.cai);
       updateCamgrStatus(data.camgr);
       if (data.camgr?.loggedIn && !camgrDevServers.length) loadCamgrDevSources();
+      refreshExpoAccess(authorized).catch(() => setExpoNavVisible(false));
     }
 
     async function clearLoginSession() {
@@ -13260,6 +13473,7 @@
       { id: "workspace", title: "Workspace" },
       { id: "monitor", title: "Monitor" },
       { id: "hub", title: "Hub" },
+      { id: "expo", title: "Expo" },
       { id: "events", title: "Events" },
       { id: "search", title: "Search" },
       { id: "surveys", title: "Surveys" },
@@ -13267,6 +13481,8 @@
       { id: "reset", title: "Reset" },
     ]);
     const DEFAULT_NAV_IDS = Object.freeze(DEFAULT_NAV_ITEMS.map((item) => item.id));
+    let expoAccessAllowed = false;
+    let expoAccessTokenKey = "";
     let SITE_ORDER = readDatacenterOrder();
     const DCLOUD_CATALOG_EOL_URL = "https://dcloud-camgr.cisco.com/#/catalogue";
     const UI_STATE_KEY = "dcloud-content-manager-ui-v1";
@@ -13434,15 +13650,27 @@
       updateUnifiedCacheStatus();
     }
 
+    function insertMissingNavIds(order) {
+      const next = Array.isArray(order) ? [...order] : [];
+      for (const id of DEFAULT_NAV_IDS) {
+        if (next.includes(id)) continue;
+        if (id === "expo") {
+          const hubIdx = next.indexOf("hub");
+          if (hubIdx >= 0) next.splice(hubIdx + 1, 0, id);
+          else next.push(id);
+        } else {
+          next.push(id);
+        }
+      }
+      return next;
+    }
+
     function readNavOrder() {
       try {
         const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
         const order = Array.isArray(saved.navOrder) ? saved.navOrder : [];
         const valid = order.filter((id, index) => DEFAULT_NAV_IDS.includes(id) && order.indexOf(id) === index);
-        for (const id of DEFAULT_NAV_IDS) {
-          if (!valid.includes(id)) valid.push(id);
-        }
-        return valid;
+        return insertMissingNavIds(valid);
       } catch {
         return [...DEFAULT_NAV_IDS];
       }
@@ -13458,12 +13686,11 @@
     }
 
     function persistNavOrder(order) {
-      const next = (Array.isArray(order) ? order : []).filter(
-        (id, index, rows) => DEFAULT_NAV_IDS.includes(id) && rows.indexOf(id) === index,
+      const next = insertMissingNavIds(
+        (Array.isArray(order) ? order : []).filter(
+          (id, index, rows) => DEFAULT_NAV_IDS.includes(id) && rows.indexOf(id) === index,
+        ),
       );
-      for (const id of DEFAULT_NAV_IDS) {
-        if (!next.includes(id)) next.push(id);
-      }
       let settings = {};
       try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
       settings.navOrder = next;
@@ -13478,7 +13705,7 @@
     function renderNavOrderSettings() {
       const root = $("nav-order-list");
       if (!root) return;
-      const order = readNavOrder();
+      const order = readNavOrder().filter((id) => id !== "expo" || expoAccessAllowed);
       root.innerHTML = order.map((id, index) => `
         <div class="dc-order-item" data-view="${id}" draggable="true">
           <span class="dc-order-grip" aria-hidden="true" title="Drag to move">⠿</span>
@@ -13809,7 +14036,8 @@
     }
 
     function showAppView(viewId) {
-      const next = String(viewId || "schedule");
+      let next = String(viewId || "schedule");
+      if (next === "expo" && !expoAccessAllowed) next = "schedule";
       document.querySelectorAll(".app-view").forEach((el) => {
         const on = el.dataset.view === next;
         el.classList.toggle("is-active", on);
@@ -13825,6 +14053,7 @@
         try { item.active = false; } catch {}
       });
       try { sessionStorage.setItem(APP_VIEW_STORE, next); } catch {}
+      if (next === "expo") initExpoView();
     }
 
     function initAppNav() {
@@ -18315,6 +18544,569 @@
         positionHoverTip(hoverTipHost);
       }
     }, true);
+
+    const EXPO_UID_KEY = "dcloud-content-manager-expo-uid";
+    const expoState = {
+      expos: [],
+      expo: null,
+      demos: [],
+      sessions: [],
+      expanded: new Set(),
+      selected: new Set(),
+      resultsByUid: {},
+      resetting: new Set(),
+      busy: false,
+      bound: false,
+      loaded: false,
+    };
+
+    function expoEl(id) {
+      return document.getElementById(id);
+    }
+
+    function expoLog(message) {
+      noteLog(message);
+    }
+
+    function setExpoNavVisible(allowed) {
+      expoAccessAllowed = Boolean(allowed);
+      const item = document.querySelector('#app-nav hbr-nav-item[data-view="expo"]');
+      if (item) {
+        item.classList.toggle("hidden", !expoAccessAllowed);
+        item.toggleAttribute("hidden", !expoAccessAllowed);
+      }
+      applyNavOrder();
+      renderNavOrderSettings();
+      let stored = "";
+      try { stored = sessionStorage.getItem(APP_VIEW_STORE) || ""; } catch {}
+      const active = document.querySelector(".app-view.is-active");
+      if (!expoAccessAllowed) {
+        if (active?.dataset.view === "expo" || stored === "expo") showAppView("schedule");
+        return;
+      }
+      if (stored === "expo" && active?.dataset.view !== "expo") showAppView("expo");
+    }
+
+    async function refreshExpoAccess(authorized) {
+      if (!authorized) {
+        expoAccessTokenKey = "";
+        setExpoNavVisible(false);
+        return;
+      }
+      const token = ($("dtoken")?.value || "").trim();
+      const key = token.slice(-24) || "session";
+      if (key === expoAccessTokenKey) return;
+      try {
+        const data = await api("/api/expo/access", {
+          method: "POST",
+          body: JSON.stringify(tokenPayload()),
+          quiet: true,
+        });
+        expoAccessTokenKey = key;
+        setExpoNavVisible(Boolean(data?.allowed));
+      } catch {
+        expoAccessTokenKey = "";
+        setExpoNavVisible(false);
+      }
+    }
+
+    function setExpoBusy(busy) {
+      expoState.busy = busy;
+      [
+        "btn-expo-load",
+        "btn-expo-refresh-list",
+        "btn-expo-back",
+        "btn-expo-end",
+        "btn-expo-end-top",
+        "btn-expo-select-idle",
+        "btn-expo-select-none",
+      ].forEach((id) => {
+        const btn = expoEl(id);
+        if (btn) btn.disabled = busy && id !== "btn-expo-back";
+      });
+      updateExpoActionButtons();
+    }
+
+    function expoShortResult(message, ok) {
+      const text = String(message || "");
+      if (ok) return text;
+      if (/401/.test(text) || /token expired/i.test(text)) {
+        return "401 token expired — sign in to dCloud and retry";
+      }
+      return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+    }
+
+    function expoStatusBadge(status) {
+      const value = String(status || "").toUpperCase();
+      let cls = "neutral";
+      if (value === "RUNNING") cls = "running";
+      else if (value === "STARTING") cls = "starting";
+      else if (value === "STOPPING") cls = "stopping";
+      else if (value === "ERROR") cls = "error";
+      else if (value === "IN_PROGRESS") cls = "in-progress";
+      return `<span class="expo-badge ${cls}">${escapeHtml(value || "—")}</span>`;
+    }
+
+    function expoAllSessions() {
+      return expoState.sessions;
+    }
+
+    function expoVisibleSessions() {
+      if (!expoState.expanded.size) return expoAllSessions();
+      return expoAllSessions().filter((row) => expoState.expanded.has(row.demoUid || "unmatched"));
+    }
+
+    function expoSelectedSessions() {
+      return expoAllSessions().filter((row) => expoState.selected.has(row.uid));
+    }
+
+    function updateExpoActionButtons() {
+      const countEl = expoEl("expo-selected-count");
+      const selected = expoSelectedSessions();
+      const n = selected.length;
+      const resettable = selected.filter((row) => row.uid && !expoState.resetting.has(row.uid)).length;
+      if (countEl) countEl.textContent = n ? `${n} selected` : "None selected";
+      ["btn-expo-reset", "btn-expo-reset-top"].forEach((id) => {
+        const btn = expoEl(id);
+        if (btn) btn.disabled = resettable === 0;
+      });
+      ["btn-expo-end", "btn-expo-end-top"].forEach((id) => {
+        const btn = expoEl(id);
+        if (btn) btn.disabled = expoState.busy || n === 0;
+      });
+    }
+
+    function renderExpoStats(stats) {
+      const s = stats || {};
+      const root = expoEl("expo-stats");
+      if (!root) return;
+      root.innerHTML = [
+        ["Sessions", s.total || 0],
+        ["Running", s.running || 0],
+        ["In-use", s.assigned || 0],
+        ["Running, no user", s.runningUnassigned || 0, "hot"],
+        ["Starting", s.starting || 0],
+        ["Stopping", s.stopping || 0],
+        ["Error", s.error || 0],
+      ].map(([label, value, cls]) => `<span class="expo-stat ${cls || ""}">${label}: <strong>${value}</strong></span>`).join("");
+    }
+
+    function expoFormatDate(value) {
+      if (!value) return "—";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+      return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    }
+
+    function renderExpoList() {
+      const inProgress = expoState.expos.filter((item) => item.state === "IN_PROGRESS");
+      const complete = expoState.expos.filter((item) => item.state !== "IN_PROGRESS");
+      const rowHtml = (item) => `
+        <tr class="clickable" data-expo-uid="${escapeHtml(item.uid)}">
+          <td>${escapeHtml(item.name || "—")}</td>
+          <td title="${escapeHtml(item.description || "")}">${escapeHtml((item.description || "—").slice(0, 72))}</td>
+          <td>${escapeHtml(expoFormatDate(item.start))}</td>
+          <td>${escapeHtml(item.createdBy || "—")}</td>
+        </tr>`;
+      const live = expoEl("expo-rows");
+      const done = expoEl("expo-complete-rows");
+      if (live) {
+        live.innerHTML = inProgress.length
+          ? inProgress.map(rowHtml).join("")
+          : `<tr><td colspan="4" class="muted">No in-progress expos.</td></tr>`;
+      }
+      if (done) {
+        done.innerHTML = complete.length
+          ? complete.map(rowHtml).join("")
+          : `<tr><td colspan="4" class="muted">—</td></tr>`;
+      }
+    }
+
+    function expoSessionRowHtml(row) {
+      const checked = expoState.selected.has(row.uid) ? "checked" : "";
+      const result = expoState.resultsByUid[row.uid];
+      const resultHtml = result
+        ? `<span class="${result.ok ? "expo-result-ok" : "expo-result-err"}" title="${escapeHtml(result.message || "")}">${escapeHtml(expoShortResult(result.message, result.ok))}</span>`
+        : "";
+      const duration = row.runningSeconds == null ? "" : String(row.runningSeconds);
+      return `
+        <tr class="${expoState.selected.has(row.uid) ? "selected" : ""}">
+          <td><input type="checkbox" class="expo-row-check" data-uid="${escapeHtml(row.uid)}" ${checked} /></td>
+          <td class="mono">${escapeHtml(row.sessionId || "—")}</td>
+          <td class="mono">${escapeHtml(duration)}</td>
+          <td>${row.user ? escapeHtml(row.user) : `<span class="muted"></span>`}</td>
+          <td>${expoStatusBadge(row.status)}</td>
+          <td>${resultHtml}</td>
+        </tr>`;
+    }
+
+    function renderExpoDemos() {
+      const tbody = expoEl("expo-demo-rows");
+      if (!tbody) return;
+      tbody.innerHTML = "";
+      if (!expoState.demos.length) {
+        tbody.innerHTML = `<tr><td colspan="13" class="muted">No demos.</td></tr>`;
+        return;
+      }
+      expoState.demos.forEach((demo) => {
+        const expanded = expoState.expanded.has(demo.uid);
+        const idle = demo.runningUnassigned || 0;
+        const name = demo.name || "—";
+        const shortName = name.length > 42 ? `${name.slice(0, 42)}…` : name;
+        const demoTr = document.createElement("tr");
+        demoTr.className = "clickable";
+        demoTr.dataset.demoUid = demo.uid;
+        demoTr.innerHTML = `
+          <td>${expanded ? "▾" : "▸"}</td>
+          <td class="mono">${escapeHtml(demo.dCloudId || "—")}</td>
+          <td>${escapeHtml(demo.dataCenter || "—")}</td>
+          <td title="${escapeHtml(name)}">${escapeHtml(shortName)}</td>
+          <td title="${escapeHtml(demo.title || "")}">${escapeHtml((demo.title || "").slice(0, 28))}</td>
+          <td>${escapeHtml(demo.type || "—")}</td>
+          <td>${escapeHtml(demo.contentPool || "—")}</td>
+          <td>${demo.target ?? 0}</td>
+          <td>${demo.running ?? 0}</td>
+          <td>${demo.inUse ?? 0}</td>
+          <td>${demo.starting ?? 0}</td>
+          <td>${demo.error ?? 0}</td>
+          <td class="${idle ? "expo-hot" : ""}">${idle}</td>
+        `;
+        tbody.appendChild(demoTr);
+        if (!expanded) return;
+        const wrap = document.createElement("tr");
+        wrap.innerHTML = `<td colspan="13" style="padding:0">
+          <div class="expo-demo-sessions">
+            <div class="expo-toolbar" style="margin-top:0">
+              <label><input type="checkbox" class="expo-demo-select-all" data-demo-uid="${escapeHtml(demo.uid)}" /> Select all in ${escapeHtml(demo.dataCenter || "demo")}</label>
+              <button type="button" class="secondary expo-demo-select-idle" data-demo-uid="${escapeHtml(demo.uid)}">Select running, no user</button>
+              <span class="hint" style="margin:0">${demo.sessions.length} session(s) · ${idle} idle running</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Session ID</th>
+                  <th>Duration</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(demo.sessions || []).map(expoSessionRowHtml).join("") || `<tr><td colspan="6" class="muted">No sessions</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </td>`;
+        tbody.appendChild(wrap);
+        const allInDemo = (demo.sessions || []).length > 0 && (demo.sessions || []).every((row) => expoState.selected.has(row.uid));
+        const box = wrap.querySelector(".expo-demo-select-all");
+        if (box) box.checked = allInDemo;
+      });
+      const visible = expoVisibleSessions();
+      const selectAll = expoEl("expo-select-all");
+      if (selectAll) selectAll.checked = visible.length > 0 && visible.every((row) => expoState.selected.has(row.uid));
+      updateExpoActionButtons();
+    }
+
+    function showExpoManage(expo) {
+      expoState.expo = expo;
+      expoEl("expo-expos-view")?.classList.add("hidden");
+      expoEl("expo-manage-view")?.classList.remove("hidden");
+      const title = expoEl("expo-manage-title");
+      const sub = expoEl("expo-manage-sub");
+      if (title) title.textContent = `Manage ${expo.name || "expo"}`;
+      if (sub) sub.textContent = expo.description || "";
+    }
+
+    function showExpoList() {
+      expoEl("expo-manage-view")?.classList.add("hidden");
+      expoEl("expo-expos-view")?.classList.remove("hidden");
+    }
+
+    function setExpoActionBanner(text) {
+      const banner = expoEl("expo-action-banner");
+      if (!banner) return;
+      if (!text) {
+        banner.classList.add("hidden");
+        banner.textContent = "";
+        return;
+      }
+      banner.classList.remove("hidden");
+      banner.textContent = text;
+    }
+
+    async function loadExpos({ keepBusy = false } = {}) {
+      if (!keepBusy) setExpoBusy(true);
+      expoLog("Loading expos…");
+      try {
+        const data = await api("/api/expo/expos", {
+          method: "POST",
+          body: JSON.stringify(tokenPayload()),
+        });
+        expoState.expos = data.expos || [];
+        expoState.loaded = true;
+        renderExpoList();
+        const user = data.user || {};
+        const userEl = expoEl("expo-user");
+        if (userEl) {
+          userEl.textContent = user.email
+            ? `Signed in as ${user.fullname || user.username || ""} <${user.email}>`
+            : `${expoState.expos.length} expo(s)`;
+        }
+        expoLog(`Loaded ${expoState.expos.length} expo(s). Click a row to manage sessions.`);
+        showExpoList();
+      } catch (err) {
+        expoLog(`Load expos failed: ${err.message}`);
+      } finally {
+        if (!keepBusy) setExpoBusy(false);
+      }
+    }
+
+    async function loadExpoSessions(expoUid, { keepBusy = false, quiet = false } = {}) {
+      if (!expoUid) return;
+      try { localStorage.setItem(EXPO_UID_KEY, expoUid); } catch {}
+      if (!keepBusy) setExpoBusy(true);
+      const expo = expoState.expos.find((item) => item.uid === expoUid) || expoState.expo || { uid: expoUid };
+      showExpoManage(expo);
+      if (!quiet) expoLog(`Loading demos and sessions for ${expo.name || expoUid}…`);
+      try {
+        const data = await api("/api/expo/sessions", {
+          method: "POST",
+          body: JSON.stringify({ ...tokenPayload(), expo_uid: expoUid }),
+        });
+        expoState.expo = data.expo || expo;
+        expoState.demos = data.demos || [];
+        expoState.sessions = data.sessions || [];
+        const known = new Set(expoState.sessions.map((row) => row.uid));
+        expoState.selected = new Set([...expoState.selected].filter((uid) => known.has(uid)));
+        if (expoState.expo) showExpoManage(expoState.expo);
+        renderExpoStats(data.stats);
+        if (!expoState.expanded.size && expoState.demos.length) {
+          const firstIdle = expoState.demos.find((demo) => demo.runningUnassigned > 0);
+          expoState.expanded.add((firstIdle || expoState.demos[0]).uid);
+        }
+        renderExpoDemos();
+        const stats = data.stats || {};
+        if (!quiet) {
+          expoLog(`Loaded ${stats.total || 0} sessions — ${stats.runningUnassigned || 0} running with no user.`);
+        } else {
+          expoLog(`Poll: ${stats.starting || 0} starting, ${stats.stopping || 0} stopping, ${stats.runningUnassigned || 0} idle running.`);
+        }
+      } catch (err) {
+        expoLog(`Load sessions failed: ${err.message}`);
+      } finally {
+        if (!keepBusy) setExpoBusy(false);
+      }
+    }
+
+    function selectExpoVisible(checked) {
+      expoVisibleSessions().forEach((row) => {
+        if (checked) expoState.selected.add(row.uid);
+        else expoState.selected.delete(row.uid);
+      });
+      renderExpoDemos();
+    }
+
+    function selectExpoIdle(demoUid) {
+      const match = expoAllSessions().filter((row) => {
+        if (!row.runningUnassigned) return false;
+        if (demoUid && (row.demoUid || "unmatched") !== demoUid) return false;
+        return true;
+      });
+      if (demoUid) {
+        expoState.expanded.add(demoUid);
+        expoAllSessions().filter((row) => (row.demoUid || "unmatched") === demoUid).forEach((row) => expoState.selected.delete(row.uid));
+      } else {
+        expoState.selected.clear();
+        match.forEach((row) => {
+          if (row.demoUid) expoState.expanded.add(row.demoUid);
+        });
+      }
+      match.forEach((row) => expoState.selected.add(row.uid));
+      renderExpoDemos();
+      expoLog(`Selected ${match.length} running session(s) with no user assigned.`);
+    }
+
+    async function confirmExpoAction(action) {
+      const selected = expoSelectedSessions();
+      if (!selected.length) {
+        expoLog("Select at least one session. Expand a demo row first.");
+        return;
+      }
+      if (action === "reset") {
+        const fresh = selected.filter((row) => row.uid && !expoState.resetting.has(row.uid));
+        const already = selected.length - fresh.length;
+        if (!fresh.length) {
+          expoLog("Those sessions were already reset. Nothing new was sent.");
+          return;
+        }
+        const free = fresh.filter((row) => row.runningUnassigned).length;
+        const ok = await confirmAction(
+          `Same Expo Reset action as the ⋯ menu. ${free} of these are running with no user assigned.`
+          + (fresh.length > 1 ? "\n\nResets are 10 seconds apart." : "")
+          + (already ? `\n\n${already} selected session(s) were already reset and will be skipped.` : ""),
+          { title: `Reset ${fresh.length} session(s)?`, okLabel: "Reset sessions" },
+        );
+        if (ok) runExpoAction(action);
+        return;
+      }
+      const withEngagement = selected.filter((row) => row.engagementUid).length;
+      const skipped = selected.length - withEngagement;
+      const ok = await confirmAction(
+        `Same Expo End Engagement action. ${skipped ? `${skipped} selected session(s) have no engagement and will be skipped.` : "All selected rows have an assigned user."}`,
+        { title: `End engagement for ${withEngagement} session(s)?`, okLabel: "End engagements" },
+      );
+      if (ok) runExpoAction(action);
+    }
+
+    async function runExpoAction(action) {
+      let selected = expoSelectedSessions();
+      if (action === "reset") {
+        const fresh = selected.filter((row) => row.uid && !expoState.resetting.has(row.uid));
+        const skipped = selected.length - fresh.length;
+        if (!fresh.length) {
+          expoLog("Those sessions were already reset. Nothing new was sent.");
+          return;
+        }
+        if (skipped) expoLog(`Skipped ${skipped} session(s) already reset.`);
+        fresh.forEach((row) => expoState.resetting.add(row.uid));
+        selected = fresh;
+        updateExpoActionButtons();
+      }
+      if (!selected.length) return;
+      expoLog(`Starting ${action === "reset" ? "reset" : "end engagement"} for ${selected.length} session(s)…`);
+      try {
+        const res = await fetchLocal("/api/expo/action/stream", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            action,
+            items: selected.map((row) => ({
+              session_uid: row.uid,
+              session_id: row.sessionId,
+              engagement_uid: row.engagementUid || null,
+              user: row.user || null,
+              status: row.status || null,
+            })),
+          }),
+        });
+        if (!res.ok) {
+          let data = {};
+          try { data = await res.json(); } catch {}
+          throw new Error(parseApiError(res, data, "/api/expo/action/stream"));
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalResult = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event.type === "progress") expoLog(event.message);
+            if (event.type === "error") throw new Error(event.message);
+            if (event.type === "done") finalResult = event.result;
+          }
+        }
+        (finalResult?.results || []).forEach((item) => {
+          if (item.sessionUid) expoState.resultsByUid[item.sessionUid] = item;
+          if (action === "reset" && item.sessionUid && item.ok === false) {
+            expoState.resetting.delete(item.sessionUid);
+          }
+        });
+        const ok = finalResult?.ok || 0;
+        const failed = finalResult?.failed || 0;
+        if (action === "reset") {
+          setExpoActionBanner(
+            `Expo accepted ${ok} reset(s)` +
+            (failed ? `, ${failed} failed` : "") +
+            ". Use Refresh to check which sessions are restarting."
+          );
+          expoLog("Reset requests are sent. Use Refresh when you want a new status.");
+        }
+        renderExpoDemos();
+        updateExpoActionButtons();
+      } catch (err) {
+        if (action === "reset") {
+          selected.forEach((row) => {
+            if (!expoState.resultsByUid[row.uid]?.ok) expoState.resetting.delete(row.uid);
+          });
+          updateExpoActionButtons();
+        }
+        expoLog(`Action failed: ${err.message}`);
+        setExpoActionBanner(`Reset/end failed: ${err.message}`);
+      }
+    }
+
+    function bindExpoUi() {
+      if (expoState.bound) return;
+      expoState.bound = true;
+      expoEl("btn-expo-load")?.addEventListener("click", () => loadExpos());
+      expoEl("btn-expo-refresh-list")?.addEventListener("click", () => loadExpos());
+      expoEl("btn-expo-back")?.addEventListener("click", showExpoList);
+      expoEl("btn-expo-refresh")?.addEventListener("click", () => loadExpoSessions(expoState.expo?.uid));
+      expoEl("expo-select-all")?.addEventListener("change", (event) => selectExpoVisible(event.target.checked));
+      expoEl("btn-expo-select-idle")?.addEventListener("click", () => selectExpoIdle());
+      expoEl("btn-expo-select-none")?.addEventListener("click", () => {
+        expoState.selected.clear();
+        renderExpoDemos();
+      });
+      expoEl("expo-rows")?.addEventListener("click", (event) => {
+        const row = event.target.closest("tr[data-expo-uid]");
+        if (row) loadExpoSessions(row.dataset.expoUid);
+      });
+      expoEl("expo-complete-rows")?.addEventListener("click", (event) => {
+        const row = event.target.closest("tr[data-expo-uid]");
+        if (row) loadExpoSessions(row.dataset.expoUid);
+      });
+      expoEl("expo-demo-rows")?.addEventListener("click", (event) => {
+        if (event.target.closest(".expo-demo-select-idle")) {
+          event.preventDefault();
+          selectExpoIdle(event.target.closest(".expo-demo-select-idle").dataset.demoUid);
+          return;
+        }
+        if (event.target.closest("input, button, label")) return;
+        const row = event.target.closest("tr[data-demo-uid]");
+        if (!row) return;
+        const uid = row.dataset.demoUid;
+        if (expoState.expanded.has(uid)) expoState.expanded.delete(uid);
+        else expoState.expanded.add(uid);
+        renderExpoDemos();
+      });
+      expoEl("expo-demo-rows")?.addEventListener("change", (event) => {
+        if (event.target.classList.contains("expo-row-check")) {
+          const uid = event.target.dataset.uid;
+          if (event.target.checked) expoState.selected.add(uid);
+          else expoState.selected.delete(uid);
+          renderExpoDemos();
+          return;
+        }
+        if (event.target.classList.contains("expo-demo-select-all")) {
+          const demoUid = event.target.dataset.demoUid;
+          const demo = expoState.demos.find((item) => item.uid === demoUid);
+          (demo?.sessions || []).forEach((row) => {
+            if (event.target.checked) expoState.selected.add(row.uid);
+            else expoState.selected.delete(row.uid);
+          });
+          renderExpoDemos();
+        }
+      });
+      expoEl("btn-expo-reset")?.addEventListener("click", () => confirmExpoAction("reset"));
+      expoEl("btn-expo-reset-top")?.addEventListener("click", () => confirmExpoAction("reset"));
+      expoEl("btn-expo-end")?.addEventListener("click", () => confirmExpoAction("end_engagement"));
+      expoEl("btn-expo-end-top")?.addEventListener("click", () => confirmExpoAction("end_engagement"));
+    }
+
+    function initExpoView() {
+      bindExpoUi();
+      if (!expoState.loaded && !expoState.busy) loadExpos().catch(() => {});
+    }
 
     initTheme();
     initAccountMenu();

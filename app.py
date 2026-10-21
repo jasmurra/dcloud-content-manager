@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import secrets
 import subprocess
 import sys
@@ -15,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Iterator, Literal, NamedTuple
 from urllib.parse import quote, urlparse
 
 APP_DIR = Path(__file__).resolve().parent
@@ -41,7 +42,7 @@ for _root in (_SCRIPTING_ROOT, APP_DIR):
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
@@ -171,6 +172,7 @@ from cai_client import (
     cai_dc_to_dcloud_site,
     cai_demo_url,
     cai_integrate_dests,
+    cai_log_url,
     cai_integrate_dc_chips,
     cai_replace_vm_chips,
     fetch_demo_page,
@@ -215,6 +217,7 @@ from camgr_client import (
 )
 
 from camgr_browser import capture_camgr_session
+import expo_client
 from net_errors import host_resolves, looks_off_network, off_network_message
 from tool_browser import (
     capture_dcloud_tokens,
@@ -648,6 +651,23 @@ class TokenPayload(BaseModel):
 class RefreshListsPayload(TokenPayload):
     refresh: bool = False
     sites: list[str] = Field(default_factory=list)
+
+
+class ExpoSessionsPayload(TokenPayload):
+    expo_uid: str = Field(min_length=1)
+
+
+class ExpoActionItem(BaseModel):
+    session_uid: str = Field(min_length=1)
+    session_id: int | str | None = None
+    engagement_uid: str | None = None
+    user: str | None = None
+    status: str | None = None
+
+
+class ExpoActionPayload(TokenPayload):
+    action: Literal["reset", "end_engagement"]
+    items: list[ExpoActionItem] = Field(min_length=1)
 
 
 def _env_auth_allowed() -> bool:
@@ -5150,6 +5170,34 @@ def _upsert_cai_replace(job: dict[str, Any], item: dict[str, Any]) -> dict[str, 
     return item
 
 
+def _attach_replace_log_links(item: dict[str, Any], tasks: list[dict[str, Any]]) -> bool:
+    """Copy a CAI /log/<id> link onto an already-finished replacement."""
+    chips = [dict(chip) if isinstance(chip, dict) else chip for chip in (item.get("vmTasks") or [])]
+    changed = False
+    for chip in chips:
+        if not isinstance(chip, dict):
+            continue
+        task = match_replace_task(
+            tasks,
+            saved_id=str(item.get("savedId") or ""),
+            vm_name=str(chip.get("vm") or ""),
+            target_id=str(item.get("targetId") or ""),
+        )
+        href = cai_log_url(str((task or {}).get("logUrl") or ""))
+        if href and chip.get("href") != href:
+            chip["href"] = href
+            tip = str(chip.get("tip") or "").strip()
+            if "CAI log" not in tip:
+                chip["tip"] = f"{tip} · open the CAI log" if tip else "open the CAI log"
+            changed = True
+        elif not href and not chip.get("href"):
+            chip["logChecked"] = True
+            changed = True
+    if changed:
+        item["vmTasks"] = chips
+    return changed
+
+
 def _refresh_cai_replace_statuses(job: dict[str, Any]) -> dict[str, Any]:
     cookie = _require_cai_cookie()
     listed = list_cai_tasks(cookie)
@@ -5163,6 +5211,14 @@ def _refresh_cai_replace_statuses(job: dict[str, Any]) -> dict[str, Any]:
     changed = False
     for item in list(job.get("caiReplaces") or []):
         if str(item.get("status") or "") in {"completed", "error"}:
+            # The task was already finished, so keep its status and only
+            # attach the CAI log link the Error badge points at.
+            if str(item.get("status") or "") == "error" and not item.get("logChecked"):
+                if _attach_replace_log_links(item, tasks):
+                    changed = True
+                item["logChecked"] = True
+                changed = True
+                _upsert_cai_replace(job, item)
             continue
         vms = item.get("vms") or []
         # CAI queues one task per VM, so each VM carries its own status.
@@ -10784,6 +10840,264 @@ def api_session(body: LoadVmsPayload) -> dict[str, Any]:
     if err or not details:
         raise HTTPException(400, err or "Not found.")
     return {"ok": True, "session": details}
+
+
+def _expo_token_or_none(payload: TokenPayload) -> str:
+    try:
+        return _resolve_token(payload)
+    except HTTPException:
+        return ""
+
+
+def _ndjson_stream(work: Callable[[Callable[[str], None]], Any]) -> Iterator[str]:
+    event_queue: queue.Queue = queue.Queue()
+
+    def progress(message: str) -> None:
+        event_queue.put({"type": "progress", "message": message})
+
+    def worker() -> None:
+        try:
+            result = work(progress)
+            event_queue.put({"type": "done", "result": result})
+        except Exception as exc:
+            event_queue.put(
+                {
+                    "type": "error",
+                    "message": str(exc),
+                    "trace": traceback.format_exc(),
+                }
+            )
+        finally:
+            event_queue.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+    while True:
+        item = event_queue.get()
+        if item is None:
+            break
+        yield json.dumps(item) + "\n"
+
+
+EXPO_RESET_GAP_SECONDS = 10
+
+
+def _run_expo_action(payload: ExpoActionPayload, progress: Callable[[str], None]) -> dict[str, Any]:
+    token = _resolve_token(payload, progress)
+    results: list[dict[str, Any]] = []
+    ok_count = 0
+    skipped = 0
+    label = "Reset" if payload.action == "reset" else "End engagement"
+    total = len(payload.items)
+    refreshed = False
+    progress(f"{label} starting for {total} selected session(s)…")
+
+    def _refresh_session_once() -> bool:
+        nonlocal token, refreshed
+        if refreshed:
+            return False
+        progress("401 from Expo — refreshing the dCloud session…")
+        new_token = _ensure_user_access_token(progress, force=True)
+        new_token = normalize_dcloud_token(new_token or "")
+        if not new_token:
+            progress("Could not refresh the dCloud session. Sign in again.")
+            return False
+        if new_token == token:
+            progress("Still the same token. Sign in to dCloud again, then retry.")
+            return False
+        token = new_token
+        refreshed = True
+        progress("Got a fresh dCloud token. Retrying this session.")
+        return True
+
+    for index, item in enumerate(payload.items, start=1):
+        if payload.action == "reset" and index > 1:
+            progress(f"Waiting {EXPO_RESET_GAP_SECONDS} seconds before the next reset…")
+            time.sleep(EXPO_RESET_GAP_SECONDS)
+        session_label = item.session_id or item.session_uid
+        user_label = item.user or "unassigned"
+        if payload.action == "reset":
+            progress(f"[{index}/{total}] Reset session {session_label} ({user_label})…")
+            try:
+                body = expo_client.reset_session(token, item.session_uid)
+                ok_count += 1
+                status_code = body.get("httpStatus") or 201
+                results.append(
+                    {
+                        "ok": True,
+                        "action": payload.action,
+                        "sessionUid": item.session_uid,
+                        "sessionId": item.session_id,
+                        "httpStatus": status_code,
+                        "message": f"Accepted ({status_code})",
+                    }
+                )
+                progress(
+                    f"  OK {status_code} — Expo accepted reset. "
+                    "Status can stay RUNNING for about a minute, then STOPPING/STARTING."
+                )
+            except Exception as exc:
+                err_text = str(exc)
+                if "401" in err_text and _refresh_session_once():
+                    try:
+                        body = expo_client.reset_session(token, item.session_uid)
+                        ok_count += 1
+                        status_code = body.get("httpStatus") or 201
+                        results.append(
+                            {
+                                "ok": True,
+                                "action": payload.action,
+                                "sessionUid": item.session_uid,
+                                "sessionId": item.session_id,
+                                "httpStatus": status_code,
+                                "message": f"Accepted ({status_code}) after token refresh",
+                            }
+                        )
+                        progress(f"  OK {status_code} after token refresh.")
+                        continue
+                    except Exception as retry_exc:
+                        err_text = str(retry_exc)
+                results.append(
+                    {
+                        "ok": False,
+                        "action": payload.action,
+                        "sessionUid": item.session_uid,
+                        "sessionId": item.session_id,
+                        "message": err_text,
+                    }
+                )
+                progress(f"  FAIL — {err_text}")
+                if "401" in err_text:
+                    leftover = total - index
+                    if leftover:
+                        progress(
+                            f"Stopping — token expired. {leftover} session(s) not attempted. "
+                            "Sign in to dCloud again, then retry."
+                        )
+                    break
+            continue
+
+        engagement_uid = (item.engagement_uid or "").strip()
+        if not engagement_uid:
+            skipped += 1
+            results.append(
+                {
+                    "ok": False,
+                    "skipped": True,
+                    "action": payload.action,
+                    "sessionUid": item.session_uid,
+                    "sessionId": item.session_id,
+                    "message": "No engagement to end",
+                }
+            )
+            progress(f"[{index}/{total}] Skip session {session_label} — no user/engagement")
+            continue
+
+        progress(f"[{index}/{total}] End engagement {session_label} ({user_label})…")
+        try:
+            expo_client.end_engagement(token, engagement_uid)
+            ok_count += 1
+            results.append(
+                {
+                    "ok": True,
+                    "action": payload.action,
+                    "sessionUid": item.session_uid,
+                    "sessionId": item.session_id,
+                    "engagementUid": engagement_uid,
+                    "message": "End engagement requested",
+                }
+            )
+            progress("  OK — end engagement requested")
+        except Exception as exc:
+            results.append(
+                {
+                    "ok": False,
+                    "action": payload.action,
+                    "sessionUid": item.session_uid,
+                    "sessionId": item.session_id,
+                    "engagementUid": engagement_uid,
+                    "message": str(exc),
+                }
+            )
+            progress(f"  FAIL — {exc}")
+
+    failed = total - ok_count - skipped
+    progress(f"Done. {ok_count} ok, {failed} failed, {skipped} skipped.")
+    return {
+        "action": payload.action,
+        "total": total,
+        "ok": ok_count,
+        "failed": failed,
+        "skipped": skipped,
+        "results": results,
+    }
+
+
+@app.post("/api/expo/access")
+def api_expo_access(body: TokenPayload) -> dict[str, Any]:
+    """Quiet gate for the left-nav Expo item. Fail closed if this login cannot list expos."""
+    token = _expo_token_or_none(body)
+    if not token:
+        return {
+            "allowed": False,
+            "roles": [],
+            "expoCount": 0,
+            "user": {"email": "", "fullname": "", "username": ""},
+            "error": "",
+        }
+    try:
+        return expo_client.check_expo_access(token)
+    except Exception:
+        return {
+            "allowed": False,
+            "roles": [],
+            "expoCount": 0,
+            "user": {"email": "", "fullname": "", "username": ""},
+            "error": "",
+        }
+
+
+@app.post("/api/expo/expos")
+def api_expo_expos(body: TokenPayload) -> dict[str, Any]:
+    try:
+        token = _resolve_token(body)
+        expos = [expo_client.summarize_expo(item) for item in expo_client.list_expos(token)]
+        me = expo_client.whoami(token) or {}
+        return {
+            "expos": expos,
+            "count": len(expos),
+            "user": {
+                "email": me.get("email") or "",
+                "fullname": me.get("fullname") or "",
+                "username": me.get("username") or "",
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/expo/sessions")
+def api_expo_sessions(body: ExpoSessionsPayload) -> dict[str, Any]:
+    try:
+        token = _resolve_token(body)
+        return expo_client.load_expo_sessions(token, body.expo_uid.strip())
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/expo/action/stream")
+def api_expo_action_stream(body: ExpoActionPayload) -> StreamingResponse:
+    return StreamingResponse(
+        _ndjson_stream(lambda progress: _run_expo_action(body, progress)),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 _load_last_job()

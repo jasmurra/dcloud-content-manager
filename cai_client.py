@@ -35,6 +35,15 @@ CAI_DC_FOR_SITE = {
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+_LOG_HREF_RE = re.compile(r"^(?:https://dcloud-cai\.cisco\.com)?/log/(\d+)/?$")
+
+
+def cai_log_url(href: str) -> str:
+    """Absolute CAI task log, or empty when the href is not a /log/<id> link."""
+    match = _LOG_HREF_RE.match(str(href or "").strip())
+    if not match:
+        return ""
+    return f"{CAI_BASE}/log/{match.group(1)}"
 
 
 def cai_demo_url(site: str, saved_id: str) -> str:
@@ -60,8 +69,10 @@ class _FormVmParser(HTMLParser):
         self._in_task_table = False
         self._headers: list[str] = []
         self._row: list[str] = []
+        self._row_hrefs: list[str] = []
         self._cell = False
         self._cell_buf = ""
+        self._cell_href = ""
         self._is_th = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -84,10 +95,14 @@ class _FormVmParser(HTMLParser):
         if tag == "table":
             self._in_task_table = True
             self._headers = []
+            self._row_hrefs = []
+        if self._in_task_table and tag == "a" and self._cell and not self._cell_href:
+            self._cell_href = (a.get("href") or "").strip()
         if self._in_task_table and tag in {"td", "th"}:
             self._cell = True
             self._is_th = tag == "th"
             self._cell_buf = ""
+            self._cell_href = ""
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
@@ -102,7 +117,9 @@ class _FormVmParser(HTMLParser):
                 self._headers.append(text)
             else:
                 self._row.append(text)
+                self._row_hrefs.append(self._cell_href)
             self._cell = False
+            self._cell_href = ""
         if self._in_task_table and tag == "tr" and self._row:
             self._flush_row()
         if tag == "table":
@@ -117,10 +134,18 @@ class _FormVmParser(HTMLParser):
         if self._cell:
             self._cell_buf += data
 
+    def _status_log_url(self, headers: list[str]) -> str:
+        idx = headers.index("status") if "status" in headers else 2
+        if idx < 0 or idx >= len(self._row_hrefs):
+            return ""
+        return cai_log_url(self._row_hrefs[idx])
+
     def _flush_row(self) -> None:
         cells = self._row
-        self._row = []
         headers = [h.lower() for h in self._headers]
+        log_url = self._status_log_url(headers)
+        self._row = []
+        self._row_hrefs = []
         if not cells:
             return
         # Demo-page mini table: Type, Server, Status, New ID
@@ -132,6 +157,7 @@ class _FormVmParser(HTMLParser):
                 "newId": cells[3] if len(cells) > 3 else "",
                 "demo": "",
                 "dc": "",
+                "logUrl": log_url,
             }
             if not row["dc"]:
                 # The demo page puts the route in Type (`Integration rtp => lon`)
@@ -161,6 +187,7 @@ class _FormVmParser(HTMLParser):
                 "server": col("server"),
                 "updated": col("updated"),
                 "newId": col("new id", "newid"),
+                "logUrl": log_url,
             }
             if row["demo"] or row["status"]:
                 self.tasks.append(row)
@@ -1082,6 +1109,7 @@ def cai_replace_vm_chips(
         source, dest = parse_cai_task_dc(str((task or {}).get("dc") or ""))
         server = str((task or {}).get("server") or "").strip() or str(old.get("server") or "").strip()
         updated = str((task or {}).get("updated") or "").strip() or str(old.get("updated") or "").strip()
+        href = cai_log_url(str((task or {}).get("logUrl") or "")) or cai_log_url(str(old.get("href") or ""))
         done = status == "completed"
         pretty = _REPLACE_STATUS_LABELS.get(status, status.replace("_", " ").title() or "Queued")
         label = f"{name} ✓" if done else f"{name} {pretty}"
@@ -1094,6 +1122,8 @@ def cai_replace_vm_chips(
             tip_parts.append(f"new ID {new_id}")
         if updated:
             tip_parts.append(f"updated {updated}")
+        if href:
+            tip_parts.append("open the CAI log")
         chips.append(
             {
                 "vm": name,
@@ -1105,6 +1135,7 @@ def cai_replace_vm_chips(
                 "updated": updated,
                 "dc": dest,
                 "source": source,
+                "href": href,
                 "label": label,
                 "tip": " · ".join(tip_parts),
             }

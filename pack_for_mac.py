@@ -49,6 +49,7 @@ FILES = (
     "update_from_github.py",
     "app.py",
     "dcloud_client.py",
+    "expo_client.py",
     "cai_client.py",
     "camgr_client.py",
     "camgr_tab.py",

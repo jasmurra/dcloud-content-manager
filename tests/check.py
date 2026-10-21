@@ -340,6 +340,65 @@ def test_zip_contents() -> None:
     )
 
 
+def test_expo_nav_is_gated() -> None:
+    """Expo sits after Hub and stays off the left nav until a login can list expos."""
+    nav = INDEX[INDEX.index("<hbr-shell-nav"): INDEX.index("</hbr-shell-nav>")]
+    hub = nav.index('data-view="hub"')
+    expo = nav.index('data-view="expo"')
+    events = nav.index('data-view="events"')
+    check("Expo is the left-nav item after Hub", hub < expo < events)
+    expo_item = nav[expo:events]
+    check(
+        "Expo stays hidden until access is confirmed",
+        'class="hidden"' in expo_item and "hidden>" in expo_item.replace(" ", ""),
+        expo_item[:180],
+    )
+    check(
+        "Expo uses the four-square Harbor icon from My Expos",
+        'name="squares-four"' in expo_item
+        and 'name="presentation"' not in expo_item
+        and (ROOT / "static/vendor/harbor-elements/icons/magnetic/svg/squares-four.svg").is_file(),
+    )
+    expo_log = js_function("expoLog")
+    check(
+        "Expo progress is written to the main log page",
+        "noteLog(message)" in expo_log
+        and "expo-progress-log" not in INDEX
+        and 'id="panel-expo-progress"' not in INDEX,
+    )
+    check("the Expo page exists", 'id="view-expo"' in INDEX and 'data-view="expo"' in INDEX)
+    check("Expo access is checked against the Expo API", '"/api/expo/access"' in INDEX)
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    expo_action = source[source.index("def _run_expo_action(") : source.index("def api_expo_access(")]
+    check(
+        "Expo resets of several sessions wait 10 seconds between each one",
+        "EXPO_RESET_GAP_SECONDS = 10" in source
+        and 'payload.action == "reset" and index > 1' in expo_action
+        and "time.sleep(EXPO_RESET_GAP_SECONDS)" in expo_action
+        and "Resets are 10 seconds apart." in INDEX,
+    )
+    reset_run = js_function("runExpoAction")
+    busy = js_function("setExpoBusy")
+    check(
+        "a running Expo reset still lets you refresh and reset other sessions",
+        "expoState.resetting" in INDEX
+        and "Those sessions were already reset" in INDEX
+        and "pollExpoResetProgress" not in INDEX
+        and '"btn-expo-refresh"' not in busy
+        and "btn-expo-reset" not in busy
+        and "loadExpoSessions" not in reset_run,
+    )
+    check("Expo APIs are in the app", "@app.post(\"/api/expo/access\")" in source)
+    check("the coworker zip includes expo_client.py", "expo_client.py" in (ROOT / "pack_for_mac.py").read_text(encoding="utf-8"))
+    import expo_client
+    denied = expo_client.check_expo_access("")
+    check(
+        "an empty token cannot open Expo",
+        denied.get("allowed") is False,
+        str(denied),
+    )
+
+
 def test_anonymous_update_usage() -> None:
     import hashlib
     import json
@@ -4283,6 +4342,77 @@ def test_stale_selected_badge_is_cleared() -> None:
         "Load VMs on that session still marks the checked VM",
         job["dcs"][1]["vms"][0]["selected"] is True
         and job["dcs"][1]["vms"][1]["selected"] is False,
+    )
+
+
+def test_cai_error_links_to_its_log() -> None:
+    """CAI's Error badge is an anchor to /log/<id>. The Hub should open that same page."""
+    import cai_client
+
+    html = """
+    <table>
+      <tr><th>Owner</th><th>Type</th><th>Demo</th><th>Status</th><th>DC</th><th>Server</th><th>Updated</th><th>New ID</th></tr>
+      <tr>
+        <td>jasmurra</td><td>Replacement</td><td>1401755</td>
+        <td><span class="label label-danger"><a href="/log/67015">Error</a></span></td>
+        <td>rtp => rtp</td><td>1366592 || dtb_win11_wkst1</td>
+        <td>2026-10-21 11:20:09</td><td></td>
+      </tr>
+      <tr>
+        <td>jasmurra</td><td>Replacement</td><td>802716</td>
+        <td><span class="label label-success"><a href="/log/67016">Completed</a></span></td>
+        <td>lon => lon</td><td>784325 || dtb_win11_wkst1</td>
+        <td>2026-10-21 11:26:27</td><td>10167005</td>
+      </tr>
+    </table>
+    """
+    parser = cai_client._FormVmParser()
+    parser.feed(html)
+    by_demo = {row["demo"]: row for row in parser.tasks}
+    check(
+        "a CAI Error badge keeps its log link",
+        by_demo["1401755"]["status"] == "Error"
+        and by_demo["1401755"]["logUrl"] == "https://dcloud-cai.cisco.com/log/67015"
+        and by_demo["802716"]["logUrl"] == "https://dcloud-cai.cisco.com/log/67016",
+    )
+    check(
+        "a status link that is not a CAI log is dropped",
+        cai_client.cai_log_url("javascript:alert(1)") == ""
+        and cai_client.cai_log_url("https://example.com/log/67015") == "",
+    )
+    chips = cai_client.cai_replace_vm_chips(
+        ["dtb_win11_wkst1"],
+        parser.tasks,
+        saved_id="1401755",
+        target_id="1366592",
+    )
+    check(
+        "the VM error chip points at that CAI log",
+        len(chips) == 1
+        and chips[0]["status"] == "error"
+        and chips[0]["href"] == "https://dcloud-cai.cisco.com/log/67015"
+        and "CAI log" in chips[0]["tip"],
+    )
+    kept = cai_client.cai_replace_vm_chips(
+        ["dtb_win11_wkst1"],
+        [],
+        saved_id="1401755",
+        previous=chips,
+    )
+    check(
+        "a finished error keeps its log after the task leaves the CAI list",
+        kept[0]["href"] == "https://dcloud-cai.cisco.com/log/67015"
+        and kept[0]["status"] == "error",
+    )
+    vm_html = js_function("caiVmChipsHtml")
+    check(
+        "the Hub opens the CAI log from the error chip and the Error label",
+        "function caiLogHref(" in INDEX
+        and 'target="_blank"' in vm_html
+        and "Open the CAI log for this error." in INDEX
+        and "logChecked" in INDEX[
+            INDEX.index("function caiRowNeedsPoll(") : INDEX.index("function caiRowsNeedPoll(")
+        ],
     )
 
 
