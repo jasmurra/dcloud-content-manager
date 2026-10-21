@@ -9341,6 +9341,7 @@
         el.checked = on;
       });
       syncSavedIdHeadCheck();
+      dropUncheckedLoadedDemos();
     }
 
     function syncSavedIdHeadCheck() {
@@ -9442,6 +9443,7 @@
       });
       if (data.job) renderJob(data.job, { forceCards: true });
       else applySavedIds(data.savedIds);
+      dropUncheckedLoadedDemos();
       noteLog(`Removed ${data.removed || rows.length} row(s) from the saved content list.`);
     }
 
@@ -9482,6 +9484,38 @@
       else renderCaiDemoSections();
       const where = kind === "camgr" ? "CAMGR" : "CAI";
       noteLog(`Removed ${entry.title || "demo"} from the ${where} list. Nothing was changed in dCloud.`);
+    }
+
+    function dropUncheckedLoadedDemos() {
+      const checked = new Set(
+        [...document.querySelectorAll(".saved-id-select:checked")].map((el) =>
+          `${String(el.dataset.site || "").toLowerCase()}:${String(el.dataset.savedId || "")}`
+        ),
+      );
+      const removed = [];
+      let camgrChanged = false;
+      let caiChanged = false;
+      for (const [kind, loads] of [["camgr", camgrDemoLoads], ["cai", caiDemoLoads]]) {
+        for (const [key, entry] of [...loads.entries()]) {
+          const rows = (entry.rows || []).filter((row) =>
+            checked.has(`${String(row.site || "").toLowerCase()}:${String(row.saved_id || "")}`)
+          );
+          if (rows.length === (entry.rows || []).length) continue;
+          if (!rows.length) {
+            loads.delete(key);
+            removed.push(`${entry.title || "demo"} from ${kind === "camgr" ? "CAMGR" : "CAI"}`);
+          } else {
+            entry.rows = rows;
+          }
+          if (kind === "camgr") camgrChanged = true;
+          else caiChanged = true;
+        }
+      }
+      if (camgrChanged) renderCamgrDemoSections();
+      if (caiChanged) renderCaiDemoSections();
+      if (removed.length) {
+        noteLog(`Removed ${removed.join("; ")}. Nothing was changed in dCloud.`);
+      }
     }
 
     function selectedCaiIntegrateDcs(section) {
@@ -17470,7 +17504,9 @@
       setSavedIdChecks(ev.target.checked);
     });
     $("saved-ids-body").addEventListener("change", (ev) => {
-      if (ev.target.classList.contains("saved-id-select")) syncSavedIdHeadCheck();
+      if (!ev.target.classList.contains("saved-id-select")) return;
+      syncSavedIdHeadCheck();
+      dropUncheckedLoadedDemos();
     });
     $("cai-vm-list")?.addEventListener("change", (ev) => {
       if (ev.target.classList.contains("cai-integrate-box")) syncMasterDestChecks("cai");

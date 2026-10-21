@@ -1557,6 +1557,11 @@ def test_task_groups_collapse() -> None:
         'demoRemoveButton("cai")' in INDEX
         and 'demoRemoveButton("camgr")' in INDEX
         and "function removeLoadedDemo(" in INDEX
+        and "function dropUncheckedLoadedDemos(" in INDEX
+        and "dropUncheckedLoadedDemos();" in INDEX[
+            INDEX.index('$("saved-ids-body").addEventListener("change"')
+            : INDEX.index('$("cai-vm-list")?.addEventListener("change"')
+        ]
         and "loads.delete(key)" in INDEX
         and "ev.preventDefault()" in INDEX[
             INDEX.index('$("cai-vm-list")?.addEventListener("click"')

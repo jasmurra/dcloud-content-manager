@@ -1,3 +1,7 @@
+## 2.0.33 — 2026-10-21
+
+- **Unchecking saved content removes that loaded demo.** Clearing the box for a saved row takes that demo off the CAI and CAMGR lists. It does not change dCloud
+
 ## 2.0.32 — 2026-10-20
 
 - **Quick tasks stay off the workspace.** Schedule and Extend no longer ask to confirm or add a session card. A toast shows the session ID when it finishes

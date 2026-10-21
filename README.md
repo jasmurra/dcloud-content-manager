@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.0.33** | Unchecking a saved content row removes that demo from CAI and CAMGR |
 | **2.0.32** | Quick tasks schedule or extend without a confirm, and the toast shows the session ID |
 | **2.0.31** | Quick tasks on Schedule: one row to schedule, extend, or schedule an export |
 | **2.0.30** | A loaded CAI or CAMGR demo can be removed from its list without changing dCloud |
