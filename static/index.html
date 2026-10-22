@@ -2944,7 +2944,7 @@
         </div>
         <div>
           <label for="quick-days">Days</label>
-          <input id="quick-days" type="number" min="1" max="30" value="1" autocomplete="off" />
+          <input id="quick-days" type="number" min="1" value="1" autocomplete="off" />
         </div>
         <div class="quick-tasks-actions">
           <button type="button" id="btn-quick-schedule" data-tip="Schedules a regular session in that datacenter for that many days, starting now.">Schedule</button>
@@ -3386,7 +3386,7 @@
           <div>
             <label for="extend-days">Extend By</label>
             <div class="dt-time-row">
-              <input id="extend-days" type="number" min="0" max="30" step="1" value="1" autocomplete="off" aria-label="Extend days" />
+              <input id="extend-days" type="number" min="0" step="1" value="1" autocomplete="off" aria-label="Extend days" />
               <span>days</span>
               <input id="extend-hours" type="number" min="0" max="23" step="1" value="0" autocomplete="off" aria-label="Extend hours" />
               <span>hours</span>
@@ -8518,8 +8518,8 @@
       );
       if (entered === null) return;
       const minutes = parseExtensionAmount(entered);
-      if (minutes < 60 || minutes > 30 * 24 * 60) {
-        showError("Enter 1 hour through 30 days, such as 5d, 6h, or 5d 6h.");
+      if (minutes < 60) {
+        showError("Enter at least 1 hour, such as 5d, 6h, or 5d 6h.");
         return;
       }
       $("extend-days").value = String(Math.floor(minutes / (24 * 60)));
@@ -12139,8 +12139,8 @@
         showError("Enter a numeric demo ID or session ID.", { scrollTo: "#quick-id" });
         return null;
       }
-      if (!Number.isFinite(days) || days < 1 || days > 30) {
-        showError("Enter a number of days from 1 to 30.", { scrollTo: "#quick-days" });
+      if (!Number.isFinite(days) || days < 1) {
+        showError("Enter at least 1 day.", { scrollTo: "#quick-days" });
         return null;
       }
       return { site, id, days };
@@ -15014,8 +15014,8 @@
       );
       if (entered === null) return;
       const minutes = parseExtensionAmount(entered);
-      if (minutes < 60 || minutes > 30 * 24 * 60) {
-        showError("Enter 1 hour through 30 days, such as 5d, 6h, or 5d 6h.");
+      if (minutes < 60) {
+        showError("Enter at least 1 hour, such as 5d, 6h, or 5d 6h.");
         return;
       }
       const data = await api("/api/sessions/extend", {

@@ -1219,20 +1219,20 @@ class LocalResetPayload(BaseModel):
 class ExtendPayload(TokenPayload):
     sessions: list[SessionRef] = Field(default_factory=list)
     stop_at: str = ""
-    extra_minutes: int = Field(default=0, ge=0, le=60 * 24 * 30)
+    extra_minutes: int = Field(default=0, ge=0)
 
 
 class QuickSchedulePayload(TokenPayload):
     site: str
     demo_id: str
-    days: int = Field(default=1, ge=1, le=30)
+    days: int = Field(default=1, ge=1)
     content_export: bool = False
 
 
 class QuickExtendPayload(TokenPayload):
     site: str
     session_id: str
-    days: int = Field(default=1, ge=1, le=30)
+    days: int = Field(default=1, ge=1)
 
 
 class AttachSession(BaseModel):
@@ -9372,8 +9372,8 @@ def api_session_extend(body: SessionExtendPayload) -> dict[str, Any]:
             raise HTTPException(400, result.get("message") or "Extend failed.")
         return {"ok": True, "applied": True, "offer": False, **result}
     extra = int(body.extra_minutes or 0)
-    if extra < 60 or extra > 30 * 24 * 60:
-        raise HTTPException(400, "Enter 1 hour through 30 days, such as 5d, 6h, or 5d 6h.")
+    if extra < 60:
+        raise HTTPException(400, "Enter at least 1 hour, such as 5d, 6h, or 5d 6h.")
     stamp, error = resolve_extended_stop_by_minutes(
         current_stop=current_stop,
         extra_minutes=extra,

@@ -1573,6 +1573,13 @@ def test_quick_tasks_on_schedule() -> None:
         "an attached session keeps its current end so quick extend can add days",
         "_session_schedule_fields(details)" in card,
     )
+    payloads = source[source.index("class QuickSchedulePayload") : source.index("class AttachSession")]
+    check(
+        "quick schedule and extend are not capped at 30 days",
+        "le=30" not in payloads
+        and 'id="quick-days" type="number" min="1" value="1"' in INDEX
+        and "days > 30" not in INDEX,
+    )
 
 
 def test_task_groups_collapse() -> None:
@@ -2080,6 +2087,8 @@ def test_extend_offers_the_farthest_bookable_stop() -> None:
     requested_s = _dcloud_timestamp(requested)
     five, err = resolve_extended_stop_by_minutes(current_stop=current_s, extra_minutes=5 * 24 * 60)
     check("five days is one extend", err is None and parse_schedule_datetime(five) == current + timedelta(days=5))
+    sixty, sixty_err = resolve_extended_stop_by_minutes(current_stop=current_s, extra_minutes=60 * 24 * 60)
+    check("sixty days is one extend", sixty_err is None and parse_schedule_datetime(sixty) == current + timedelta(days=60))
 
     calls: list[str] = []
 
@@ -2153,6 +2162,12 @@ def test_extend_offers_the_farthest_bookable_stop() -> None:
     )
 
     check("extend by days is on the page", 'id="extend-days"' in INDEX and 'id="extend-hours"' in INDEX)
+    check(
+        "extend is not capped at 30 days",
+        "minutes > 30 * 24 * 60" not in INDEX
+        and "Enter 1 hour through 30 days" not in INDEX
+        and 'id="extend-days" type="number" min="0" step="1"' in INDEX,
+    )
     check("the page probes before applying a shorter extend", "/api/jobs/${jobId}/probe-extend" in INDEX)
     check("the page asks before taking the farthest time", "Extend to that time?" in INDEX)
     check("card Extend opens an amount prompt", "extendCardSession(extendBtn)" in INDEX)

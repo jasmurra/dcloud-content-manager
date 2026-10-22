@@ -509,7 +509,10 @@ def resolve_schedule_window(
     start = parse_schedule_datetime(start_at) or datetime.now(timezone.utc)
     stop = parse_schedule_datetime(stop_at)
     if stop is None:
-        stop = start + timedelta(days=days)
+        try:
+            stop = start + timedelta(days=days)
+        except OverflowError:
+            return "That duration is longer than a date dCloud can store."
     if stop <= start:
         return "Stop time must be after start time."
     return start, stop
@@ -3876,7 +3879,10 @@ def resolve_extended_stop(
     stop = parse_schedule_datetime(current_stop)
     if stop is None:
         return "", "Could not read the current session end time."
-    new_stop = stop + timedelta(days=days)
+    try:
+        new_stop = stop + timedelta(days=days)
+    except OverflowError:
+        return "", "That extension is longer than a date dCloud can store."
     start = parse_schedule_datetime(session_start)
     if start is not None and new_stop <= start:
         return "", "Extended stop must be after session start."
@@ -3895,7 +3901,10 @@ def resolve_extended_stop_by_minutes(
     stop = parse_schedule_datetime(current_stop)
     if stop is None:
         return "", "Could not read the current session end time."
-    new_stop = stop + timedelta(minutes=extra)
+    try:
+        new_stop = stop + timedelta(minutes=extra)
+    except OverflowError:
+        return "", "That extension is longer than a date dCloud can store."
     start = parse_schedule_datetime(session_start)
     if start is not None and new_stop <= start:
         return "", "Extended stop must be after session start."

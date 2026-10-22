@@ -1,3 +1,7 @@
+## 2.1.1 — 2026-10-22
+
+- **Extend and schedule are not capped at 30 days.** A longer request goes through when dCloud has the resources
+
 ## 2.1.0 — 2026-10-21
 
 - **Expo is a left-nav page after Hub.** It uses the same dCloud login. The item only appears when that login can open Expo
