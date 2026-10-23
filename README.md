@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.1.2** | Session Info on Quick tasks for a session ID or a single running demo |
 | **2.1.1** | Extend and schedule are no longer capped at 30 days |
 | **2.1.0** | Expo page after Hub, with spaced resets and a manual refresh; a CAI error links to its log |
 | **2.0.33** | Unchecking a saved content row removes that demo from CAI and CAMGR |

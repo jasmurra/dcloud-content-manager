@@ -1,3 +1,7 @@
+## 2.1.2 — 2026-10-23
+
+- **Session Info is on Quick tasks.** Enter a datacenter and a session ID, or a demo ID when only one session is running. Days are not used
+
 ## 2.1.1 — 2026-10-22
 
 - **Extend and schedule are not capped at 30 days.** A longer request goes through when dCloud has the resources

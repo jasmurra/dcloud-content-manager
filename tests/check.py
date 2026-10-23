@@ -1543,8 +1543,10 @@ def test_quick_tasks_on_schedule() -> None:
         and ">Schedule</button>" in INDEX[tasks:panel]
         and ">Extend</button>" in INDEX[tasks:panel]
         and ">Schedule (Export)</button>" in INDEX[tasks:panel]
+        and ">Session Info</button>" in INDEX[tasks:panel]
         and "function quickSchedule(" in INDEX
         and "function quickExtend(" in INDEX
+        and "function quickSessionInfo(" in INDEX
         and 'api("/api/quick/schedule"' in INDEX
         and 'api("/api/quick/extend"' in INDEX
         and "content_export: exported" in INDEX
@@ -1572,6 +1574,13 @@ def test_quick_tasks_on_schedule() -> None:
     check(
         "an attached session keeps its current end so quick extend can add days",
         "_session_schedule_fields(details)" in card,
+    )
+    check(
+        "quick session info opens the same details and does not use days",
+        'id="btn-quick-info"' in INDEX
+        and "await showSessionInfo(" in INDEX[INDEX.index("async function quickSessionInfo(") : INDEX.index("async function startJob(")]
+        and "/api/sessions/resolve-monitor" in INDEX[INDEX.index("async function quickSessionInfo(") : INDEX.index("async function startJob(")]
+        and "quickTaskInput(" not in INDEX[INDEX.index("async function quickSessionInfo(") : INDEX.index("async function startJob(")],
     )
     payloads = source[source.index("class QuickSchedulePayload") : source.index("class AttachSession")]
     check(
