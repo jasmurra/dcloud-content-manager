@@ -1541,7 +1541,7 @@ def test_quick_tasks_on_schedule() -> None:
         'id="quick-site"' in INDEX
         and 'id="quick-id"' in INDEX
         and 'id="quick-days"' in INDEX
-        and ">Schedule</button>" in INDEX[tasks:panel]
+        and 'class="secondary" id="btn-quick-schedule"' in INDEX
         and ">Extend</button>" in INDEX[tasks:panel]
         and ">Schedule (Export)</button>" in INDEX[tasks:panel]
         and ">Session Info</button>" in INDEX[tasks:panel]
@@ -3934,12 +3934,18 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
     )
     check(
         "card Actions is on the collapsed row, not buried in the expanded body",
-        'summary data-tip="${monitor ? "Session info, share, extend, end, or move this card." : "Save, extend, reset, end, or move this card."}">Actions</summary>' in page
+        'summary data-tip="${monitor ? "Session info, logs, share, extend, end, or move this card." : "Save, extend, reset, logs, end, or move this card."}">Actions</summary>' in page
         and "${openSession}\n                ${actionsMenu}" in page
         and "card-actions-row" not in page
         and "Card actions</summary>" not in page
         and "summary .card-actions-menu" in page
         and 'if (menu.classList.contains("card-actions-menu")) positionSearchActionsMenu(menu);' in page,
+    )
+    check(
+        "active workspace and monitoring cards include Logs",
+        'class="btn-card-logs"' in page
+        and 'dc.sessionId && dc.phase === "ready"' in page
+        and "showSessionLog({" in page[page.index('closest(".btn-card-logs")') : page.index('closest(".btn-card-logs")') + 500],
     )
     check(
         "session cards can be expanded or collapsed together",

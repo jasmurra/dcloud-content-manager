@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.1.5** | Logs on active Workspace and Monitoring cards; Quick tasks buttons are all the clear style |
 | **2.1.4** | WebRDP tab title order is in Settings; default is VMware name, session ID, datacenter |
 | **2.1.3** | WebRDP tabs can show the VMware name, datacenter, and session ID |
 | **2.1.2** | Session Info on Quick tasks for a session ID or a single running demo |

@@ -2952,7 +2952,7 @@
           <input id="quick-days" type="number" min="1" value="1" autocomplete="off" />
         </div>
         <div class="quick-tasks-actions">
-          <button type="button" id="btn-quick-schedule" data-tip="Schedules a regular session in that datacenter for that many days, starting now.">Schedule</button>
+          <button type="button" class="secondary" id="btn-quick-schedule" data-tip="Schedules a regular session in that datacenter for that many days, starting now.">Schedule</button>
           <button type="button" class="secondary" id="btn-quick-extend" data-tip="Extends that session by that many days from its current end.">Extend</button>
           <button type="button" class="secondary" id="btn-quick-export" data-tip="Schedules an exported session with VMs powered off, starting now.">Schedule (Export)</button>
           <button type="button" class="secondary" id="btn-quick-info" data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents. Days are not used.">Session Info</button>
@@ -8990,7 +8990,7 @@
         : "";
       const actionsMenu = `
                 <details class="vm-menu card-actions-menu">
-                  <summary data-tip="${monitor ? "Session info, share, extend, end, or move this card." : "Save, extend, reset, end, or move this card."}">Actions</summary>
+                  <summary data-tip="${monitor ? "Session info, logs, share, extend, end, or move this card." : "Save, extend, reset, logs, end, or move this card."}">Actions</summary>
                   <div class="vm-menu-list">
                     ${dc.sessionId ? `<button type="button" class="btn-card-info" ${cardData} data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents.">Session Info</button>` : ""}
                     ${shareBtn}
@@ -8999,6 +8999,7 @@
                     ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                     <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
                     ${showReset ? `<button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>` : ""}
+                    ${dc.sessionId && dc.phase === "ready" ? `<button type="button" class="btn-card-logs" ${cardData} data-tip="The dCloud session log.">Logs</button>` : ""}
                     ${canEnd ? `<button type="button" class="btn-dc-end" ${cardData} data-tip="${endTip}">${endLabel}</button>` : ""}
                   </div>
                 </details>`;
@@ -17229,6 +17230,16 @@
           label: card?.querySelector(".card-summary-name, .card-name-btn, .card-name")?.textContent?.trim() || "",
         });
         closeVmMenuFrom(infoBtn);
+        return;
+      }
+      const logsBtn = ev.target.closest(".btn-card-logs");
+      if (logsBtn) {
+        ev.preventDefault();
+        showSessionLog({
+          site: logsBtn.dataset.site,
+          id: logsBtn.dataset.session,
+        });
+        closeVmMenuFrom(logsBtn);
         return;
       }
       const menuAction = ev.target.closest(".vm-menu-list button");

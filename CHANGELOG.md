@@ -1,3 +1,8 @@
+## 2.1.5 — 2026-10-26
+
+- **Logs is on active Workspace and Monitoring cards.** The same dCloud session log that Search already opens
+- **Quick tasks buttons are all the clear style.** Schedule matches Extend, Schedule (Export), and Session Info
+
 ## 2.1.4 — 2026-10-26
 
 - **WebRDP tab title order is in Settings.** The default is the VMware name, session ID, then datacenter
