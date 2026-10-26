@@ -1,3 +1,7 @@
+## 2.1.4 — 2026-10-26
+
+- **WebRDP tab title order is in Settings.** The default is the VMware name, session ID, then datacenter
+
 ## 2.1.3 — 2026-10-26
 
 - **A WebRDP tab can show the VMware name, datacenter, and session ID.** The helper is in chrome-extension/webrdp-tab-title. Each person loads that folder in Chrome once

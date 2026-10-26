@@ -2699,7 +2699,12 @@
         <h3>Side Menu Order</h3>
         <p class="hint">Short names in the left nav. Page titles stay the same. Drag items or use the arrows.</p>
         <div id="nav-order-list" class="dc-order-list" aria-label="Side Menu Order"></div>
+        <h3>WebRDP Tab Title</h3>
+        <p class="hint">The browser tab uses the short VMware name, session ID, and datacenter. Drag or use the arrows. The long display name stays on the button.</p>
+        <p class="hint" id="webrdp-tab-preview" aria-live="polite"></p>
+        <div id="webrdp-tab-order" class="dc-order-list" aria-label="WebRDP tab title order"></div>
         <div class="actions">
+          <button type="button" class="secondary" id="btn-reset-webrdp-tab">Reset Tab Title</button>
           <button type="button" class="secondary" id="btn-reset-nav-order">Reset Menu Order</button>
           <button type="button" id="btn-close-settings">Done</button>
         </div>
@@ -13128,13 +13133,93 @@
     }
 
     function announceWebrdpTab(btn, url) {
-      const name = String(btn.dataset.vm || btn.dataset.name || "VM").replace(/\s+/g, " ").trim().slice(0, 80) || "VM";
+      const title = webrdpTabTitle(btn);
+      const name = String(btn.dataset.vm || btn.dataset.name || "").trim();
       const site = String(btn.dataset.site || "").trim().toLowerCase();
       const sessionId = String(btn.dataset.session || "").trim();
-      const title = [name, site, sessionId].filter(Boolean).join(" ");
       document.dispatchEvent(new CustomEvent("dcm-webrdp-tab", {
         detail: { title, url, name, site, sessionId },
       }));
+    }
+
+    const WEBRDP_TAB_PARTS = [
+      { id: "vm", label: "VMware name", sample: "wkst1" },
+      { id: "session", label: "Session ID", sample: "1367629" },
+      { id: "site", label: "Datacenter", sample: "rtp" },
+    ];
+    const DEFAULT_WEBRDP_TAB_ORDER = ["vm", "session", "site"];
+
+    function readWebrdpTabOrder() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        const order = Array.isArray(saved.webrdpTabOrder) ? saved.webrdpTabOrder : [];
+        const valid = order.filter((id, index) =>
+          WEBRDP_TAB_PARTS.some((part) => part.id === id) && order.indexOf(id) === index
+        );
+        for (const part of WEBRDP_TAB_PARTS) {
+          if (!valid.includes(part.id)) valid.push(part.id);
+        }
+        return valid;
+      } catch {
+        return [...DEFAULT_WEBRDP_TAB_ORDER];
+      }
+    }
+
+    function webrdpTabTitle(btn) {
+      const values = {
+        vm: String(btn.dataset.vm || btn.dataset.name || "VM").replace(/\s+/g, " ").trim().slice(0, 80) || "VM",
+        site: String(btn.dataset.site || "").trim().toLowerCase(),
+        session: String(btn.dataset.session || "").trim(),
+      };
+      return readWebrdpTabOrder().map((id) => values[id]).filter(Boolean).join(" ");
+    }
+
+    function webrdpTabPreview() {
+      const samples = Object.fromEntries(WEBRDP_TAB_PARTS.map((part) => [part.id, part.sample]));
+      return readWebrdpTabOrder().map((id) => samples[id]).filter(Boolean).join(" ");
+    }
+
+    function persistWebrdpTabOrder(order) {
+      const ids = WEBRDP_TAB_PARTS.map((part) => part.id);
+      const next = (Array.isArray(order) ? order : []).filter(
+        (id, index, rows) => ids.includes(id) && rows.indexOf(id) === index,
+      );
+      for (const id of ids) {
+        if (!next.includes(id)) next.push(id);
+      }
+      let settings = {};
+      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
+      settings.webrdpTabOrder = next;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+    }
+
+    function renderWebrdpTabOrderSettings() {
+      const root = $("webrdp-tab-order");
+      const preview = $("webrdp-tab-preview");
+      if (preview) preview.textContent = webrdpTabPreview();
+      if (!root) return;
+      const order = readWebrdpTabOrder();
+      root.innerHTML = order.map((id, index) => {
+        const label = WEBRDP_TAB_PARTS.find((part) => part.id === id)?.label || id;
+        return `
+          <div class="dc-order-item" data-part="${id}" draggable="true">
+            <span class="dc-order-grip" aria-hidden="true" title="Drag to move">⠿</span>
+            <strong>${label}</strong>
+            <button type="button" class="secondary dc-order-up" aria-label="Move ${label} up" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="secondary dc-order-down" aria-label="Move ${label} down" ${index === order.length - 1 ? "disabled" : ""}>↓</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function moveWebrdpTabPart(id, direction) {
+      const order = readWebrdpTabOrder();
+      const index = order.indexOf(id);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= order.length) return;
+      [order[index], order[next]] = [order[next], order[index]];
+      persistWebrdpTabOrder(order);
+      renderWebrdpTabOrderSettings();
     }
 
     async function runVmAction(btn, action, label) {
@@ -13844,6 +13929,7 @@
 
     let draggingDatacenter = "";
     let draggingNavItem = "";
+    let draggingWebrdpPart = "";
 
     function renderDatacenterOrderSettings() {
       const root = $("dc-order-list");
@@ -13871,6 +13957,7 @@
     function openSettings() {
       renderDatacenterOrderSettings();
       renderNavOrderSettings();
+      renderWebrdpTabOrderSettings();
       $("settings-modal")?.classList.remove("hidden");
       $("settings-title")?.focus();
     }
@@ -13930,6 +14017,52 @@
       $("btn-reset-dc-order")?.addEventListener("click", () => {
         persistDatacenterOrder([...DEFAULT_SITE_ORDER]);
         renderDatacenterOrderSettings();
+      });
+      const tabRoot = $("webrdp-tab-order");
+      tabRoot?.addEventListener("click", (ev) => {
+        const button = ev.target.closest("button");
+        const row = ev.target.closest(".dc-order-item");
+        if (!button || !row) return;
+        moveWebrdpTabPart(row.dataset.part, button.classList.contains("dc-order-up") ? -1 : 1);
+      });
+      tabRoot?.addEventListener("dragstart", (ev) => {
+        const row = ev.target.closest(".dc-order-item");
+        if (!row) return;
+        draggingWebrdpPart = row.dataset.part || "";
+        row.classList.add("dragging");
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", draggingWebrdpPart);
+      });
+      tabRoot?.addEventListener("dragover", (ev) => {
+        const row = ev.target.closest(".dc-order-item");
+        if (!row || !draggingWebrdpPart || row.dataset.part === draggingWebrdpPart) return;
+        ev.preventDefault();
+        tabRoot.querySelectorAll(".drop-before, .drop-after").forEach((el) =>
+          el.classList.remove("drop-before", "drop-after")
+        );
+        const rect = row.getBoundingClientRect();
+        row.classList.add(ev.clientY > rect.top + rect.height / 2 ? "drop-after" : "drop-before");
+      });
+      tabRoot?.addEventListener("drop", (ev) => {
+        const target = ev.target.closest(".dc-order-item");
+        if (!target || !draggingWebrdpPart || target.dataset.part === draggingWebrdpPart) return;
+        ev.preventDefault();
+        const order = readWebrdpTabOrder().filter((id) => id !== draggingWebrdpPart);
+        const index = order.indexOf(target.dataset.part);
+        order.splice(target.classList.contains("drop-after") ? index + 1 : index, 0, draggingWebrdpPart);
+        persistWebrdpTabOrder(order);
+        draggingWebrdpPart = "";
+        renderWebrdpTabOrderSettings();
+      });
+      tabRoot?.addEventListener("dragend", () => {
+        draggingWebrdpPart = "";
+        tabRoot.querySelectorAll(".dragging, .drop-before, .drop-after").forEach((el) =>
+          el.classList.remove("dragging", "drop-before", "drop-after")
+        );
+      });
+      $("btn-reset-webrdp-tab")?.addEventListener("click", () => {
+        persistWebrdpTabOrder([...DEFAULT_WEBRDP_TAB_ORDER]);
+        renderWebrdpTabOrderSettings();
       });
       const navRoot = $("nav-order-list");
       navRoot?.addEventListener("click", (ev) => {

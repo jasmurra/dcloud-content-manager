@@ -4204,10 +4204,12 @@ def test_webrdp_is_on_demand() -> None:
         "announceWebrdpTab(btn, url)" in opener
         and opener.index("announceWebrdpTab(btn, url)") < opener.index("window.open")
         and 'new CustomEvent("dcm-webrdp-tab"' in announce
-        and "btn.dataset.vm || btn.dataset.name" in announce
-        and '[name, site, sessionId].filter(Boolean).join(" ")' in announce
+        and "btn.dataset.vm || btn.dataset.name" in page
+        and "DEFAULT_WEBRDP_TAB_ORDER = [\"vm\", \"session\", \"site\"]" in page
+        and 'id="webrdp-tab-order"' in page
         and 'data-vm="${escapeHtml(vmShortName(vm))}"' in page
-        and 'data-vm="${escapeHtml(short)}"' in page,
+        and 'data-vm="${escapeHtml(short)}"' in page
+        and '[name, site, sessionId].filter(Boolean).join(" ")' not in page[page.index("function announceWebrdpTab(") : page.index("async function runVmAction(")]
     )
     check(
         "the tab helper only accepts a title from this local app",
