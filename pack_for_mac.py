@@ -64,6 +64,7 @@ FILES = (
 # Harbor / Atmosphere copies from npm. Coworkers cannot hit Cisco Artifactory.
 TREES = (
     ("static/vendor", "static/vendor"),
+    ("chrome-extension/webrdp-tab-title", "chrome-extension/webrdp-tab-title"),
 )
 HARBOR_REQUIRED = "static/vendor/harbor-elements/harbor-elements.esm.js"
 AUTH_DIR = ROOT / "browser_auth"

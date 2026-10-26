@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "dCloud Content Manager tab titles",
+  "version": "1.0.0",
+  "description": "Renames a WebRDP tab opened from dCloud Content Manager with the VM name, datacenter, and session ID.",
+  "permissions": ["scripting", "webNavigation", "tabs", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*", "http://localhost/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

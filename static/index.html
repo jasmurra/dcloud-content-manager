@@ -7936,7 +7936,7 @@
       const jumps = ready.map((vm) => {
         const label = vmDisplayName(vm);
         const favorite = favoriteNames.has(label.trim().toLowerCase());
-        const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+        const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-vm="${escapeHtml(vmShortName(vm))}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
         const tip = favorite
           ? `Favorite. Opens dCloud Remote Desktop for ${label}.`
           : `Opens dCloud Remote Desktop for ${label}.`;
@@ -8060,7 +8060,7 @@
       const short = vmShortName(vm);
       // Long display names get clipped by CSS — hover shows the full name plus the VM name.
       const tip = short && short !== label ? `${label} · ${short}` : label;
-      const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+      const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-vm="${escapeHtml(short)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
       if (!rdpOff && vm.webRdp) {
         links.push(`<button type="button" class="btn-vm-webrdp" ${vmData} data-tip="Opens dCloud Remote Desktop for this VM.">WebRDP</button>`);
       } else if (!rdpOff && vm.rdpUrl) {
@@ -13123,7 +13123,18 @@
       // the gateway cookie, then redirects. The gateway host itself 404s
       // when that cookie was never set.
       const url = `https://dcloud2-${site}.cisco.com/sessions/${encodeURIComponent(sessionId)}/servers/${encodeURIComponent(uid)}/rdp`;
+      announceWebrdpTab(btn, url);
       window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    function announceWebrdpTab(btn, url) {
+      const name = String(btn.dataset.vm || btn.dataset.name || "VM").replace(/\s+/g, " ").trim().slice(0, 80) || "VM";
+      const site = String(btn.dataset.site || "").trim().toLowerCase();
+      const sessionId = String(btn.dataset.session || "").trim();
+      const title = [name, site, sessionId].filter(Boolean).join(" ");
+      document.dispatchEvent(new CustomEvent("dcm-webrdp-tab", {
+        detail: { title, url, name, site, sessionId },
+      }));
     }
 
     async function runVmAction(btn, action, label) {

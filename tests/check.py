@@ -295,7 +295,8 @@ def test_zip_contents() -> None:
     check(
         "Harbor UI is packed for coworker Macs",
         (ROOT / pack_for_mac.HARBOR_REQUIRED).is_file()
-        and pack_for_mac.TREES == (("static/vendor", "static/vendor"),)
+        and ("static/vendor", "static/vendor") in pack_for_mac.TREES
+        and ("chrome-extension/webrdp-tab-title", "chrome-extension/webrdp-tab-title") in pack_for_mac.TREES
         and "static/atm.css" in pack_for_mac.FILES,
     )
     check("updater skips node_modules", "node_modules" in update_from_github.SKIP_DIR_NAMES)
@@ -4192,6 +4193,29 @@ def test_webrdp_is_on_demand() -> None:
         and "http://dcloud-" not in page
         and "@app.post(\"/api/webrdp\")" in source
         and "fetch_webrdp_credentials(token, site, session_id, uid)" in webrdp_api,
+    )
+    opener = page[page.index("function openWebrdp(") : page.index("function announceWebrdpTab(")]
+    announce = page[page.index("function announceWebrdpTab(") : page.index("async function runVmAction(")]
+    extension = ROOT / "chrome-extension" / "webrdp-tab-title"
+    manifest = (extension / "manifest.json").read_text(encoding="utf-8")
+    background = (extension / "background.js").read_text(encoding="utf-8")
+    check(
+        "WebRDP asks the tab helper to name the opened tab before leaving this page",
+        "announceWebrdpTab(btn, url)" in opener
+        and opener.index("announceWebrdpTab(btn, url)") < opener.index("window.open")
+        and 'new CustomEvent("dcm-webrdp-tab"' in announce
+        and "btn.dataset.vm || btn.dataset.name" in announce
+        and '[name, site, sessionId].filter(Boolean).join(" ")' in announce
+        and 'data-vm="${escapeHtml(vmShortName(vm))}"' in page
+        and 'data-vm="${escapeHtml(short)}"' in page,
+    )
+    check(
+        "the tab helper only accepts a title from this local app",
+        '"dcm-webrdp-tab"' in (extension / "bridge.js").read_text(encoding="utf-8")
+        and "127.0.0.1" in background
+        and "holdTabTitle" in background
+        and '"service_worker": "background.js"' in manifest
+        and "dCloud Content Manager tab titles" in manifest,
     )
 
 

@@ -1,3 +1,7 @@
+## 2.1.3 — 2026-10-26
+
+- **A WebRDP tab can show the VMware name, datacenter, and session ID.** The helper is in chrome-extension/webrdp-tab-title. Each person loads that folder in Chrome once
+
 ## 2.1.2 — 2026-10-23
 
 - **Session Info is on Quick tasks.** Enter a datacenter and a session ID, or a demo ID when only one session is running. Days are not used
