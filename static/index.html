@@ -1394,6 +1394,46 @@
       user-select: none;
     }
     .dc-order-item button { padding: 0.25rem 0.55rem; }
+    .webrdp-tab-part {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-width: 0;
+    }
+    .webrdp-tab-part input { margin: 0; }
+    .webrdp-tab-example { margin: 0.35rem 0 0.85rem; }
+    .webrdp-tab-example-label {
+      display: block;
+      margin-bottom: 0.3rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .webrdp-tab-example-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      width: fit-content;
+      max-width: 100%;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 10px 10px 0 0;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    html:not(.hbr-mode-dark) .webrdp-tab-example-bar { background: rgba(0, 0, 0, 0.04); }
+    .webrdp-tab-example-dots { display: flex; gap: 0.28rem; flex: none; }
+    .webrdp-tab-example-dot {
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.28);
+    }
+    html:not(.hbr-mode-dark) .webrdp-tab-example-dot { background: rgba(0, 0, 0, 0.28); }
+    #webrdp-tab-preview {
+      min-width: 0;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    #webrdp-chrome-help { color: var(--accent); }
     .details-modal-body {
       display: grid;
       gap: 0.8rem;
@@ -2700,9 +2740,19 @@
         <p class="hint">Short names in the left nav. Page titles stay the same. Drag items or use the arrows.</p>
         <div id="nav-order-list" class="dc-order-list" aria-label="Side Menu Order"></div>
         <h3>WebRDP Tab Title</h3>
-        <p class="hint">The browser tab uses the short VMware name, session ID, and datacenter. Drag or use the arrows. The long display name stays on the button.</p>
-        <p class="hint" id="webrdp-tab-preview" aria-live="polite"></p>
+        <p class="hint">Check the pieces to show in the browser tab. Drag or use the arrows. Datacenter is uppercase. Demo name uses the first 10 characters. Spaces stay between the pieces unless you remove them. The long VM display name stays on the button. <a href="/static/chrome-webrdp.html" id="webrdp-chrome-help">How to configure Chrome</a></p>
+        <div class="webrdp-tab-example" aria-live="polite">
+          <span class="webrdp-tab-example-label">Example</span>
+          <div class="webrdp-tab-example-bar">
+            <span class="webrdp-tab-example-dots" aria-hidden="true"><span class="webrdp-tab-example-dot"></span><span class="webrdp-tab-example-dot"></span><span class="webrdp-tab-example-dot"></span></span>
+            <span id="webrdp-tab-preview"></span>
+          </div>
+        </div>
         <div id="webrdp-tab-order" class="dc-order-list" aria-label="WebRDP tab title order"></div>
+        <label class="check-line" for="webrdp-tab-tight">
+          <input type="checkbox" id="webrdp-tab-tight" />
+          <span>Remove spaces between the pieces</span>
+        </label>
         <div class="actions">
           <button type="button" class="secondary" id="btn-reset-webrdp-tab">Reset Tab Title</button>
           <button type="button" class="secondary" id="btn-reset-nav-order">Reset Menu Order</button>
@@ -7941,7 +7991,7 @@
       const jumps = ready.map((vm) => {
         const label = vmDisplayName(vm);
         const favorite = favoriteNames.has(label.trim().toLowerCase());
-        const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-vm="${escapeHtml(vmShortName(vm))}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+        const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-demo="${escapeHtml(dc.name || "")}" data-name="${escapeHtml(label)}" data-vm="${escapeHtml(vmShortName(vm))}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
         const tip = favorite
           ? `Favorite. Opens dCloud Remote Desktop for ${label}.`
           : `Opens dCloud Remote Desktop for ${label}.`;
@@ -8065,7 +8115,7 @@
       const short = vmShortName(vm);
       // Long display names get clipped by CSS — hover shows the full name plus the VM name.
       const tip = short && short !== label ? `${label} · ${short}` : label;
-      const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-name="${escapeHtml(label)}" data-vm="${escapeHtml(short)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
+      const vmData = `data-site="${dc.site}" data-session="${escapeHtml(dc.sessionId || "")}" data-demo="${escapeHtml(dc.name || "")}" data-name="${escapeHtml(label)}" data-vm="${escapeHtml(short)}" data-mor="${escapeHtml(vm.mor || "")}" data-uid="${escapeHtml(vm.uid || "")}"`;
       if (!rdpOff && vm.webRdp) {
         links.push(`<button type="button" class="btn-vm-webrdp" ${vmData} data-tip="Opens dCloud Remote Desktop for this VM.">WebRDP</button>`);
       } else if (!rdpOff && vm.rdpUrl) {
@@ -13146,38 +13196,79 @@
     const WEBRDP_TAB_PARTS = [
       { id: "vm", label: "VMware name", sample: "wkst1" },
       { id: "session", label: "Session ID", sample: "1367629" },
-      { id: "site", label: "Datacenter", sample: "rtp" },
+      { id: "site", label: "Datacenter", sample: "SJC" },
+      { id: "demo", label: "Demo name", sample: "Discover Cisco Meeting Server" },
     ];
-    const DEFAULT_WEBRDP_TAB_ORDER = ["vm", "session", "site"];
+    const DEFAULT_WEBRDP_TAB_ORDER = ["vm", "session", "site", "demo"];
+    const DEFAULT_WEBRDP_TAB_OFF = ["demo"];
+    const WEBRDP_DEMO_TITLE_CHARS = 10;
 
-    function readWebrdpTabOrder() {
+    function webrdpDemoPiece(value) {
+      return String(value || "").replace(/\s+/g, " ").trim().slice(0, WEBRDP_DEMO_TITLE_CHARS);
+    }
+
+    function readWebrdpTabSettings() {
       try {
         const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-        const order = Array.isArray(saved.webrdpTabOrder) ? saved.webrdpTabOrder : [];
-        const valid = order.filter((id, index) =>
-          WEBRDP_TAB_PARTS.some((part) => part.id === id) && order.indexOf(id) === index
-        );
-        for (const part of WEBRDP_TAB_PARTS) {
-          if (!valid.includes(part.id)) valid.push(part.id);
-        }
-        return valid;
+        return saved && typeof saved === "object" ? saved : {};
       } catch {
-        return [...DEFAULT_WEBRDP_TAB_ORDER];
+        return {};
       }
+    }
+
+    function writeWebrdpTabSettings(patch) {
+      const settings = readWebrdpTabSettings();
+      Object.assign(settings, patch);
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+    }
+
+    function readWebrdpTabOrder() {
+      const saved = readWebrdpTabSettings();
+      const order = Array.isArray(saved.webrdpTabOrder) ? saved.webrdpTabOrder : [];
+      const valid = order.filter((id, index) =>
+        WEBRDP_TAB_PARTS.some((part) => part.id === id) && order.indexOf(id) === index
+      );
+      for (const part of WEBRDP_TAB_PARTS) {
+        if (!valid.includes(part.id)) valid.push(part.id);
+      }
+      return valid.length ? valid : [...DEFAULT_WEBRDP_TAB_ORDER];
+    }
+
+    function readWebrdpTabOff() {
+      const saved = readWebrdpTabSettings();
+      if (!Array.isArray(saved.webrdpTabOff)) return [...DEFAULT_WEBRDP_TAB_OFF];
+      const ids = WEBRDP_TAB_PARTS.map((part) => part.id);
+      return saved.webrdpTabOff.filter((id, index, rows) => ids.includes(id) && rows.indexOf(id) === index);
+    }
+
+    function webrdpTabJoin() {
+      return readWebrdpTabSettings().webrdpTabTight === true ? "" : " ";
+    }
+
+    function webrdpTabFromValues(values) {
+      const ready = { ...values, demo: webrdpDemoPiece(values.demo) };
+      const off = new Set(readWebrdpTabOff());
+      const parts = readWebrdpTabOrder()
+        .filter((id) => !off.has(id))
+        .map((id) => ready[id])
+        .filter(Boolean);
+      if (parts.length) return parts.join(webrdpTabJoin());
+      return values.vm || "VM";
     }
 
     function webrdpTabTitle(btn) {
       const values = {
         vm: String(btn.dataset.vm || btn.dataset.name || "VM").replace(/\s+/g, " ").trim().slice(0, 80) || "VM",
-        site: String(btn.dataset.site || "").trim().toLowerCase(),
+        site: String(btn.dataset.site || "").trim().toUpperCase(),
         session: String(btn.dataset.session || "").trim(),
+        demo: btn.dataset.demo || "",
       };
-      return readWebrdpTabOrder().map((id) => values[id]).filter(Boolean).join(" ");
+      return webrdpTabFromValues(values);
     }
 
     function webrdpTabPreview() {
       const samples = Object.fromEntries(WEBRDP_TAB_PARTS.map((part) => [part.id, part.sample]));
-      return readWebrdpTabOrder().map((id) => samples[id]).filter(Boolean).join(" ");
+      return webrdpTabFromValues(samples);
     }
 
     function persistWebrdpTabOrder(order) {
@@ -13188,29 +13279,53 @@
       for (const id of ids) {
         if (!next.includes(id)) next.push(id);
       }
-      let settings = {};
-      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
-      settings.webrdpTabOrder = next;
-      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+      writeWebrdpTabSettings({ webrdpTabOrder: next });
+    }
+
+    function persistWebrdpTabOff(off) {
+      const ids = WEBRDP_TAB_PARTS.map((part) => part.id);
+      const next = (Array.isArray(off) ? off : []).filter(
+        (id, index, rows) => ids.includes(id) && rows.indexOf(id) === index,
+      );
+      writeWebrdpTabSettings({ webrdpTabOff: next });
     }
 
     function renderWebrdpTabOrderSettings() {
       const root = $("webrdp-tab-order");
       const preview = $("webrdp-tab-preview");
       if (preview) preview.textContent = webrdpTabPreview();
+      const tight = $("webrdp-tab-tight");
+      if (tight) tight.checked = readWebrdpTabSettings().webrdpTabTight === true;
       if (!root) return;
       const order = readWebrdpTabOrder();
+      const off = new Set(readWebrdpTabOff());
       root.innerHTML = order.map((id, index) => {
         const label = WEBRDP_TAB_PARTS.find((part) => part.id === id)?.label || id;
+        const checked = off.has(id) ? "" : "checked";
         return `
-          <div class="dc-order-item" data-part="${id}" draggable="true">
-            <span class="dc-order-grip" aria-hidden="true" title="Drag to move">⠿</span>
-            <strong>${label}</strong>
+          <div class="dc-order-item" data-part="${id}">
+            <span class="dc-order-grip" draggable="true" aria-hidden="true" title="Drag to move">⠿</span>
+            <label class="webrdp-tab-part">
+              <input type="checkbox" class="webrdp-tab-on" ${checked} aria-label="Show ${label}" />
+              <strong>${label}</strong>
+            </label>
             <button type="button" class="secondary dc-order-up" aria-label="Move ${label} up" ${index === 0 ? "disabled" : ""}>↑</button>
             <button type="button" class="secondary dc-order-down" aria-label="Move ${label} down" ${index === order.length - 1 ? "disabled" : ""}>↓</button>
           </div>
         `;
       }).join("");
+    }
+
+    async function openChromeWebrdpHelp() {
+      let folder = "";
+      try {
+        const data = await api("/api/webrdp-helper", { quiet: true });
+        folder = String(data.folder || "");
+      } catch {}
+      const url = folder
+        ? `/static/chrome-webrdp.html?folder=${encodeURIComponent(folder)}`
+        : "/static/chrome-webrdp.html";
+      window.open(url, "dcm-chrome-setup", "popup=yes,width=760,height=860");
     }
 
     function moveWebrdpTabPart(id, direction) {
@@ -14026,6 +14141,15 @@
         if (!button || !row) return;
         moveWebrdpTabPart(row.dataset.part, button.classList.contains("dc-order-up") ? -1 : 1);
       });
+      tabRoot?.addEventListener("change", (ev) => {
+        const box = ev.target.closest(".webrdp-tab-on");
+        const row = ev.target.closest(".dc-order-item");
+        if (!box || !row) return;
+        const off = readWebrdpTabOff().filter((id) => id !== row.dataset.part);
+        if (!box.checked) off.push(row.dataset.part);
+        persistWebrdpTabOff(off);
+        renderWebrdpTabOrderSettings();
+      });
       tabRoot?.addEventListener("dragstart", (ev) => {
         const row = ev.target.closest(".dc-order-item");
         if (!row) return;
@@ -14063,7 +14187,19 @@
       });
       $("btn-reset-webrdp-tab")?.addEventListener("click", () => {
         persistWebrdpTabOrder([...DEFAULT_WEBRDP_TAB_ORDER]);
+        persistWebrdpTabOff([...DEFAULT_WEBRDP_TAB_OFF]);
+        writeWebrdpTabSettings({ webrdpTabTight: false });
         renderWebrdpTabOrderSettings();
+      });
+      $("webrdp-tab-tight")?.addEventListener("change", (ev) => {
+        writeWebrdpTabSettings({ webrdpTabTight: Boolean(ev.target.checked) });
+        renderWebrdpTabOrderSettings();
+      });
+      $("webrdp-chrome-help")?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        openChromeWebrdpHelp().catch(() => {
+          window.open("/static/chrome-webrdp.html", "dcm-chrome-setup", "popup=yes,width=760,height=860");
+        });
       });
       const navRoot = $("nav-order-list");
       navRoot?.addEventListener("click", (ev) => {

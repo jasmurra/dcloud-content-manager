@@ -4211,7 +4211,18 @@ def test_webrdp_is_on_demand() -> None:
         and opener.index("announceWebrdpTab(btn, url)") < opener.index("window.open")
         and 'new CustomEvent("dcm-webrdp-tab"' in announce
         and "btn.dataset.vm || btn.dataset.name" in page
-        and "DEFAULT_WEBRDP_TAB_ORDER = [\"vm\", \"session\", \"site\"]" in page
+        and "DEFAULT_WEBRDP_TAB_ORDER = [\"vm\", \"session\", \"site\", \"demo\"]" in page
+        and "DEFAULT_WEBRDP_TAB_OFF = [\"demo\"]" in page
+        and "webrdpTabTight === true ? \"\" : \" \"" in page
+        and "toUpperCase()" in page[page.index("function webrdpTabTitle(") : page.index("function webrdpTabPreview(")]
+        and "WEBRDP_DEMO_TITLE_CHARS = 10" in page
+        and "webrdpDemoPiece(values.demo)" in page
+        and 'id="webrdp-chrome-help"' in page
+        and "How to configure Chrome" in page
+        and "function openChromeWebrdpHelp(" in page
+        and 'id="webrdp-tab-preview"' in page
+        and 'class="webrdp-tab-on"' in page
+        and 'data-demo="${escapeHtml(dc.name || "")}"' in page
         and 'id="webrdp-tab-order"' in page
         and 'data-vm="${escapeHtml(vmShortName(vm))}"' in page
         and 'data-vm="${escapeHtml(short)}"' in page
@@ -4224,6 +4235,18 @@ def test_webrdp_is_on_demand() -> None:
         and "holdTabTitle" in background
         and '"service_worker": "background.js"' in manifest
         and "dCloud Content Manager tab titles" in manifest,
+    )
+    helper = (ROOT / "static" / "chrome-webrdp.html").read_text(encoding="utf-8")
+    import pack_for_mac
+    endpoint = source[source.index("def api_webrdp_helper(") : source.index("def _changelog_notes(")]
+    check(
+        "Chrome setup opens from Settings and names the helper folder",
+        "Load unpacked" in helper
+        and "Developer mode" in helper
+        and "chrome://extensions" in helper
+        and "webrdp-tab-title" in helper
+        and 'chrome-extension" / "webrdp-tab-title"' in endpoint
+        and "static/chrome-webrdp.html" in pack_for_mac.FILES,
     )
 
 

@@ -1,3 +1,8 @@
+## 2.1.6 — 2026-10-27
+
+- **WebRDP tab titles are built from the pieces you check.** Demo name uses the first 10 characters, the datacenter is uppercase, and spaces can be removed. An example updates as the list changes
+- **How to configure Chrome opens the helper steps.** The window shows where to load the webrdp-tab-title folder
+
 ## 2.1.5 — 2026-10-26
 
 - **Logs is on active Workspace and Monitoring cards.** The same dCloud session log that Search already opens

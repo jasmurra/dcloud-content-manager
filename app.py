@@ -5713,6 +5713,13 @@ def api_version() -> dict[str, str]:
     return {"version": _read_app_version()}
 
 
+@app.get("/api/webrdp-helper")
+def api_webrdp_helper() -> dict[str, str]:
+    """Local folder Chrome loads once so WebRDP tabs can be renamed."""
+    folder = APP_DIR / "chrome-extension" / "webrdp-tab-title"
+    return {"folder": str(folder.resolve())}
+
+
 def _changelog_notes(text: str) -> str:
     """Drop the file title and any preamble so What’s new starts at a version."""
     lines = str(text or "").splitlines()

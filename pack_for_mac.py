@@ -57,6 +57,7 @@ FILES = (
     "tool_browser.py",
     "net_errors.py",
     "static/index.html",
+    "static/chrome-webrdp.html",
     "static/app-icon.svg",
     "static/app-icon.png",
     "static/atm.css",
