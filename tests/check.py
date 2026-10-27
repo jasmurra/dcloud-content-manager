@@ -4217,6 +4217,8 @@ def test_webrdp_is_on_demand() -> None:
         and "toUpperCase()" in page[page.index("function webrdpTabTitle(") : page.index("function webrdpTabPreview(")]
         and "WEBRDP_DEMO_TITLE_CHARS = 10" in page
         and "WEBRDP_VM_TITLE_CHARS = 10" in page
+        and "WEBRDP_TITLE_CHARS_MAX" not in page
+        and 'class="webrdp-tab-chars" min="1"' in page
         and "webrdpLimitedPiece(values.demo" in page
         and "webrdpLimitedPiece(values.vm" in page
         and 'class="webrdp-tab-chars"' in page

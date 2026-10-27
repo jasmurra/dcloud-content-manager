@@ -13216,7 +13216,6 @@
     const DEFAULT_WEBRDP_TAB_OFF = ["demo"];
     const WEBRDP_DEMO_TITLE_CHARS = 10;
     const WEBRDP_VM_TITLE_CHARS = 10;
-    const WEBRDP_TITLE_CHARS_MAX = 40;
 
     function webrdpLimitedPiece(value, limit) {
       return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
@@ -13226,8 +13225,8 @@
       const key = id === "vm" ? "webrdpVmChars" : "webrdpDemoChars";
       const fallback = id === "vm" ? WEBRDP_VM_TITLE_CHARS : WEBRDP_DEMO_TITLE_CHARS;
       const saved = Number(readWebrdpTabSettings()[key]);
-      if (!Number.isInteger(saved)) return fallback;
-      return Math.min(WEBRDP_TITLE_CHARS_MAX, Math.max(1, saved));
+      if (!Number.isInteger(saved) || saved < 1) return fallback;
+      return saved;
     }
 
     function readWebrdpTabSettings() {
@@ -13330,7 +13329,7 @@
         const label = WEBRDP_TAB_PARTS.find((part) => part.id === id)?.label || id;
         const checked = off.has(id) ? "" : "checked";
         const chars = id === "vm" || id === "demo"
-          ? `<input type="number" class="webrdp-tab-chars" min="1" max="${WEBRDP_TITLE_CHARS_MAX}" value="${readWebrdpTitleChars(id)}" aria-label="${label} characters" data-tip="How many characters of ${label} to show." />`
+          ? `<input type="number" class="webrdp-tab-chars" min="1" value="${readWebrdpTitleChars(id)}" aria-label="${label} characters" data-tip="How many characters of ${label} to show." />`
           : "<span></span>";
         return `
           <div class="dc-order-item" data-part="${id}">
@@ -14177,7 +14176,7 @@
         const charsRow = ev.target.closest(".dc-order-item");
         if (chars && charsRow) {
           const count = Number(chars.value);
-          if (!Number.isInteger(count) || count < 1 || count > WEBRDP_TITLE_CHARS_MAX) {
+          if (!Number.isInteger(count) || count < 1) {
             chars.value = String(readWebrdpTitleChars(charsRow.dataset.part));
             return;
           }
@@ -14200,7 +14199,7 @@
         const row = ev.target.closest(".dc-order-item");
         if (!box || !row) return;
         const count = Number(box.value);
-        if (!Number.isInteger(count) || count < 1 || count > WEBRDP_TITLE_CHARS_MAX) return;
+        if (!Number.isInteger(count) || count < 1) return;
         const key = row.dataset.part === "vm" ? "webrdpVmChars" : "webrdpDemoChars";
         writeWebrdpTabSettings({ [key]: count });
         const preview = $("webrdp-tab-preview");

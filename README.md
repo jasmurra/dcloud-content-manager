@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.1.7** | VMware Name and Demo Name character boxes no longer stop at 40 |
 | **2.1.6** | WebRDP tab titles can hide pieces, drop spaces, and limit VMware Name and Demo Name; Chrome setup opens from Settings |
 | **2.1.5** | Logs on active Workspace and Monitoring cards; Quick tasks buttons are all the clear style |
 | **2.1.4** | WebRDP tab title order is in Settings; default is VMware name, session ID, datacenter |

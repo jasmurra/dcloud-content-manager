@@ -1,3 +1,7 @@
+## 2.1.7 — 2026-10-27
+
+- **VMware Name and Demo Name character boxes have no maximum.** They still start at 10
+
 ## 2.1.6 — 2026-10-27
 
 - **WebRDP tab titles are built from the pieces you check.** VMware Name and Demo Name each have a character box that starts at 10. The datacenter is uppercase, and spaces can be removed. An example updates as the list changes
