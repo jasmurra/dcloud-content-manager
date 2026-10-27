@@ -18,7 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
-| **2.1.6** | WebRDP tab titles can include a short demo name, hide pieces, and drop spaces; Chrome setup opens from Settings |
+| **2.1.6** | WebRDP tab titles can hide pieces, drop spaces, and limit VMware Name and Demo Name; Chrome setup opens from Settings |
 | **2.1.5** | Logs on active Workspace and Monitoring cards; Quick tasks buttons are all the clear style |
 | **2.1.4** | WebRDP tab title order is in Settings; default is VMware name, session ID, datacenter |
 | **2.1.3** | WebRDP tabs can show the VMware name, datacenter, and session ID |

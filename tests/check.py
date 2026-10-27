@@ -4216,7 +4216,11 @@ def test_webrdp_is_on_demand() -> None:
         and "webrdpTabTight === true ? \"\" : \" \"" in page
         and "toUpperCase()" in page[page.index("function webrdpTabTitle(") : page.index("function webrdpTabPreview(")]
         and "WEBRDP_DEMO_TITLE_CHARS = 10" in page
-        and "webrdpDemoPiece(values.demo)" in page
+        and "WEBRDP_VM_TITLE_CHARS = 10" in page
+        and "webrdpLimitedPiece(values.demo" in page
+        and "webrdpLimitedPiece(values.vm" in page
+        and 'class="webrdp-tab-chars"' in page
+        and "VMware Name" in page
         and 'id="webrdp-chrome-help"' in page
         and "How to configure Chrome" in page
         and "function openChromeWebrdpHelp(" in page
