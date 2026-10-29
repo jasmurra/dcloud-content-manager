@@ -119,6 +119,7 @@ from dcloud_client import (
     is_active_status,
     is_auth_error,
     is_failed_status,
+    is_session_error_status,
     is_powered_off,
     is_saved_status,
     is_saving_in_progress_status,
@@ -3472,6 +3473,13 @@ def _refresh_dc_save_progress(job: dict[str, Any], dc: dict[str, Any], token: st
             pass
         elif is_saved_status(public) or is_saved_status(numeric):
             pass
+        elif is_session_error_status(public) or is_session_error_status(numeric):
+            bump(
+                phase="error",
+                status=status or "Error",
+                message=f"dCloud reports {status or 'Error'}. Use Reset to rebuild this session.",
+            )
+            return
         else:
             bump(
                 phase="save_failed",
@@ -3645,6 +3653,21 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
                 message="Already saved in dCloud — removed from active cards.",
                 session_id=sid,
             )
+        return
+    if is_session_error_status(reported):
+        # Error still has a session. Deleted and cancelled do not, so only those
+        # leave the workspace. Reset is on the card.
+        if str(dc.get("phase") or "") != "error":
+            _log(
+                job,
+                f"{site.upper()}: session {sid} is Error in dCloud. "
+                "Left on the workspace so it can be reset.",
+            )
+        bump(
+            phase="error",
+            status=status or "Error",
+            message=f"dCloud reports {status or 'Error'}. Use Reset to rebuild this session.",
+        )
         return
     if is_failed_status(reported):
         if resetting:

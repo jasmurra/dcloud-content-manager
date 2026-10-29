@@ -1,3 +1,8 @@
+## 2.1.10 — 2026-10-29
+
+- **Deleting saved content takes it off the list** as soon as dCloud says the delete worked. The notice says Deleted Successfully and clears after 10 seconds. An error stays until you dismiss it
+- **A session that comes back in Error stays on the workspace** with Reset, instead of disappearing
+
 ## 2.1.9 — 2026-10-29
 
 - **Look Up IDs sits above the datacenter boxes.** One demo ID fills the other datacenters from the global catalog, without loading VMs

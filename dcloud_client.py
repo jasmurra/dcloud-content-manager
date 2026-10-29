@@ -634,6 +634,22 @@ def is_failed_status(raw: Any) -> bool:
     return False
 
 
+def is_session_error_status(raw: Any) -> bool:
+    """True for dCloud Error (99). The session still exists and can be reset."""
+    if isinstance(raw, bool):
+        return False
+    text = _status_text(raw)
+    if not text:
+        return False
+    parts = [part.strip() for part in text.split("/") if part.strip()] or [text]
+    for part in parts:
+        key = _status_key(part)
+        label = _status_key(_status_label(part))
+        if key in {"99", "error"} or label == "error":
+            return True
+    return False
+
+
 def is_stopping_status(raw: Any) -> bool:
     if isinstance(raw, int):
         return raw in STOPPING_NUMERIC

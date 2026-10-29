@@ -1722,12 +1722,17 @@ def test_ended_card_is_not_a_dead_end() -> None:
                 str(job["dcs"]),
             )
 
-            from dcloud_client import is_failed_status
+            from dcloud_client import is_failed_status, is_session_error_status
 
             check("numeric deleted is a finished session", is_failed_status(9) and is_failed_status("9"))
             check("numeric cancelled is a finished session", is_failed_status(7) and is_failed_status("7"))
             check("a combined deleted status is finished", is_failed_status("9 / Deleted"))
             check("starting is not a finished session", not is_failed_status("2") and not is_failed_status(4))
+            check(
+                "dCloud Error is a session that can stay and be reset",
+                is_session_error_status(99) and is_session_error_status("Error")
+                and not is_session_error_status(9) and not is_session_error_status("Deleted"),
+            )
 
             stuck = {
                 "id": "j-deleted",
@@ -1757,6 +1762,33 @@ def test_ended_card_is_not_a_dead_end() -> None:
                 )
                 app._retire_ended_cards(stuck)
                 check("that deleted card leaves the workspace", stuck["dcs"] == [], str(stuck["dcs"]))
+
+                errored = {
+                    "id": "j-error",
+                    "phase": "waiting_active",
+                    "log": [],
+                    "error": "",
+                    "dcs": [{
+                        "site": "rtp",
+                        "sessionId": "1360827",
+                        "phase": "waiting",
+                        "status": "Starting",
+                        "message": "Waiting for dCloud to bring this session up.",
+                    }],
+                }
+                app.fetch_session = lambda *a, **k: ({"status": 99, "canReset": True}, None)
+                app._refresh_dc_from_dcloud(errored, errored["dcs"][0], "token")
+                check(
+                    "an Error session stays on the workspace",
+                    errored["dcs"][0]["phase"] == "error" and errored["dcs"][0]["status"] == "Error",
+                    str(errored["dcs"][0]),
+                )
+                app._retire_ended_cards(errored)
+                check(
+                    "an Error session is not swept off with finished cards",
+                    len(errored["dcs"]) == 1 and errored["dcs"][0]["phase"] == "error",
+                    str(errored["dcs"]),
+                )
             finally:
                 app.fetch_session = held_fetch
                 app.check_public_session_status = held_public
@@ -3045,7 +3077,10 @@ def test_event_management_section() -> None:
         and 'id="btn-refresh-workspace-sessions"' in INDEX
         and 'findSavedContents("schedule", { refresh: true })' in INDEX
         and "function dropDeletedSavedContent(" in INDEX
-        and 'findSavedContents("schedule", { refresh: true, clearError: false })' in INDEX[
+        and 'showToast("Deleted Successfully.")' in INDEX[
+            INDEX.index("async function deleteSavedItems(") : INDEX.index("async function deleteSelectedSaved(")
+        ]
+        and 'findSavedContents("schedule", { refresh: true, clearError: false })' not in INDEX[
             INDEX.index("async function deleteSavedItems(") : INDEX.index("async function deleteSelectedSaved(")
         ]
         and 'id="btn-saved-ids-find-refresh"' in INDEX
@@ -3061,6 +3096,9 @@ def test_event_management_section() -> None:
         "submitted requests show a short bottom-right notice",
         'id="request-toasts"' in INDEX
         and "function showToast(" in INDEX
+        and "const TOAST_MS = 10000;" in INDEX
+        and "request-toast-sticky" in INDEX
+        and 'dismiss.textContent = "Dismiss"' in INDEX
         and "function notifyRequestError(" in INDEX
         and 'showToast("Scheduling submitted.")' in INDEX
         and 'showToast(applied.length === 1 ? "Session extended." : "Sessions extended.")' in INDEX

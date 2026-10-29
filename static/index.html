@@ -2256,6 +2256,9 @@
     }
     .request-toast {
       pointer-events: auto;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
       background: var(--panel);
       color: var(--text);
       border: 1px solid var(--border);
@@ -2266,6 +2269,18 @@
       font-size: 0.88rem;
       line-height: 1.4;
       cursor: pointer;
+    }
+    .request-toast-text { flex: 1; }
+    .request-toast-dismiss {
+      flex: none;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.78rem;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 0;
     }
     .request-toast-err { border-left-color: var(--err); }
     .request-toast-warn { border-left-color: var(--warn); }
@@ -5036,29 +5051,49 @@
       showActionAlert(text, { title, scrollTo });
     }
 
-    const TOAST_MS = 5000;
-    const TOAST_MAX = 3;
+    const TOAST_MS = 10000;
+    const TOAST_MAX = 8;
 
     function showToast(message, { kind = "ok" } = {}) {
       const text = String(message || "").trim();
       if (!text) return;
       const host = $("request-toasts");
       if (!host) return;
+      const sticky = kind === "err";
       while (host.children.length >= TOAST_MAX) {
+        const removable = [...host.children].reverse().find((child) => !child.classList.contains("request-toast-sticky"));
+        if (removable) {
+          removable.remove();
+          continue;
+        }
         host.lastElementChild?.remove();
       }
       const el = document.createElement("div");
-      el.className = `request-toast request-toast-${kind === "err" ? "err" : kind === "warn" ? "warn" : "ok"}`;
+      el.className = `request-toast request-toast-${kind === "err" ? "err" : kind === "warn" ? "warn" : "ok"}${sticky ? " request-toast-sticky" : ""}`;
       el.setAttribute("role", kind === "err" ? "alert" : "status");
-      el.textContent = text;
+      const body = document.createElement("span");
+      body.className = "request-toast-text";
+      body.textContent = text;
+      el.appendChild(body);
       const hide = () => {
         if (!el.isConnected) return;
         el.classList.add("leaving");
         setTimeout(() => el.remove(), 180);
       };
+      if (sticky) {
+        const dismiss = document.createElement("button");
+        dismiss.type = "button";
+        dismiss.className = "request-toast-dismiss";
+        dismiss.textContent = "Dismiss";
+        dismiss.addEventListener("click", (event) => {
+          event.stopPropagation();
+          hide();
+        });
+        el.appendChild(dismiss);
+      }
       el.addEventListener("click", hide);
       host.prepend(el);
-      setTimeout(hide, TOAST_MS);
+      if (!sticky) setTimeout(hide, TOAST_MS);
     }
 
     function notifyRequestError(err) {
@@ -9175,7 +9210,30 @@
         `;
     }
 
+    const announcedSessionErrors = new Set();
+
+    function announceSessionErrors(job) {
+      const live = new Set();
+      for (const dc of job?.dcs || []) {
+        if (!dc?.sessionId || dc.phase !== "error") continue;
+        const status = `${dc.status || ""} ${dc.message || ""}`;
+        if (!/error/i.test(status)) continue;
+        const key = `${String(dc.site || "").toLowerCase()}:${dc.sessionId}`;
+        live.add(key);
+        if (announcedSessionErrors.has(key)) continue;
+        announcedSessionErrors.add(key);
+        showToast(
+          `${String(dc.site || "").toUpperCase()} session ${dc.sessionId} is Error. It is still on the workspace — use Reset.`,
+          { kind: "err" },
+        );
+      }
+      for (const key of [...announcedSessionErrors]) {
+        if (!live.has(key)) announcedSessionErrors.delete(key);
+      }
+    }
+
     function renderJob(job, { forceCards = false } = {}) {
+      if (job) announceSessionErrors(job);
       updateRunResult(job);
       lastRenderedJob = job || null;
       syncJobAppendHint();
@@ -16498,19 +16556,27 @@
       await addSavedIdItems(selected);
     }
 
-    function dropDeletedSavedContent(results) {
+    async function dropDeletedSavedContent(results) {
       const gone = new Set(
         (results || [])
           .filter((row) => row.ok && row.site && (row.contentId || row.content_id))
           .map((row) => `${String(row.site).toLowerCase()}:${String(row.contentId || row.content_id)}`),
       );
-      if (!gone.size || !finderLists["mine-content"]) return;
+      if (!gone.size || !finderLists["mine-content"]) return 0;
       finderLists["mine-content"].rows = finderLists["mine-content"].rows.filter((row) => {
         const key = `${String(row.site || "").toLowerCase()}:${String(row.contentId || "")}`;
         return !gone.has(key);
       });
-      const sites = [...gone].map((key) => key.split(":")[0]);
-      persistFinderRows("mine-content", sites);
+      const sites = [...new Set([...gone].map((key) => key.split(":")[0]))];
+      await persistFinderRows("mine-content", sites);
+      const data = {
+        contents: rowsForFinderSites("mine-content", SITE_ORDER),
+        errors: { ...finderLists["mine-content"].errors },
+      };
+      if (lastFoundSavedByMount.schedule) renderFoundSaved(data, "schedule");
+      if (lastFoundSavedByMount["saved-ids"]) renderFoundSaved(data, "saved-ids");
+      if (lastFoundSavedByMount.cleanup) renderFoundSaved(data, "cleanup");
+      return gone.size;
     }
 
     async function deleteSavedItems(items) {
@@ -16548,17 +16614,22 @@
           }
         }
         noteLog(`Deleted ${data.deleted || 0} saved content item(s)${data.failed ? ` (${data.failed} failed)` : ""}.`);
-        if (data.job) renderJob(data.job, { forceCards: true });
-        else if (data.savedIds) applySavedIds(data.savedIds);
-        else await loadSavedIds();
-        dropDeletedSavedContent(data.results);
-        await findSavedContents("schedule", { refresh: true, clearError: false });
-        if (failed.length && data.deleted) {
-          showToast(`Deleted ${data.deleted}, ${failed.length} failed.`, { kind: "warn" });
-        } else if (failed.length) {
-          showToast(`${failed.length} delete(s) failed.`, { kind: "err" });
+        await dropDeletedSavedContent(data.results);
+        if (failed.length) {
+          const detail = failed
+            .map((row) => `${String(row.site || "").toUpperCase()} ${row.contentId || row.content_id || ""}: ${row.message || "delete failed"}`)
+            .join(" ");
+          const lead = data.deleted ? `Deleted ${data.deleted}. ` : "";
+          showToast(`${lead}${failed.length} delete(s) failed. ${detail}`.trim(), { kind: "err" });
         } else {
-          showToast("Saved content deleted.");
+          showToast("Deleted Successfully.");
+        }
+        try {
+          if (data.job) renderJob(data.job, { forceCards: true });
+          else if (data.savedIds) applySavedIds(data.savedIds);
+          else await loadSavedIds();
+        } catch (reloadErr) {
+          noteLog(`Saved content list updated. The session table did not reload — ${reloadErr.message || reloadErr}`);
         }
       } catch (err) {
         notifyRequestError(err);
