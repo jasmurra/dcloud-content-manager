@@ -1,3 +1,7 @@
+## 2.1.8 — 2026-10-29
+
+- **VM refresh on an active session card.** It checks VM power now, then every 10 minutes for up to an hour, and stops when every VM is powered off. Click it again after the hour. It does not shut down or save
+
 ## 2.1.7 — 2026-10-27
 
 - **VMware Name and Demo Name character boxes have no maximum.** They still start at 10

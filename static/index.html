@@ -917,6 +917,18 @@
     .card-refresh:not(:disabled):active,
     .card-x:not(:disabled):active { transform: scale(0.88); box-shadow: none; }
     .card-refresh:disabled { opacity: 0.35; cursor: not-allowed; }
+    .card-body-head .card-controls { flex: 1; justify-content: flex-end; }
+    .btn-vm-power-watch {
+      margin-right: auto;
+      width: auto;
+      min-height: 1.6rem;
+      padding: 0 0.7rem;
+      font-size: 0.75rem;
+    }
+    .btn-vm-power-watch.is-watching {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
     .card.card-monitor {
       border-color: rgba(56, 189, 248, 0.35);
     }
@@ -9066,6 +9078,14 @@
                     ${canEnd ? `<button type="button" class="btn-dc-end" ${cardData} data-tip="${endTip}">${endLabel}</button>` : ""}
                   </div>
                 </details>`;
+      const showVmPowerWatch = dc.phase === "ready" && Boolean(dc.sessionId) && !notMine;
+      const powerWatch = showVmPowerWatch ? vmPowerWatchFor(dc.site, dc.sessionId) : null;
+      const powerWatchBtn = showVmPowerWatch
+        ? `<button type="button" class="secondary btn-vm-power-watch${powerWatch?.status === "watching" ? " is-watching" : ""}" ${cardData} data-tip="${escapeHtml(vmPowerWatchTip(powerWatch))}">${escapeHtml(vmPowerWatchLabel(powerWatch))}</button>`
+        : "";
+      const powerWatchNote = powerWatch
+        ? `<div class="hint vm-power-watch-note">${escapeHtml(vmPowerWatchNote(powerWatch))}</div>`
+        : "";
       return `
           <details class="card${monitor ? " card-monitor" : ""}" data-card-key="${escapeHtml(cardKey)}" data-site="${escapeHtml(dc.site)}"${cardOpen ? " open" : ""}>
             <summary>
@@ -9083,11 +9103,13 @@
             <div class="card-body">
               <div class="card-body-head">
                 <div class="card-controls">
+                  ${powerWatchBtn}
                   <button type="button" class="card-refresh" ${cardData} ${canRefresh ? "" : "disabled"} data-tip="Poll dCloud for this session only (status, VMs, power)." aria-label="Refresh this card" title="Refresh this card from dCloud">↻</button>
                   ${renameBtn}
                   <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
                 </div>
               </div>
+              ${powerWatchNote}
               ${renderWebrdpJumps(dc)}
               ${renderVmFavoriteStrip(dc)}
               ${monitor ? '<span class="badge neutral">' + titleChip("monitor") + "</span>" : ""}
@@ -13651,11 +13673,274 @@
         });
         renderJob(job, { forceCards: true });
         startPolling();
+        return job;
       } catch (err) {
         showError(err.message);
+        return null;
       } finally {
         if (btn) btn.disabled = false;
       }
+    }
+
+    const VM_POWER_WATCH_MS = 10 * 60 * 1000;
+    const VM_POWER_WATCH_LIMIT_MS = 60 * 60 * 1000;
+    const VM_POWER_WATCH_STORE = "dcloud-vm-power-watch-v1";
+    const vmPowerWatches = new Map();
+
+    function vmPowerWatchKey(site, sessionId) {
+      return `${String(site || "").toLowerCase()}:${String(sessionId || "").trim()}`;
+    }
+
+    function vmPowerWatchFor(site, sessionId) {
+      return vmPowerWatches.get(vmPowerWatchKey(site, sessionId)) || null;
+    }
+
+    function persistVmPowerWatches() {
+      const rows = {};
+      vmPowerWatches.forEach((watch, key) => {
+        rows[key] = {
+          status: watch.status,
+          startedAt: watch.startedAt,
+          lastCheckAt: watch.lastCheckAt || 0,
+          nextAt: watch.nextAt || 0,
+          site: watch.site,
+          sessionId: watch.sessionId,
+          on: watch.on,
+          total: watch.total,
+          unknown: watch.unknown,
+        };
+      });
+      try { sessionStorage.setItem(VM_POWER_WATCH_STORE, JSON.stringify(rows)); } catch {}
+    }
+
+    function vmPowerCounts(vms) {
+      const list = vms || [];
+      let unknown = 0;
+      for (const vm of list) {
+        if (!String(vm?.powerState || "").trim()) unknown += 1;
+      }
+      const grouped = groupVmsByPower(list);
+      return { total: list.length, on: grouped.on.length, unknown };
+    }
+
+    function vmPowerWatchLabel(watch) {
+      if (!watch || watch.status === "idle") return "VM refresh";
+      if (watch.status === "watching") return "Watching VMs";
+      if (watch.status === "off") return "All VMs off";
+      if (watch.status === "hour") return "Watch again";
+      return "VM refresh";
+    }
+
+    function formatWatchClock(ms) {
+      if (!ms) return "";
+      return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function vmPowerStillOn(watch) {
+      if (!watch || watch.total == null) return "power state not checked yet";
+      if (!watch.total) return "no VM list yet";
+      if (watch.unknown) {
+        return `${watch.unknown} VM${watch.unknown === 1 ? "" : "s"} still have no power state`;
+      }
+      return `${Number(watch.on || 0)} of ${watch.total} still on`;
+    }
+
+    function vmPowerWatchTip(watch) {
+      if (!watch || watch.status === "idle") {
+        return "Checks VM power now, then every 10 minutes for up to an hour. Stops when every VM is powered off. Click again after an hour to keep watching. Does not shut down or save.";
+      }
+      if (watch.status === "watching") {
+        const when = watch.nextAt ? ` Next check ${formatWatchClock(watch.nextAt)}.` : "";
+        return `${vmPowerStillOn(watch)}.${when} Click to stop watching. Does not shut down or save.`;
+      }
+      if (watch.status === "off") {
+        return "Every VM is powered off. You can save this session. Click to watch again. Does not shut down or save.";
+      }
+      return `Watched for an hour. ${vmPowerStillOn(watch)}. Click to watch for another hour. Does not shut down or save.`;
+    }
+
+    function vmPowerWatchNote(watch) {
+      if (!watch) return "";
+      if (watch.status === "watching") {
+        const when = watch.nextAt ? ` Next check ${formatWatchClock(watch.nextAt)}.` : "";
+        return `VM power: ${vmPowerStillOn(watch)}.${when}`;
+      }
+      if (watch.status === "off") return "VM power: all VMs are powered off.";
+      if (watch.status === "hour") {
+        return `VM power: watched for an hour. ${vmPowerStillOn(watch)}. Click VM refresh to continue.`;
+      }
+      return "";
+    }
+
+    function clearVmPowerTimer(watch) {
+      if (watch?.timer) {
+        clearTimeout(watch.timer);
+        watch.timer = null;
+      }
+    }
+
+    function paintVmPowerWatchButtons() {
+      document.querySelectorAll(".btn-vm-power-watch").forEach((btn) => {
+        const watch = vmPowerWatchFor(btn.dataset.site, btn.dataset.session);
+        btn.textContent = vmPowerWatchLabel(watch);
+        btn.setAttribute("data-tip", vmPowerWatchTip(watch));
+        btn.classList.toggle("is-watching", watch?.status === "watching");
+        const note = btn.closest(".card-body")?.querySelector(".vm-power-watch-note");
+        if (!note) return;
+        const text = vmPowerWatchNote(watch);
+        if (text) note.textContent = text;
+        else note.remove();
+      });
+    }
+
+    function finishVmPowerWatch(key, status) {
+      const watch = vmPowerWatches.get(key);
+      if (!watch) return;
+      clearVmPowerTimer(watch);
+      watch.status = status;
+      watch.nextAt = 0;
+      persistVmPowerWatches();
+      paintVmPowerWatchButtons();
+      const site = String(watch.site || "").toUpperCase();
+      if (status === "off") noteLog(`${site}: all VMs are powered off.`);
+      else if (status === "hour") noteLog(`${site}: VM power watch stopped after an hour. ${vmPowerStillOn(watch)}.`);
+      else noteLog(`${site}: VM power watch stopped.`);
+    }
+
+    function scheduleVmPowerWatch(key) {
+      const watch = vmPowerWatches.get(key);
+      if (!watch || watch.status !== "watching") return;
+      clearVmPowerTimer(watch);
+      const remain = watch.startedAt + VM_POWER_WATCH_LIMIT_MS - Date.now();
+      if (remain <= 0) {
+        finishVmPowerWatch(key, "hour");
+        return;
+      }
+      const delay = Math.min(VM_POWER_WATCH_MS, remain);
+      watch.nextAt = Date.now() + delay;
+      watch.timer = setTimeout(() => {
+        runVmPowerWatch(key).catch((err) => showError(err.message));
+      }, delay);
+      persistVmPowerWatches();
+    }
+
+    async function runVmPowerWatch(key) {
+      const watch = vmPowerWatches.get(key);
+      if (!watch || watch.status !== "watching") return;
+      if (!jobId) {
+        showError("Nothing to refresh — restore the last job first.");
+        return;
+      }
+      if (!ensureTokenReady("checking VM power")) {
+        scheduleVmPowerWatch(key);
+        return;
+      }
+      const due = Date.now() >= watch.startedAt + VM_POWER_WATCH_LIMIT_MS;
+      let job = null;
+      try {
+        job = await refreshCardStatus(watch.site, watch.sessionId, null);
+      } catch (err) {
+        showError(err.message);
+      }
+      const current = vmPowerWatches.get(key);
+      if (!current || current.status !== "watching") return;
+      const dc = (job?.dcs || []).find((row) => (
+        String(row.site || "").toLowerCase() === String(current.site || "").toLowerCase()
+        && String(row.sessionId || "") === String(current.sessionId || "")
+      ));
+      if (dc) {
+        const counts = vmPowerCounts(dc.vms);
+        current.on = counts.on;
+        current.total = counts.total;
+        current.unknown = counts.unknown;
+        current.lastCheckAt = Date.now();
+        if (counts.total > 0 && counts.on === 0 && counts.unknown === 0) {
+          finishVmPowerWatch(key, "off");
+          return;
+        }
+      }
+      if (due || Date.now() >= current.startedAt + VM_POWER_WATCH_LIMIT_MS) {
+        finishVmPowerWatch(key, "hour");
+        return;
+      }
+      scheduleVmPowerWatch(key);
+      paintVmPowerWatchButtons();
+    }
+
+    function stopVmPowerWatch(site, sessionId) {
+      const key = vmPowerWatchKey(site, sessionId);
+      const watch = vmPowerWatches.get(key);
+      if (!watch) return;
+      clearVmPowerTimer(watch);
+      vmPowerWatches.delete(key);
+      persistVmPowerWatches();
+      paintVmPowerWatchButtons();
+    }
+
+    function startVmPowerWatch(site, sessionId) {
+      const key = vmPowerWatchKey(site, sessionId);
+      const existing = vmPowerWatches.get(key);
+      if (existing) clearVmPowerTimer(existing);
+      vmPowerWatches.set(key, {
+        status: "watching",
+        startedAt: Date.now(),
+        lastCheckAt: 0,
+        nextAt: 0,
+        site: String(site || "").toLowerCase(),
+        sessionId: String(sessionId || ""),
+        on: null,
+        total: null,
+        unknown: 0,
+        timer: null,
+      });
+      persistVmPowerWatches();
+      paintVmPowerWatchButtons();
+      noteLog(`${String(site || "").toUpperCase()}: watching VM power every 10 minutes for up to an hour.`);
+      runVmPowerWatch(key).catch((err) => showError(err.message));
+    }
+
+    function toggleVmPowerWatch(btn) {
+      const site = btn.dataset.site;
+      const sessionId = btn.dataset.session;
+      const watch = vmPowerWatchFor(site, sessionId);
+      if (watch?.status === "watching") {
+        stopVmPowerWatch(site, sessionId);
+        noteLog(`${String(site || "").toUpperCase()}: VM power watch stopped.`);
+        btn.textContent = "VM refresh";
+        btn.setAttribute("data-tip", vmPowerWatchTip(null));
+        btn.classList.remove("is-watching");
+        btn.closest(".card-body")?.querySelector(".vm-power-watch-note")?.remove();
+        return;
+      }
+      startVmPowerWatch(site, sessionId);
+    }
+
+    function resumeVmPowerWatches() {
+      vmPowerWatches.forEach((watch) => clearVmPowerTimer(watch));
+      vmPowerWatches.clear();
+      let saved = {};
+      try { saved = JSON.parse(sessionStorage.getItem(VM_POWER_WATCH_STORE) || "{}"); } catch { saved = {}; }
+      Object.entries(saved || {}).forEach(([key, row]) => {
+        if (!row || typeof row !== "object") return;
+        const watch = { ...row, timer: null };
+        vmPowerWatches.set(key, watch);
+        if (watch.status !== "watching") return;
+        if (Date.now() >= Number(watch.startedAt || 0) + VM_POWER_WATCH_LIMIT_MS) {
+          watch.status = "hour";
+          watch.nextAt = 0;
+          return;
+        }
+        const since = Date.now() - Number(watch.lastCheckAt || watch.startedAt || Date.now());
+        const remain = Number(watch.startedAt) + VM_POWER_WATCH_LIMIT_MS - Date.now();
+        const delay = Math.min(Math.max(0, VM_POWER_WATCH_MS - since), Math.max(0, remain));
+        watch.nextAt = Date.now() + delay;
+        watch.timer = setTimeout(() => {
+          runVmPowerWatch(key).catch((err) => showError(err.message));
+        }, delay);
+      });
+      persistVmPowerWatches();
+      if (lastRenderedJob && vmPowerWatches.size) renderJob(lastRenderedJob, { forceCards: true });
+      else paintVmPowerWatchButtons();
     }
 
     async function restoreJob(forceLatest, options = {}) {
@@ -13689,6 +13974,7 @@
             noteLog(`Restored cards — refresh status skipped (${err.message}). Import token to poll dCloud.`);
           }
         }
+        resumeVmPowerWatches();
       } catch (err) {
         if (silent) return;
         if (forceLatest) showError(err.message || "No saved job to restore.");
@@ -17446,6 +17732,12 @@
           moveBtn.dataset.session,
           moveBtn.dataset.monitor === "1",
         ).catch((err) => showError(err.message)).finally(() => closeVmMenuFrom(moveBtn));
+        return;
+      }
+      const powerWatchBtn = ev.target.closest(".btn-vm-power-watch");
+      if (powerWatchBtn) {
+        ev.preventDefault();
+        toggleVmPowerWatch(powerWatchBtn);
         return;
       }
       const refreshBtn = ev.target.closest(".card-refresh");

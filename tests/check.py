@@ -2586,6 +2586,17 @@ if (foundSessionCardReady(undefined) !== false) throw new Error("missing card is
     )
 
 
+def test_vm_power_watch_on_active_cards() -> None:
+    check(
+        "an active card can watch VM power every 10 minutes for an hour",
+        "btn-vm-power-watch" in INDEX
+        and "VM_POWER_WATCH_MS = 10 * 60 * 1000" in INDEX
+        and "VM_POWER_WATCH_LIMIT_MS = 60 * 60 * 1000" in INDEX
+        and "all VMs are powered off" in INDEX
+        and "Does not shut down or save." in INDEX,
+    )
+
+
 def test_schedule_capacity_explains_and_stays_nearby() -> None:
     import dcloud_client
 
