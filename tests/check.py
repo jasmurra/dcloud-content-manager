@@ -2760,6 +2760,21 @@ def test_demo_id_fields_can_be_cleared() -> None:
     """Catalog lookup fills every DC; those IDs need a one-click undo."""
     check("each DC has a Clear control", INDEX.count('class="clear-demo-id"') == 5)
     check("Clear all IDs is on the schedule form", 'id="btn-clear-all-demo-ids"' in INDEX)
+    check(
+        "Look Up IDs fills datacenters from the catalog without loading VMs",
+        'id="btn-lookup-demo-ids"' in INDEX
+        and "Look Up IDs" in INDEX
+        and "idsOnly" in INDEX
+        and '@app.post("/api/schedule/lookup-ids")' in (ROOT / "app.py").read_text(encoding="utf-8"),
+    )
+    card_render = INDEX.split("function renderSessionCard", 1)[1].split("function renderJob", 1)[0]
+    controls = card_render.split('class="card-controls"', 1)[1].split("</div>", 1)[0]
+    check(
+        "VM refresh sits above the powered-on and powered-off lists",
+        "${powerWatchBtn}" not in controls
+        and "vm-power-watch-row" in card_render
+        and card_render.find("vm-power-watch-row") < card_render.find("${vmsHtml}"),
+    )
     check("Clear all reuses the existing clearer", "clearDemoIdFields()" in INDEX)
     check("one box can be cleared without the rest", "function clearOneDemoId(" in INDEX)
     check(

@@ -919,12 +919,12 @@
     .card-refresh:disabled { opacity: 0.35; cursor: not-allowed; }
     .card-body-head .card-controls { flex: 1; justify-content: flex-end; }
     .btn-vm-power-watch {
-      margin-right: auto;
       width: auto;
       min-height: 1.6rem;
       padding: 0 0.7rem;
       font-size: 0.75rem;
     }
+    .vm-power-watch-row { margin: 0.75rem 0 0.35rem; }
     .btn-vm-power-watch.is-watching {
       border-color: var(--accent);
       color: var(--accent);
@@ -1531,7 +1531,7 @@
     .dc-id-toolbar {
       display: flex;
       align-items: baseline;
-      justify-content: flex-end;
+      justify-content: flex-start;
       gap: 0.75rem;
       margin: 0.15rem 0 0.35rem;
     }
@@ -3093,11 +3093,12 @@
       </div>
       </details>
       <p class="hint">
-        Paste demo IDs below, or open Load VMs first to fill every DC from a session or saved content.
+        Put one demo ID in its datacenter and click Look Up IDs to fill the others.
         Leave a DC blank to skip it.
       </p>
       <p id="lookup-status" class="hint"></p>
       <div class="dc-id-toolbar">
+        <button type="button" class="linkish" id="btn-lookup-demo-ids" data-tip="Uses the demo ID in one datacenter to fill the other datacenters from the global catalog. Does not load VMs.">Look Up IDs</button>
         <button type="button" class="linkish" id="btn-clear-all-demo-ids">Clear All IDs</button>
       </div>
       <div class="row" id="schedule-dc-fields" data-dc-order>
@@ -7505,6 +7506,42 @@
       }
     }
 
+    async function lookupDemoIds() {
+      if (!ensureTokenReady("looking up demo IDs")) return;
+      showError("");
+      const filled = [...document.querySelectorAll("#schedule-dc-fields .demo-id")]
+        .filter((el) => el.value.trim());
+      if (!filled.length) {
+        showError("Put a demo ID in one datacenter, then look up the others.");
+        return;
+      }
+      const source = filled[0];
+      const demoId = source.value.trim();
+      if (!/^\d+$/.test(demoId)) {
+        showError("Enter a numeric demo ID.");
+        return;
+      }
+      const btn = $("btn-lookup-demo-ids");
+      const status = $("lookup-status");
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = `Looking up ${source.dataset.dc.toUpperCase()} ${demoId}…`;
+      try {
+        const data = await api("/api/schedule/lookup-ids", {
+          method: "POST",
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site: source.dataset.dc,
+            demo_id: demoId,
+          }),
+        });
+        applyLookups(data, { idsOnly: true });
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     function clearDemoIdFields() {
       document.querySelectorAll(".demo-id").forEach(clearOneDemoId);
       const status = $("lookup-status");
@@ -7541,8 +7578,11 @@
         return;
       }
       const dcs = filled.map((el) => String(el.dataset.dc || "").toUpperCase()).join(", ");
+      const next = status.dataset.lookupIdsOnly === "1"
+        ? "set the dates, then Schedule."
+        : "check the VMs to power on, set the dates, then Schedule.";
       status.textContent =
-        `${base}${unpublished} Ready to schedule ${dcs} — check the VMs to power on, set the dates, then Schedule.`;
+        `${base}${unpublished} Ready to schedule ${dcs} — ${next}`;
       status.classList.add("lookup-ready");
     }
 
@@ -7572,10 +7612,11 @@
       return sortByDatacenter(matches, (row) => row.site);
     }
 
-    function applyLookups(data) {
+    function applyLookups(data, options = {}) {
+      const idsOnly = Boolean(options.idsOnly);
       const source = (data.site || "").toLowerCase();
       const lookups = data.lookups || {};
-      const skipCatalog = $("skip-catalog").checked;
+      const skipCatalog = !idsOnly && $("skip-catalog").checked;
       const notes = [];
       const mismatches = [];
       document.querySelectorAll(".demo-id").forEach((el) => {
@@ -7613,7 +7654,7 @@
       const schedulePanel = $("panel-step3");
       if (filled.length && schedulePanel) schedulePanel.open = true;
       const loadPanel = $("panel-step2");
-      if (filled.length && loadPanel) loadPanel.open = true;
+      if (filled.length && loadPanel && !idsOnly) loadPanel.open = true;
       const status = $("lookup-status");
       if (!status) return;
       let base = "";
@@ -7638,6 +7679,7 @@
       }
       status.dataset.lookupBase = base;
       status.dataset.lookupReady = ready ? "1" : "";
+      status.dataset.lookupIdsOnly = idsOnly ? "1" : "";
       status.textContent = base;
       status.classList.remove("lookup-ready");
       refreshScheduleReadyNote();
@@ -9103,13 +9145,11 @@
             <div class="card-body">
               <div class="card-body-head">
                 <div class="card-controls">
-                  ${powerWatchBtn}
                   <button type="button" class="card-refresh" ${cardData} ${canRefresh ? "" : "disabled"} data-tip="Poll dCloud for this session only (status, VMs, power)." aria-label="Refresh this card" title="Refresh this card from dCloud">↻</button>
                   ${renameBtn}
                   <button type="button" class="card-x" ${cardData} data-tip="Remove this card from the tool. The dCloud session keeps running." title="Remove this card from the tool (does not end the dCloud session)">×</button>
                 </div>
               </div>
-              ${powerWatchNote}
               ${renderWebrdpJumps(dc)}
               ${renderVmFavoriteStrip(dc)}
               ${monitor ? '<span class="badge neutral">' + titleChip("monitor") + "</span>" : ""}
@@ -9127,6 +9167,8 @@
               ${conflictDetails}
               ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
               ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
+              ${powerWatchBtn ? `<div class="vm-power-watch-row">${powerWatchBtn}</div>` : ""}
+              ${powerWatchNote}
               ${vmsHtml}
             </div>
           </details>
@@ -17971,6 +18013,9 @@
     $("btn-quick-info")?.addEventListener("click", () => quickSessionInfo().catch((err) => showError(err.message)));
     $("run-result")?.addEventListener("click", (evt) => {
       if (evt.target.closest(".btn-show-workspace")) goToPageTarget("#panel-job-cards");
+    });
+    $("btn-lookup-demo-ids")?.addEventListener("click", () => {
+      lookupDemoIds().catch((err) => showError(err.message));
     });
     $("btn-clear-all-demo-ids")?.addEventListener("click", () => clearDemoIdFields());
     $("schedule-dc-fields")?.addEventListener("click", (ev) => {

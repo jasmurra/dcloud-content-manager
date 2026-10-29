@@ -6143,6 +6143,40 @@ def api_load_vms(body: LoadVmsPayload) -> dict[str, Any]:
     }
 
 
+class LookupDemoIdsPayload(TokenPayload):
+    site: str = ""
+    demo_id: str = ""
+
+
+@app.post("/api/schedule/lookup-ids")
+def api_lookup_demo_ids(body: LookupDemoIdsPayload) -> dict[str, Any]:
+    """Fill every datacenter's demo ID from one ID. Does not load VMs."""
+    site = str(body.site or "").strip().lower()
+    demo_id = str(body.demo_id or "").strip()
+    if site not in SITES:
+        raise HTTPException(400, "Put the demo ID in a datacenter box.")
+    if not demo_id.isdigit():
+        raise HTTPException(400, "Enter a numeric demo ID.")
+    token = _resolve_token(body, lambda _msg: None)
+    content = fetch_content(token, site, demo_id)
+    name = str((content or {}).get("name") or (content or {}).get("title") or "").strip()
+    if not name:
+        raise HTTPException(400, f"No demo {demo_id} in {site.upper()}.")
+    lookups = lookup_demo_ids_across_sites(
+        token,
+        name,
+        source_site=site,
+        source_demo_id=demo_id,
+    )
+    return {
+        "ok": True,
+        "site": site.upper(),
+        "name": name,
+        "demoId": demo_id,
+        "lookups": lookups,
+    }
+
+
 def _claim_dc_for_schedule(job: dict[str, Any], dc: dict[str, Any]) -> bool:
     """Ensure only one worker schedules a given DC card (prevents duplicate dCloud sessions)."""
     schedule_lock = job.setdefault("_schedule_lock", threading.Lock())

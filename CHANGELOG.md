@@ -1,3 +1,8 @@
+## 2.1.9 — 2026-10-29
+
+- **Look Up IDs sits above the datacenter boxes.** One demo ID fills the other datacenters from the global catalog, without loading VMs
+- **VM refresh sits above the Powered on and Powered off lists**
+
 ## 2.1.8 — 2026-10-29
 
 - **VM refresh on an active session card.** It checks VM power now, then every 10 minutes for up to an hour, and stops when every VM is powered off. Click it again after the hour. It does not shut down or save
