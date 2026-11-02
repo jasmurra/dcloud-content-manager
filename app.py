@@ -2355,7 +2355,22 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
         key = _saved_id_key(site, saved_id)
         if key in hidden or key in seen:
             continue
-        replace = replaces.get(key) or {}
+        parent_target = str(norm.get("parentId") or norm.get("publishedId") or "").strip()
+        same_saved = [
+            item for item in ((job or {}).get("caiReplaces") or [])
+            if isinstance(item, dict)
+            and str(item.get("site") or "").strip().lower() == site
+            and str(item.get("savedId") or "").strip() == saved_id
+        ]
+        replace = next(
+            (item for item in same_saved if str(item.get("targetId") or "").strip() == parent_target),
+            None,
+        )
+        if replace is None and len(same_saved) == 1:
+            replace = same_saved[0]
+        elif replace is None and not same_saved:
+            replace = replaces.get(key) or {}
+        replace = replace or {}
         status = str(replace.get("status") or "").strip().lower()
         if hide_completed and status == "completed":
             continue
@@ -2385,6 +2400,19 @@ def _saved_id_summary(job: dict[str, Any] | None = None, *, hide_completed: bool
     return {
         "bySite": by_site,
         "rows": rows,
+        "replaces": [
+            {
+                "site": str(item.get("site") or "").strip().lower(),
+                "savedId": str(item.get("savedId") or "").strip(),
+                "targetId": str(item.get("targetId") or "").strip(),
+                "status": str(item.get("status") or "").strip().lower(),
+                "message": str(item.get("message") or ""),
+                "newId": str(item.get("newId") or ""),
+                "vmTasks": list(item.get("vmTasks") or []),
+            }
+            for item in ((job or {}).get("caiReplaces") or [])
+            if isinstance(item, dict)
+        ],
     }
 
 
@@ -5180,12 +5208,16 @@ def _upsert_cai_replace(job: dict[str, Any], item: dict[str, Any]) -> dict[str, 
     site = str(item.get("site") or "").strip().lower()
     saved_id = str(item.get("savedId") or "").strip()
     rows = list(job.get("caiReplaces") or [])
+    target_id = str(item.get("targetId") or "").strip()
     updated = False
     for row in rows:
-        if str(row.get("site") or "").lower() == site and str(row.get("savedId") or "") == saved_id:
-            row.update(item)
-            updated = True
-            break
+        if str(row.get("site") or "").lower() != site or str(row.get("savedId") or "") != saved_id:
+            continue
+        if str(row.get("targetId") or "").strip() != target_id:
+            continue
+        row.update(item)
+        updated = True
+        break
     if not updated:
         rows.append(item)
     job["caiReplaces"] = rows

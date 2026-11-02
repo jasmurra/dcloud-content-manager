@@ -302,6 +302,7 @@
       padding: 0 0.55rem;
       font-size: 0.8rem;
     }
+    .saved-actions button + button { margin-left: 0.35rem; }
     .saved-id-root-cell {
       white-space: nowrap;
     }
@@ -2379,7 +2380,20 @@
     .quick-tasks-title { margin: 0 0 0.55rem; font-size: 0.95rem; font-weight: 650; }
     .quick-tasks-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .quick-tasks .hint { margin: 0.55rem 0 0; }
-    #quick-id { width: 9.5rem; }
+    .quick-id-field { flex: 1 1 20rem; }
+    #quick-id { width: 100%; min-width: 16rem; }
+    .quick-task-progress {
+      margin: 0.65rem 0 0;
+      padding: 0.5rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(4, 159, 217, 0.08);
+      color: var(--text);
+      font-size: 0.84rem;
+      white-space: pre-wrap;
+    }
+    .quick-task-progress.ok { border-color: var(--ok); }
+    .quick-task-progress.warn { border-color: var(--warn); }
     .layout-toolbar { display: none; }
     hbr-shell-nav {
       flex-shrink: 0;
@@ -3044,9 +3058,9 @@
             <option value="syd">SYD</option>
           </select>
         </div>
-        <div>
-          <label for="quick-id">Demo or session ID</label>
-          <input id="quick-id" type="text" inputmode="numeric" placeholder="123456" autocomplete="off" data-tip="Schedule uses a demo ID. Extend, Reset, and Session Info use a session ID, or a demo ID when only one session is running." />
+        <div class="quick-id-field">
+          <label for="quick-id">Demo or session IDs</label>
+          <input id="quick-id" type="text" placeholder="123456 or 123456, 234567" autocomplete="off" data-tip="Schedule uses one demo ID. Extend and Reset take one or more session IDs, separated by commas. Session Info uses one session ID, or a demo ID when only one session is running." />
         </div>
         <div>
           <label for="quick-days">Days</label>
@@ -3054,13 +3068,14 @@
         </div>
         <div class="quick-tasks-actions">
           <button type="button" class="secondary" id="btn-quick-schedule" data-tip="Schedules a regular session in that datacenter for that many days, starting now.">Schedule</button>
-          <button type="button" class="secondary" id="btn-quick-extend" data-tip="Extends that session by that many days from its current end.">Extend</button>
+          <button type="button" class="secondary" id="btn-quick-extend" data-tip="Extends each session ID in the box by that many days from its current end. Separate several IDs with commas.">Extend</button>
           <button type="button" class="secondary" id="btn-quick-export" data-tip="Schedules an exported session with VMs powered off, starting now.">Schedule (Export)</button>
           <button type="button" class="secondary" id="btn-quick-info" data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents. Days are not used.">Session Info</button>
-          <button type="button" class="secondary" id="btn-quick-reset" data-tip="Rebuilds that session under the same demo and session ID. Days are not used.">Reset</button>
+          <button type="button" class="secondary" id="btn-quick-reset" data-tip="Rebuilds each session ID in the box under the same demo and session ID. Separate several IDs with commas. Days are not used.">Reset</button>
         </div>
       </div>
-      <p class="hint">Schedule uses a demo ID and starts now. Extend uses a session ID and adds these days to the current end. Schedule (Export) starts with VMs powered off. Session Info uses a session ID, or a demo ID when only one session is running. Reset uses a session ID and rebuilds that session.</p>
+      <p class="hint">Schedule uses one demo ID and starts now. Extend adds these days to each session's current end. Schedule (Export) starts with VMs powered off. Session Info uses one session ID, or a demo ID when only one session is running. Reset rebuilds each session. Separate several session IDs with commas to extend or reset them one after another.</p>
+      <p id="quick-task-progress" class="quick-task-progress hidden" role="status" aria-live="polite"></p>
     </div>
     <details class="panel panel-collapse" id="panel-step3" open>
       <summary class="panel-collapse-summary">Schedule Sessions — Demo / Content IDs per DC</summary>
@@ -3683,6 +3698,8 @@
       </p>
       <p class="hint help-text" style="margin-top:0.75rem">
         Use the header checkbox to select rows for Load VMs, CAI replace, or CAMGR transfer.
+        <strong>Duplicate</strong> copies a row so the same saved content can replace a VM into more than one Target ID.
+        Check those rows, Load VMs once, check the VM, and Submit creates one request per target.
         After a spin-up save, check every DC of the <strong>same</strong> demo together — they share one section.
         Different demos each get their own section, and Submit sends all of them.
         <strong>Remove from List</strong> takes checked rows off this list; <strong>Remove All</strong> clears every row in one confirmation.
@@ -9364,6 +9381,7 @@
     }
 
     let lastSavedIdRows = [];
+    let lastCaiReplaceList = [];
     let caiReplacePollTimer = null;
     let caiReplacePollInFlight = false;
     const HUB_POLL_MS = 20 * 1000;
@@ -9524,12 +9542,124 @@
       setConnectStatus(el, info.message || "CAI: on the Cisco network, click Connect to CAI.");
     }
 
+    const SAVED_CLONE_KEY = "dcloud-content-manager-saved-clones-v1";
+
+    function savedRowKey(site, savedId, cloneId) {
+      const base = `${String(site || "").toLowerCase()}:${String(savedId || "")}`;
+      const clone = String(cloneId || "");
+      return clone ? `${base}#${clone}` : base;
+    }
+
+    function readSavedClones() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(SAVED_CLONE_KEY) || "[]");
+        if (!Array.isArray(raw)) return [];
+        return raw.filter((row) => row && row.cloneId && row.savedId && row.site);
+      } catch {
+        return [];
+      }
+    }
+
+    function writeSavedClones(rows) {
+      localStorage.setItem(SAVED_CLONE_KEY, JSON.stringify(rows || []));
+    }
+
+    function rememberCloneTarget(cloneId, target) {
+      const rows = readSavedClones();
+      const row = rows.find((item) => item.cloneId === cloneId);
+      if (!row) return;
+      row.targetId = String(target || "").trim();
+      writeSavedClones(rows);
+    }
+
+    function cloneDisplayRow(source, clone) {
+      const target = String(clone.targetId || "").trim();
+      const replace = (lastCaiReplaceList || []).find((item) =>
+        String(item.site || "").toLowerCase() === String(source.site || "").toLowerCase()
+        && String(item.savedId || "") === String(source.savedId || "")
+        && String(item.targetId || "") === target
+      ) || {};
+      return {
+        site: source.site,
+        savedId: source.savedId,
+        name: source.name,
+        rootDemoId: source.rootDemoId,
+        rootIsSelf: source.rootIsSelf,
+        rootNote: source.rootNote,
+        contentViewUrl: source.contentViewUrl,
+        cloneId: clone.cloneId,
+        parentId: target,
+        publishedId: target,
+        rootLookupDone: true,
+        replaceStatus: replace.status || "",
+        replaceMessage: replace.message || "",
+        replaceNewId: replace.newId || "",
+        replaceVmStatus: Array.isArray(replace.vmTasks) ? replace.vmTasks : [],
+      };
+    }
+
+    function expandSavedIdClones(rows) {
+      const clones = readSavedClones();
+      const live = new Set((rows || []).map((row) => savedRowKey(row.site, row.savedId || row.saved_id, "")));
+      const kept = clones.filter((clone) => live.has(savedRowKey(clone.site, clone.savedId, "")));
+      if (kept.length !== clones.length) writeSavedClones(kept);
+      const out = [];
+      for (const row of rows || []) {
+        out.push(row);
+        const key = savedRowKey(row.site, row.savedId || row.saved_id, "");
+        for (const clone of kept) {
+          if (savedRowKey(clone.site, clone.savedId, "") !== key) continue;
+          out.push(cloneDisplayRow(row, clone));
+        }
+      }
+      return out;
+    }
+
+    function duplicateSavedIdRow(site, savedId, afterCloneId) {
+      const source = (lastSavedIdRows || []).find((row) =>
+        !row.cloneId && savedRowKey(row.site, row.savedId, "") === savedRowKey(site, savedId, "")
+      );
+      if (!source || camgrCdevHomeDc(source.site)) return;
+      const clone = {
+        cloneId: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+        site: String(source.site || "").toLowerCase(),
+        savedId: String(source.savedId || ""),
+        targetId: "",
+      };
+      const clones = readSavedClones();
+      const group = savedRowKey(clone.site, clone.savedId, "");
+      if (afterCloneId) {
+        const idx = clones.findIndex((item) => item.cloneId === afterCloneId);
+        if (idx >= 0) clones.splice(idx + 1, 0, clone);
+        else clones.push(clone);
+      } else {
+        const first = clones.findIndex((item) => savedRowKey(item.site, item.savedId, "") === group);
+        if (first >= 0) clones.splice(first, 0, clone);
+        else clones.push(clone);
+      }
+      writeSavedClones(clones);
+      lastSavedIdsFingerprint = "";
+      renderSavedIdRows((lastSavedIdRows || []).filter((row) => !row.cloneId));
+    }
+
+    async function removeSavedClone(cloneId) {
+      if (!await confirmAction(
+        "Remove this duplicate row?\n\nThe original saved content row stays. Nothing is deleted in dCloud.",
+        { title: "Remove duplicate", okLabel: "Remove" }
+      )) return;
+      writeSavedClones(readSavedClones().filter((row) => row.cloneId !== cloneId));
+      lastSavedIdsFingerprint = "";
+      renderSavedIdRows((lastSavedIdRows || []).filter((row) => !row.cloneId));
+      dropUncheckedLoadedDemos();
+    }
+
     function selectedSavedIdRows() {
       return [...document.querySelectorAll(".saved-id-select:checked")].map((el) => {
         const typed = el.closest("tr")?.querySelector(".saved-id-target")?.value;
         return {
           site: el.dataset.site,
           saved_id: el.dataset.savedId,
+          clone_id: el.dataset.cloneId || "",
           target_id: String(typed || el.dataset.targetId || "").trim(),
           root_id: String(el.dataset.rootId || "").trim(),
           name: el.dataset.name || "",
@@ -9746,14 +9876,13 @@
 
     function applyTargetIdToRow(row, target) {
       row.target_id = target;
-      const site = String(row.site || "").toLowerCase();
-      const savedId = String(row.saved_id || "");
+      const key = savedRowKey(row.site, row.saved_id || row.savedId, row.clone_id || row.cloneId);
       const box = [...document.querySelectorAll(".saved-id-select")].find(
-        (el) => el.dataset.site === site && el.dataset.savedId === savedId
+        (el) => savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId) === key
       );
       if (box) box.dataset.targetId = target || "";
       const input = [...document.querySelectorAll(".saved-id-target")].find(
-        (el) => el.dataset.site === site && el.dataset.savedId === savedId
+        (el) => savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId) === key
       );
       if (input) input.value = target || "";
     }
@@ -9765,6 +9894,10 @@
       const box = input.closest("tr")?.querySelector(".saved-id-select");
       if (box) box.dataset.targetId = target;
       syncHubActionButtons();
+      if (input.dataset.cloneId) {
+        rememberCloneTarget(input.dataset.cloneId, target);
+        return;
+      }
       if (!site || !savedId || !target) return;
       if (!/^\d+$/.test(target)) return;
       await api("/api/saved-ids/add", {
@@ -9785,8 +9918,10 @@
     function bindTargetIdInputs() {
       document.querySelectorAll(".saved-id-target").forEach((input) => {
         input.addEventListener("input", () => {
+          const typed = String(input.value || "").trim();
           const box = input.closest("tr")?.querySelector(".saved-id-select");
-          if (box) box.dataset.targetId = String(input.value || "").trim();
+          if (box) box.dataset.targetId = typed;
+          if (input.dataset.cloneId) rememberCloneTarget(input.dataset.cloneId, typed);
           syncHubActionButtons();
         });
         input.addEventListener("change", () => persistTargetId(input).catch((err) => showError(err.message)));
@@ -9797,6 +9932,7 @@
       return [...document.querySelectorAll(".saved-id-select")].map((el) => ({
         site: el.dataset.site,
         saved_id: el.dataset.savedId,
+        clone_id: el.dataset.cloneId || "",
         target_id: String(el.closest("tr")?.querySelector(".saved-id-target")?.value || el.dataset.targetId || "").trim(),
         root_id: String(el.dataset.rootId || "").trim(),
         name: el.dataset.name || "",
@@ -9805,6 +9941,27 @@
 
     async function hideSavedIdRows(items, { all = false } = {}) {
       const rows = (items || []).filter((row) => row.saved_id);
+      const sourceKeys = new Set(
+        rows.filter((row) => !row.clone_id).map((row) => savedRowKey(row.site, row.saved_id, ""))
+      );
+      const cloneOnly = rows.filter(
+        (row) => row.clone_id && !sourceKeys.has(savedRowKey(row.site, row.saved_id, ""))
+      );
+      const sources = rows.filter((row) => !row.clone_id);
+      if (!sources.length && cloneOnly.length) {
+        const labels = cloneOnly.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id}`);
+        if (!await confirmAction(
+          `Remove ${cloneOnly.length} duplicate row(s)?\n\n${labels.join(", ")}\n\nThe original saved content row stays. Nothing is deleted in dCloud.`,
+          { title: "Remove duplicate", okLabel: "Remove" }
+        )) return;
+        const drop = new Set(cloneOnly.map((row) => row.clone_id));
+        writeSavedClones(readSavedClones().filter((row) => !drop.has(row.cloneId)));
+        lastSavedIdsFingerprint = "";
+        renderSavedIdRows((lastSavedIdRows || []).filter((row) => !row.cloneId));
+        dropUncheckedLoadedDemos();
+        noteLog(`Removed ${cloneOnly.length} duplicate row(s). The original saved content stays.`);
+        return;
+      }
       if (!rows.length) {
         showError(
           all
@@ -9827,7 +9984,7 @@
         method: "POST",
         body: JSON.stringify({
           job_id: jobId || "",
-          items: rows.map((row) => ({ site: row.site, saved_id: row.saved_id })),
+          items: sources.map((row) => ({ site: row.site, saved_id: row.saved_id })),
         }),
       });
       if (data.job) renderJob(data.job, { forceCards: true });
@@ -9856,7 +10013,11 @@
     }
 
     function demoSectionMeta(rows) {
-      return rows.map((row) => `${String(row.site || "").toUpperCase()} ${row.saved_id}`).join(" · ");
+      return rows.map((row) => {
+        const id = `${String(row.site || "").toUpperCase()} ${row.saved_id}`;
+        const target = String(row.target_id || "").trim();
+        return target ? `${id} → ${target}` : id;
+      }).join(" · ");
     }
 
     function demoRemoveButton(kind) {
@@ -9878,7 +10039,7 @@
     function dropUncheckedLoadedDemos() {
       const checked = new Set(
         [...document.querySelectorAll(".saved-id-select:checked")].map((el) =>
-          `${String(el.dataset.site || "").toLowerCase()}:${String(el.dataset.savedId || "")}`
+          savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId)
         ),
       );
       const removed = [];
@@ -9887,7 +10048,7 @@
       for (const [kind, loads] of [["camgr", camgrDemoLoads], ["cai", caiDemoLoads]]) {
         for (const [key, entry] of [...loads.entries()]) {
           const rows = (entry.rows || []).filter((row) =>
-            checked.has(`${String(row.site || "").toLowerCase()}:${String(row.saved_id || "")}`)
+            checked.has(savedRowKey(row.site, row.saved_id, row.clone_id))
           );
           if (rows.length === (entry.rows || []).length) continue;
           if (!rows.length) {
@@ -10125,13 +10286,15 @@
 
     async function fillSectionTargets(rows) {
       for (const row of rows) {
-        const site = String(row.site || "").toLowerCase();
-        const savedId = String(row.saved_id || "");
+        const key = savedRowKey(row.site, row.saved_id, row.clone_id);
         const input = [...document.querySelectorAll(".saved-id-target")].find(
-          (el) => el.dataset.site === site && el.dataset.savedId === savedId
+          (el) => savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId) === key
         );
         if (input) row.target_id = String(input.value || "").trim();
         if (String(row.target_id || "").trim()) continue;
+        // A duplicate starts blank on purpose. Looking up the parent would
+        // copy the original row's target and submit the same demo twice.
+        if (row.clone_id) continue;
         const found = await api("/api/saved-ids/lookup-parent", {
           method: "POST",
           quiet: true,
@@ -11299,6 +11462,7 @@
     }
 
     function applySavedIds(summary) {
+      if (Array.isArray(summary?.replaces)) lastCaiReplaceList = summary.replaces;
       renderSavedIdRows(summary?.rows || []);
       refreshRootIds().catch(() => {});
     }
@@ -11332,7 +11496,10 @@
           body: JSON.stringify({ job_id: jobId || "", force }),
         });
         if (data.job) renderJob(data.job, { forceCards: true });
-        else if (data.savedIds) renderSavedIdRows(data.savedIds.rows || []);
+        else if (data.savedIds) {
+          if (Array.isArray(data.savedIds.replaces)) lastCaiReplaceList = data.savedIds.replaces;
+          renderSavedIdRows(data.savedIds.rows || []);
+        }
         if (force) {
           const rows = (data.savedIds?.rows || lastSavedIdRows || []).filter((row) => !camgrCdevHomeDc(row.site));
           const blank = rows.filter((row) => !String(row.rootDemoId || "").trim() && !row.rootIsSelf);
@@ -11359,9 +11526,10 @@
       for (const row of targets) {
         const root = String(row.root_id || row.rootDemoId || "").trim();
         const savedId = String(row.saved_id || row.savedId || "").trim();
-        applyTargetIdToRow({ site: row.site, saved_id: savedId }, root);
+        applyTargetIdToRow({ site: row.site, saved_id: savedId, clone_id: row.clone_id || "" }, root);
+        const key = savedRowKey(row.site, savedId, row.clone_id);
         const input = [...document.querySelectorAll(".saved-id-target")].find(
-          (el) => el.dataset.site === String(row.site || "").toLowerCase() && el.dataset.savedId === savedId
+          (el) => savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId) === key
         );
         if (input) await persistTargetId(input);
       }
@@ -11371,6 +11539,8 @@
 
     function renderSavedIds(job) {
       if (!job || !job.savedIds) return;
+      if (Array.isArray(job.savedIds.replaces)) lastCaiReplaceList = job.savedIds.replaces;
+      else if (Array.isArray(job.caiReplaces)) lastCaiReplaceList = job.caiReplaces;
       renderSavedIdRows(hubRowsForJob(job));
       refreshRootIds().catch(() => {});
     }
@@ -11450,9 +11620,11 @@
     }
 
     function renderSavedIdRows(rows) {
-      lastSavedIdRows = rows || [];
+      const base = (rows || []).filter((row) => !row.cloneId);
+      const expanded = expandSavedIdClones(base);
+      lastSavedIdRows = expanded;
       showPipelineHold(lastSavedIdRows);
-      const fingerprint = JSON.stringify(rows);
+      const fingerprint = JSON.stringify(expanded);
       if (fingerprint === lastSavedIdsFingerprint) {
         syncRootIdHint();
         syncHubActionButtons();
@@ -11466,7 +11638,7 @@
       const panel = $("saved-ids-panel");
       const body = $("saved-ids-body");
       panel.classList.remove("hidden");
-      if (!rows.length) {
+      if (!expanded.length) {
         body.innerHTML = `<tr><td colspan="9" class="hint">No saved content in this list yet. Click Find saved content to add IDs, or finish a save.</td></tr>`;
         syncSavedIdHeadCheck();
         stopCaiReplacePoll();
@@ -11478,17 +11650,18 @@
       const existingBoxes = [...document.querySelectorAll(".saved-id-select")];
       const checked = new Set(
         existingBoxes.filter((el) => el.checked).map(
-          (el) => `${el.dataset.site}:${el.dataset.savedId}`
+          (el) => savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId)
         )
       );
       const typedTarget = {};
       document.querySelectorAll(".saved-id-target").forEach((el) => {
-        typedTarget[`${el.dataset.site}:${el.dataset.savedId}`] = el.value;
+        typedTarget[savedRowKey(el.dataset.site, el.dataset.savedId, el.dataset.cloneId)] = el.value;
       });
-      body.innerHTML = sortByDatacenter(rows, (row) => row.site).map((row) => {
+      body.innerHTML = sortByDatacenter(expanded, (row) => row.site).map((row) => {
         const site = String(row.site || "").toLowerCase();
         const savedId = String(row.savedId || "");
-        const key = `${site}:${savedId}`;
+        const cloneId = String(row.cloneId || "");
+        const key = savedRowKey(site, savedId, cloneId);
         const isDevSite = Boolean(camgrCdevHomeDc(site));
         let target = String(typedTarget[key] ?? (row.parentId || row.publishedId || "")).trim();
         if (target === savedId || isDevSite) target = "";
@@ -11503,7 +11676,7 @@
           : rootIsSelf
             ? `<span title="${escapeHtml(String(row.rootNote || "").trim() || "This saved content is the original base.")}">${escapeHtml(savedId)}</span> <span class="hint">(this is the base)</span>`
             : root
-              ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as Target</button>` : ""}`
+              ? `${escapeHtml(root)}${rootDiffers ? ` <button type="button" class="secondary btn-use-root" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-clone-id="${escapeHtml(cloneId)}" data-root-id="${escapeHtml(root)}" data-tip="Copy this original base ID into Target ID for CAI replace.">Use as Target</button>` : ""}`
               : `<span class="hint" title="${escapeHtml(String(row.rootNote || "").trim() || (camgrLoggedIn ? "CAMGR has not answered for this row yet — use Recheck root IDs." : "Connect to CAMGR to load the original base demo ID."))}">—</span>`;
         const savedLink = isDevSite
           ? `<span class="hint" title="ContentDEV transfers use a vPod, not a saved demo ID.">—</span>`
@@ -11523,21 +11696,22 @@
         const transferHtml = camgrStatusCellHtml(row, transfer, transferClass);
         const isChecked = checked.has(key) ? " checked" : "";
         return `<tr>
-          <td><input type="checkbox" class="saved-id-select" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-target-id="${escapeHtml(target)}" data-root-id="${escapeHtml(root)}" data-name="${escapeHtml(row.name || "")}" ${isChecked} /></td>
+          <td><input type="checkbox" class="saved-id-select" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-clone-id="${escapeHtml(cloneId)}" data-target-id="${escapeHtml(target)}" data-root-id="${escapeHtml(root)}" data-name="${escapeHtml(row.name || "")}" ${isChecked} /></td>
           <td>${escapeHtml(String(row.site || "").toUpperCase())}</td>
           <td class="mono">${savedLink}</td>
           <td class="mono">${
             isDevSite
               // ContentDEV content lives in a vPod, so there is no demo to copy VMs into.
               ? `<span class="hint" title="ContentDEV content sits in a vPod, so it has no Target ID.">—</span>`
-              : `<input class="saved-id-target saved-id-published" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-name="${escapeHtml(row.name || "")}" value="${escapeHtml(target)}" placeholder="Target ID" inputmode="numeric" autocomplete="off" title="Demo ID to copy VMs into (the previous save). Filled when this tool saved the session; otherwise type it. A wrong ID fails in CAI." />`
+              : `<input class="saved-id-target saved-id-published" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-clone-id="${escapeHtml(cloneId)}" data-name="${escapeHtml(row.name || "")}" value="${escapeHtml(target)}" placeholder="Target ID" inputmode="numeric" autocomplete="off" title="Demo ID to copy VMs into (the previous save). Filled when this tool saved the session; otherwise type it. A duplicate row starts blank so you can aim the same VM at another demo. A wrong ID fails in CAI." />`
           }</td>
           <td class="mono saved-id-root-cell">${rootCell}</td>
           <td>${escapeHtml(row.name || "")}</td>
           <td>${statusHtml}</td>
           <td>${transferHtml}</td>
           <td class="saved-actions">
-            <button type="button" class="secondary saved-id-remove" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-tip="Remove this row from the list only. Does not delete saved content in dCloud.">Remove</button>
+            ${isDevSite ? "" : `<button type="button" class="secondary saved-id-clone" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-clone-id="${escapeHtml(cloneId)}" data-tip="Add another row for this same saved content so you can type a different Target ID. Check the rows, Load VMs once, check the VM, then Submit — one replacement is created for each target.">Duplicate</button>`}
+            <button type="button" class="secondary saved-id-remove" data-site="${escapeHtml(site)}" data-saved-id="${escapeHtml(savedId)}" data-clone-id="${escapeHtml(cloneId)}" data-tip="${cloneId ? "Remove this duplicate row only. The original saved content stays." : "Remove this row from the list only. Does not delete saved content in dCloud."}">Remove</button>
           </td>
         </tr>`;
       }).join("");
@@ -11545,9 +11719,9 @@
       syncSavedIdHeadCheck();
       syncRootIdHint();
       syncHubActionButtons();
-      if (caiRowsNeedPoll(rows)) startCaiReplacePoll();
+      if (caiRowsNeedPoll(expanded)) startCaiReplacePoll();
       else stopCaiReplacePoll();
-      if (camgrRowsNeedPoll(rows)) startCamgrTransferPoll();
+      if (camgrRowsNeedPoll(expanded)) startCamgrTransferPoll();
       else stopCamgrTransferPoll();
     }
 
@@ -12459,22 +12633,43 @@
       load?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    function quickTaskSiteId() {
+    function parseQuickIds(raw) {
+      const ids = [];
+      const seen = new Set();
+      for (const part of String(raw || "").split(/[,\s]+/)) {
+        const id = part.trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+      }
+      return ids;
+    }
+
+    function quickTaskSiteId({ many = false } = {}) {
       const site = String($("quick-site")?.value || "").trim().toLowerCase();
-      const id = String($("quick-id")?.value || "").trim();
+      const ids = parseQuickIds($("quick-id")?.value);
       if (!DEFAULT_SITE_ORDER.includes(site)) {
         showError("Choose a datacenter.", { scrollTo: "#quick-site" });
         return null;
       }
-      if (!/^\d+$/.test(id)) {
-        showError("Enter a numeric demo ID or session ID.", { scrollTo: "#quick-id" });
+      if (!ids.length || ids.some((id) => !/^\d+$/.test(id))) {
+        showError(
+          many
+            ? "Enter one or more numeric session IDs, separated by commas."
+            : "Enter a numeric demo ID or session ID.",
+          { scrollTo: "#quick-id" }
+        );
         return null;
       }
-      return { site, id };
+      if (!many && ids.length > 1) {
+        showError("Schedule and Session Info take one ID. Separate several session IDs with commas for Extend or Reset.", { scrollTo: "#quick-id" });
+        return null;
+      }
+      return { site, id: ids[0], ids };
     }
 
-    function quickTaskInput() {
-      const base = quickTaskSiteId();
+    function quickTaskInput({ many = false } = {}) {
+      const base = quickTaskSiteId({ many });
       if (!base) return null;
       const days = Math.floor(Number($("quick-days")?.value));
       if (!Number.isFinite(days) || days < 1) {
@@ -12482,6 +12677,16 @@
         return null;
       }
       return { ...base, days };
+    }
+
+    function setQuickTaskProgress(lines, { tone = "" } = {}) {
+      const el = $("quick-task-progress");
+      if (!el) return;
+      const text = (lines || []).filter(Boolean).join("\n");
+      el.textContent = text;
+      el.classList.toggle("hidden", !text);
+      el.classList.remove("ok", "warn");
+      if (tone) el.classList.add(tone);
     }
 
     function setQuickTaskBusy(on) {
@@ -12525,34 +12730,81 @@
       }
     }
 
-    async function quickExtend() {
-      if (!ensureTokenReady("extending sessions")) return;
-      const input = quickTaskInput();
-      if (!input) return;
-      const { site, id, days } = input;
+    async function runQuickIdBatch({ site, ids, action, days = 0 }) {
+      const extending = action === "extend";
+      const verb = extending ? "Extending" : "Resetting";
+      const past = extending ? "extended" : "reset";
       setQuickTaskBusy(true);
       showError("");
+      const lines = [];
+      const failures = [];
+      let partial = false;
       try {
-        const data = await api("/api/quick/extend", {
-          method: "POST",
-          quiet: true,
-          body: JSON.stringify({
-            ...tokenPayload(),
-            site,
-            session_id: id,
-            days,
-          }),
-        });
-        const sessionId = String(data.sessionId || id).trim();
-        const label = quickTaskLabel(data.site || site, sessionId);
-        const lead = data.partial ? "Session extended as far as available." : "Session extended.";
-        showToast(label ? `${lead} ${label}` : lead);
-        noteLog(`Quick task extended ${label} by ${days} day(s).`);
-      } catch (err) {
-        showToast(err.message || "Extend failed.", { kind: "err" });
+        for (let i = 0; i < ids.length; i += 1) {
+          const id = ids[i];
+          const label = quickTaskLabel(site, id);
+          setQuickTaskProgress([...lines, `${verb} ${i + 1} of ${ids.length} — ${label}`]);
+          try {
+            const data = await api(extending ? "/api/quick/extend" : "/api/quick/reset", {
+              method: "POST",
+              quiet: true,
+              body: JSON.stringify({
+                ...tokenPayload(),
+                site,
+                session_id: id,
+                ...(extending ? { days } : {}),
+              }),
+            });
+            const done = quickTaskLabel(data.site || site, data.sessionId || id);
+            if (data.partial) partial = true;
+            const note = extending && data.partial
+              ? `${done} — extended as far as available`
+              : `${done} — ${past}`;
+            lines.push(note);
+            noteLog(
+              extending
+                ? `Quick task extended ${done} by ${days} day(s).`
+                : `Quick task reset ${done}.`
+            );
+          } catch (err) {
+            const message = err.message || (extending ? "Extend failed." : "Reset failed.");
+            lines.push(`${label} — failed: ${message}`);
+            failures.push({ label, message });
+          }
+          setQuickTaskProgress(lines);
+        }
+        const succeeded = ids.length - failures.length;
+        if (!failures.length && ids.length === 1) {
+          const summary = extending
+            ? (partial ? "Session extended as far as available." : "Session extended.")
+            : "Reset submitted.";
+          const label = String(lines[0] || "").split(" — ")[0];
+          const done = label ? `${summary} ${label}` : summary;
+          setQuickTaskProgress([done], { tone: "ok" });
+          showToast(done);
+        } else if (ids.length === 1) {
+          setQuickTaskProgress(lines, { tone: "warn" });
+          showToast(failures[0].message, { kind: "err" });
+        } else if (!failures.length) {
+          const summary = `All ${ids.length} sessions ${past}.`;
+          setQuickTaskProgress([summary, ...lines], { tone: "ok" });
+          showToast(summary);
+        } else {
+          const lead = extending ? "Extended" : "Reset";
+          const summary = `${lead} ${succeeded} of ${ids.length}. Failed: ${failures.map((row) => row.label).join(", ")}.`;
+          setQuickTaskProgress([summary, ...lines], { tone: "warn" });
+          showToast(summary, { kind: "err" });
+        }
       } finally {
         setQuickTaskBusy(false);
       }
+    }
+
+    async function quickExtend() {
+      if (!ensureTokenReady("extending sessions")) return;
+      const input = quickTaskInput({ many: true });
+      if (!input) return;
+      await runQuickIdBatch({ site: input.site, ids: input.ids, days: input.days, action: "extend" });
     }
 
     async function quickSessionInfo() {
@@ -12590,30 +12842,9 @@
 
     async function quickReset() {
       if (!ensureTokenReady("resetting a session")) return;
-      const input = quickTaskSiteId();
+      const input = quickTaskSiteId({ many: true });
       if (!input) return;
-      const { site, id } = input;
-      setQuickTaskBusy(true);
-      showError("");
-      try {
-        const data = await api("/api/quick/reset", {
-          method: "POST",
-          quiet: true,
-          body: JSON.stringify({
-            ...tokenPayload(),
-            site,
-            session_id: id,
-          }),
-        });
-        const sessionId = String(data.sessionId || id).trim();
-        const done = quickTaskLabel(data.site || site, sessionId);
-        showToast(done ? `Reset submitted. ${done}` : "Reset submitted.");
-        noteLog(`Quick task reset ${done}.`);
-      } catch (err) {
-        showToast(err.message || "Reset failed.", { kind: "err" });
-      } finally {
-        setQuickTaskBusy(false);
-      }
+      await runQuickIdBatch({ site: input.site, ids: input.ids, action: "reset" });
     }
 
     async function startJob() {
@@ -18739,11 +18970,21 @@
           site: useRoot.dataset.site,
           saved_id: useRoot.dataset.savedId,
           root_id: useRoot.dataset.rootId,
+          clone_id: useRoot.dataset.cloneId || "",
         }]).catch((err) => showError(err.message));
+        return;
+      }
+      const cloneBtn = ev.target.closest(".saved-id-clone");
+      if (cloneBtn) {
+        duplicateSavedIdRow(cloneBtn.dataset.site, cloneBtn.dataset.savedId, cloneBtn.dataset.cloneId || "");
         return;
       }
       const btn = ev.target.closest(".saved-id-remove");
       if (!btn) return;
+      if (btn.dataset.cloneId) {
+        removeSavedClone(btn.dataset.cloneId).catch((err) => showError(err.message));
+        return;
+      }
       hideSavedIdRows([{ site: btn.dataset.site, saved_id: btn.dataset.savedId }]).catch((err) => showError(err.message));
     });
     $("btn-cai-connect").addEventListener("click", () => connectCai().catch((err) => showError(err.message)));

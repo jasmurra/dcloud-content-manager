@@ -1,3 +1,8 @@
+## 2.1.13 — 2026-11-02
+
+- **Duplicate a saved VM into several targets.** Duplicate on a saved-content row adds another row for the same saved ID. Each row has its own Target ID. Load VMs once, check the VM once, and Submit creates one replacement per target
+- **Extend or Reset a list of sessions.** Quick tasks accepts several session IDs separated by commas. Each one runs in turn, and the box shows which succeeded and which failed
+
 ## 2.1.12 — 2026-11-02
 
 - **Sign-in datacenter is on the login panel.** It starts on the closest datacenter from this Mac and can be changed before Log in. That choice is remembered. Validate Token checks that datacenter first

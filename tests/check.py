@@ -1675,8 +1675,8 @@ def test_quick_tasks_on_schedule() -> None:
         and "function quickSessionInfo(" in INDEX
         and "function quickReset(" in INDEX
         and 'api("/api/quick/schedule"' in INDEX
-        and 'api("/api/quick/extend"' in INDEX
-        and 'api("/api/quick/reset"' in INDEX
+        and '"/api/quick/extend"' in INDEX
+        and '"/api/quick/reset"' in INDEX
         and "content_export: exported" in INDEX
         and "Session scheduled." in INDEX
         and "Session extended." in INDEX
@@ -1719,6 +1719,31 @@ def test_quick_tasks_on_schedule() -> None:
         and "await showSessionInfo(" in INDEX[INDEX.index("async function quickSessionInfo(") : INDEX.index("async function startJob(")]
         and "/api/sessions/resolve-monitor" in INDEX[INDEX.index("async function quickSessionInfo(") : INDEX.index("async function startJob(")]
         and "quickTaskInput(" not in INDEX[INDEX.index("async function quickSessionInfo(") : INDEX.index("async function startJob(")],
+    )
+    run_node(
+        js_function("parseQuickIds")
+        + "\nconst one = parseQuickIds(' 1369299 ');"
+        + "\nconst many = parseQuickIds('1369299, 1368628,1369299\\n1367670');"
+        + "\nif (one.join() !== '1369299') throw new Error('one ' + one);"
+        + "\nif (many.join() !== '1369299,1368628,1367670') throw new Error('many ' + many);",
+        "comma-separated session IDs are trimmed and not repeated",
+    )
+    sched = INDEX[INDEX.index("async function quickSchedule(") : INDEX.index("async function runQuickIdBatch(")]
+    extend = INDEX[INDEX.index("async function quickExtend(") : INDEX.index("async function quickSessionInfo(")]
+    reset = INDEX[INDEX.index("async function quickReset(") : INDEX.index("async function startJob(")]
+    check(
+        "extend and reset walk every comma-separated session and report failures",
+        'id="quick-task-progress"' in INDEX[tasks:panel]
+        and "function parseQuickIds(" in INDEX
+        and "function runQuickIdBatch(" in INDEX
+        and "many" not in sched
+        and "quickTaskInput({ many: true })" in extend
+        and 'action: "extend"' in extend
+        and "quickTaskSiteId({ many: true })" in reset
+        and 'action: "reset"' in reset
+        and "All ${ids.length} sessions" in INDEX
+        and "Failed:" in INDEX[INDEX.index("async function runQuickIdBatch(") : INDEX.index("async function startJob(")]
+        and "${verb} ${i + 1} of ${ids.length}" in INDEX,
     )
     payloads = source[source.index("class QuickSchedulePayload") : source.index("class AttachSession")]
     check(
@@ -4710,6 +4735,102 @@ def test_cai_error_links_to_its_log() -> None:
         and "logChecked" in INDEX[
             INDEX.index("function caiRowNeedsPoll(") : INDEX.index("function caiRowsNeedPoll(")
         ],
+    )
+
+
+def test_duplicate_saved_row_keeps_each_target() -> None:
+    """One saved VM can replace into several target demos without sharing a status."""
+    import app
+
+    job = {"id": "", "caiReplaces": [], "dcs": []}
+    app._upsert_cai_replace(job, {
+        "site": "rtp",
+        "savedId": "1407497",
+        "targetId": "1405274",
+        "status": "submitted",
+        "message": "",
+        "vmTasks": [{"vm": "CLOUDCONNECT150_2603", "status": "processing"}],
+    })
+    app._upsert_cai_replace(job, {
+        "site": "rtp",
+        "savedId": "1407497",
+        "targetId": "1406001",
+        "status": "submitted",
+        "message": "",
+        "vmTasks": [],
+    })
+    app._upsert_cai_replace(job, {
+        "site": "rtp",
+        "savedId": "1407497",
+        "targetId": "1405274",
+        "status": "processing",
+        "message": "working",
+    })
+    targets = [row["targetId"] for row in job["caiReplaces"]]
+    check("two targets of one saved ID both stay", targets == ["1405274", "1406001"])
+    check(
+        "a status update stays on its own target",
+        job["caiReplaces"][0]["status"] == "processing"
+        and job["caiReplaces"][1]["status"] == "submitted"
+        and job["caiReplaces"][0]["vmTasks"][0]["vm"] == "CLOUDCONNECT150_2603",
+    )
+    summary = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = summary.index("parent_target = ")
+    picker = summary[start : summary.index("status = str(replace.get", start)]
+    check(
+        "the original row keeps the replacement aimed at its own target",
+        "same_saved" in picker and 'item.get("targetId")' in picker and "len(same_saved) == 1" in picker,
+    )
+    check(
+        "Duplicate adds a second row for the same saved ID",
+        'class="secondary saved-id-clone"' in INDEX
+        and ">Duplicate</button>" in INDEX
+        and "function duplicateSavedIdRow(" in INDEX
+        and "function expandSavedIdClones(" in INDEX,
+    )
+    fill = js_function("fillSectionTargets")
+    check(
+        "a blank duplicate does not copy the original target",
+        "if (row.clone_id) continue;" in fill and "savedRowKey(" in fill,
+    )
+    check(
+        "Load VMs tells duplicate rows apart and still groups one demo",
+        "row.clone_id" in js_function("dropUncheckedLoadedDemos")
+        and "clone_id: el.dataset.cloneId" in js_function("selectedSavedIdRows")
+        and "demoGroupKey(row)" in js_function("demoLoadGroups"),
+    )
+    from cai_client import match_replace_task
+
+    tasks = [
+        {
+            "type": "VM replacement",
+            "demo": "1407497",
+            "server": "1405274 || CLOUDCONNECT150_2603",
+            "status": "Processing",
+        },
+        {
+            "type": "VM replacement",
+            "demo": "1407497",
+            "server": "1406001 || CLOUDCONNECT150_2603",
+            "status": "Queued",
+        },
+    ]
+    aimed = match_replace_task(
+        tasks, saved_id="1407497", vm_name="CLOUDCONNECT150_2603", target_id="1406001"
+    )
+    check(
+        "each target keeps its own VM status",
+        aimed is not None and "1406001" in aimed["server"] and aimed["status"] == "Queued",
+    )
+    lone = match_replace_task(
+        [tasks[0]],
+        saved_id="1407497",
+        vm_name="CLOUDCONNECT150_2603",
+        target_id="9999999",
+    )
+    check(
+        "a replacement whose server cell omits the target still matches",
+        lone is not None and lone["status"] == "Processing",
     )
 
 

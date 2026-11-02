@@ -1049,6 +1049,12 @@ def match_replace_task(
         hits = exact or loose
     if not hits:
         return None
+    # Two replacements of the same VM into different targets share a saved ID.
+    # When the Server cell names the target, keep that task on its own row.
+    if target:
+        aimed = [task for task in hits if target in str(task.get("server") or "")]
+        if aimed:
+            hits = aimed
     # Prefer the newest-looking row (homepage lists newest first).
     return hits[0]
 
