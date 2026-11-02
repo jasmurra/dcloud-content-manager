@@ -1402,6 +1402,12 @@ def test_same_demo_can_repeat_in_a_dc() -> None:
     check("scheduling targets the pending card", app._find_dc(job, "sjc", demo_id="480730") is repeat)
     check("status still finds the live card", app._find_dc(job, "sjc", "1356727") is live)
     check("only the repeat is queued", [dc for dc in job["dcs"] if app._dc_needs_schedule(dc)] == [repeat])
+    monitor = {"site": "sjc", "sessionId": "492427", "phase": "ready", "monitorOnly": True}
+    job["dcs"] = [monitor]
+    check(
+        "a missing session does not match another card in that datacenter",
+        app._find_dc(job, "sjc", "496588") is None and app._find_dc(job, "sjc", "492427") is monitor,
+    )
 
 
 def test_page_markup_is_balanced() -> None:
@@ -1545,14 +1551,19 @@ def test_quick_tasks_on_schedule() -> None:
         and ">Extend</button>" in INDEX[tasks:panel]
         and ">Schedule (Export)</button>" in INDEX[tasks:panel]
         and ">Session Info</button>" in INDEX[tasks:panel]
+        and ">Reset</button>" in INDEX[tasks:panel]
+        and 'id="btn-quick-reset"' in INDEX[tasks:panel]
         and "function quickSchedule(" in INDEX
         and "function quickExtend(" in INDEX
         and "function quickSessionInfo(" in INDEX
+        and "function quickReset(" in INDEX
         and 'api("/api/quick/schedule"' in INDEX
         and 'api("/api/quick/extend"' in INDEX
+        and 'api("/api/quick/reset"' in INDEX
         and "content_export: exported" in INDEX
         and "Session scheduled." in INDEX
         and "Session extended." in INDEX
+        and "Reset submitted." in INDEX
         and "confirmAction(" not in INDEX[
             INDEX.index("async function quickSchedule(") : INDEX.index("async function startJob(")
         ]
@@ -1575,6 +1586,15 @@ def test_quick_tasks_on_schedule() -> None:
     check(
         "an attached session keeps its current end so quick extend can add days",
         "_session_schedule_fields(details)" in card,
+    )
+    reset = source[source.index("def api_quick_reset(") : source.index("def _discard_job(")]
+    check(
+        "quick reset rebuilds one owned session and does not add a card",
+        "reset_session(" in reset
+        and "_attach_job(" not in reset
+        and "_set_dc(" not in reset
+        and "_resolve_one_running_session(" in reset
+        and "Does not add a workspace card" in reset,
     )
     check(
         "quick session info opens the same details and does not use days",

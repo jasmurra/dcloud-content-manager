@@ -1,3 +1,8 @@
+## 2.1.11 — 2026-11-02
+
+- **Reset is on Quick tasks.** It rebuilds that session in dCloud and does not add a workspace or monitoring card
+- **Refreshing a deleted session no longer ends a different card** in the same datacenter
+
 ## 2.1.10 — 2026-10-29
 
 - **Deleting saved content takes it off the list** as soon as dCloud says the delete worked. The notice says Deleted Successfully and clears after 10 seconds. An error stays until you dismiss it

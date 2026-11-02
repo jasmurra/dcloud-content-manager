@@ -3035,7 +3035,7 @@
         </div>
         <div>
           <label for="quick-id">Demo or session ID</label>
-          <input id="quick-id" type="text" inputmode="numeric" placeholder="123456" autocomplete="off" data-tip="Schedule uses a demo ID. Extend and Session Info use a session ID, or a demo ID when only one session is running." />
+          <input id="quick-id" type="text" inputmode="numeric" placeholder="123456" autocomplete="off" data-tip="Schedule uses a demo ID. Extend, Reset, and Session Info use a session ID, or a demo ID when only one session is running." />
         </div>
         <div>
           <label for="quick-days">Days</label>
@@ -3046,9 +3046,10 @@
           <button type="button" class="secondary" id="btn-quick-extend" data-tip="Extends that session by that many days from its current end.">Extend</button>
           <button type="button" class="secondary" id="btn-quick-export" data-tip="Schedules an exported session with VMs powered off, starting now.">Schedule (Export)</button>
           <button type="button" class="secondary" id="btn-quick-info" data-tip="Session details from dCloud: NAT IPs, DNS, phone numbers, VPN credentials, and documents. Days are not used.">Session Info</button>
+          <button type="button" class="secondary" id="btn-quick-reset" data-tip="Rebuilds that session under the same demo and session ID. Days are not used.">Reset</button>
         </div>
       </div>
-      <p class="hint">Schedule uses a demo ID and starts now. Extend uses a session ID and adds these days to the current end. Schedule (Export) starts with VMs powered off. Session Info uses a session ID, or a demo ID when only one session is running.</p>
+      <p class="hint">Schedule uses a demo ID and starts now. Extend uses a session ID and adds these days to the current end. Schedule (Export) starts with VMs powered off. Session Info uses a session ID, or a demo ID when only one session is running. Reset uses a session ID and rebuilds that session.</p>
     </div>
     <details class="panel panel-collapse" id="panel-step3" open>
       <summary class="panel-collapse-summary">Schedule Sessions — Demo / Content IDs per DC</summary>
@@ -12345,7 +12346,7 @@
     }
 
     function setQuickTaskBusy(on) {
-      for (const id of ["btn-quick-schedule", "btn-quick-extend", "btn-quick-export", "btn-quick-info"]) {
+      for (const id of ["btn-quick-schedule", "btn-quick-extend", "btn-quick-export", "btn-quick-info", "btn-quick-reset"]) {
         const button = $(id);
         if (button) button.disabled = on;
       }
@@ -12443,6 +12444,34 @@
         await showSessionInfo({ site, sessionId });
       } catch (err) {
         showError(err.message || "Could not load session info.");
+      } finally {
+        setQuickTaskBusy(false);
+      }
+    }
+
+    async function quickReset() {
+      if (!ensureTokenReady("resetting a session")) return;
+      const input = quickTaskSiteId();
+      if (!input) return;
+      const { site, id } = input;
+      setQuickTaskBusy(true);
+      showError("");
+      try {
+        const data = await api("/api/quick/reset", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({
+            ...tokenPayload(),
+            site,
+            session_id: id,
+          }),
+        });
+        const sessionId = String(data.sessionId || id).trim();
+        const done = quickTaskLabel(data.site || site, sessionId);
+        showToast(done ? `Reset submitted. ${done}` : "Reset submitted.");
+        noteLog(`Quick task reset ${done}.`);
+      } catch (err) {
+        showToast(err.message || "Reset failed.", { kind: "err" });
       } finally {
         setQuickTaskBusy(false);
       }
@@ -18082,6 +18111,7 @@
     $("btn-quick-extend")?.addEventListener("click", () => quickExtend().catch((err) => showError(err.message)));
     $("btn-quick-export")?.addEventListener("click", () => quickSchedule(true).catch((err) => showError(err.message)));
     $("btn-quick-info")?.addEventListener("click", () => quickSessionInfo().catch((err) => showError(err.message)));
+    $("btn-quick-reset")?.addEventListener("click", () => quickReset().catch((err) => showError(err.message)));
     $("run-result")?.addEventListener("click", (evt) => {
       if (evt.target.closest(".btn-show-workspace")) goToPageTarget("#panel-job-cards");
     });

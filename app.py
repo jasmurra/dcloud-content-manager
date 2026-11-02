@@ -1236,6 +1236,11 @@ class QuickExtendPayload(TokenPayload):
     days: int = Field(default=1, ge=1)
 
 
+class QuickResetPayload(TokenPayload):
+    site: str
+    session_id: str
+
+
 class AttachSession(BaseModel):
     site: str
     session_id: str = ""
@@ -2535,9 +2540,11 @@ def _find_dc(
     dcs = [dc for dc in (job.get("dcs") or []) if dc.get("site") == site_code]
     if session_id:
         sid = str(session_id).strip()
-        hit = next((dc for dc in dcs if str(dc.get("sessionId") or "") == sid), None)
-        if hit:
-            return hit
+        # A missing session must not land on another card in the same datacenter.
+        # That used to mark a monitoring session ended when a deleted workspace
+        # session was refreshed again after its own card was already gone.
+        if sid:
+            return next((dc for dc in dcs if str(dc.get("sessionId") or "") == sid), None)
     if demo_id is not None:
         did = str(demo_id).strip()
         hits = [dc for dc in dcs if str(dc.get("demoId") or "") == did]
@@ -8286,6 +8293,40 @@ def api_quick_extend(body: QuickExtendPayload) -> dict[str, Any]:
             "stop": str(applied.get("stop") or probe["suggested_stop"]),
         }
     raise HTTPException(400, str(probe.get("message") or "Extend failed."))
+
+
+def _resolve_one_running_session(token: str, site: str, identifier: str) -> str:
+    """One session ID from a session ID or a demo ID that has a single running session."""
+    sessions, err = resolve_monitor_sessions(token, site, identifier)
+    if err:
+        raise HTTPException(400, err)
+    if not sessions:
+        raise HTTPException(404, "No running session matched that demo ID or session ID.")
+    if len(sessions) > 1:
+        ids = ", ".join(str(row.get("sessionId") or "") for row in sessions[:8] if row.get("sessionId"))
+        raise HTTPException(
+            400,
+            f"Several sessions match {identifier} in {site.upper()}: {ids}. Enter one session ID.",
+        )
+    session_id = str(sessions[0].get("sessionId") or "").strip()
+    if not session_id:
+        raise HTTPException(404, "No running session matched that demo ID or session ID.")
+    return session_id
+
+
+@app.post("/api/quick/reset")
+def api_quick_reset(body: QuickResetPayload) -> dict[str, Any]:
+    """Reset one session you own. Does not add a workspace card or ask to confirm."""
+    token = _resolve_token(body)
+    site = (body.site or "").strip().lower()
+    identifier = str(body.session_id or "").strip()
+    if site not in SITES:
+        raise HTTPException(400, "Choose a datacenter.")
+    session_id = _resolve_one_running_session(token, site, identifier)
+    result = reset_session(token, site, session_id)
+    if not result.get("ok"):
+        raise HTTPException(400, str(result.get("message") or "Reset failed."))
+    return {"ok": True, "sessionId": session_id, "site": site}
 
 
 def _discard_job(job: dict[str, Any]) -> None:
