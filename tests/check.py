@@ -869,7 +869,7 @@ def test_shutdown_save_waits_for_vms_to_power_off() -> None:
         check(f"card menu no longer says {gone}", gone not in INDEX)
     check(
         "monitoring keeps End on your own session and leaves Reset off",
-        "const showReset = !monitor && !notMine;" in INDEX
+        "const showReset = !monitor;" in INDEX
         and "End is on your own session. Reset is not on this page." in INDEX
         and "Yes, Reset It" in INDEX
         and "function sessionEndingSoon(" in INDEX
@@ -1302,6 +1302,123 @@ def test_failed_schedule_leaves_no_card() -> None:
     conflict = body[body.index('if result.get("conflict"):') : body.index("_drop_dc_card(job, dc, str(")]
     check("a capacity conflict keeps its card", "scheduleConflict=availability" in conflict)
     check("the conflict card is not dropped", "_drop_dc_card(" not in conflict)
+
+
+def test_late_schedule_reply_keeps_the_session() -> None:
+    """Mario's RTP schedule came back as Schedule failed while dCloud had the session.
+
+    The create is accepted, then the reply sits past the wait. That used to drop
+    the card and hide the timeout behind the generic failure text.
+    """
+    import requests
+
+    import dcloud_client
+
+    real_calendar = dcloud_client.fetch_content_calendar
+    real_pools = dcloud_client._pool_attempts_for_demo
+    real_request = dcloud_client._request
+    real_list = dcloud_client.list_dashboard_sessions
+    calls: list[str] = []
+
+    def boom(*_args, **_kwargs):
+        calls.append("POST")
+        raise requests.Timeout("read timed out")
+
+    session = {
+        "sessionId": "1369299",
+        "demoId": "1405274",
+        "start": "2026-11-01T22:14:00.000Z",
+        "stop": "2026-11-06T22:14:00.000Z",
+        "status": "Scheduled",
+        "viewUrl": "https://dcloud2-rtp.cisco.com/session/1369299",
+    }
+
+    def scheduled(*_args, **_kwargs):
+        return [session], None
+
+    try:
+        dcloud_client.fetch_content_calendar = lambda *_args, **_kwargs: ([], None)
+        dcloud_client._pool_attempts_for_demo = lambda *_args, **_kwargs: [
+            ("GDE_CONTENT_DEV", "GDE_CONTENT_DEV"),
+            ("Public / Core Pool", "core"),
+        ]
+        dcloud_client._request = boom
+        dcloud_client.list_dashboard_sessions = scheduled
+        kept = dcloud_client.schedule_exported_session(
+            "token",
+            "rtp",
+            "1405274",
+            start_at="2026-11-01T22:14:00.000Z",
+            stop_at="2026-11-06T22:14:00.000Z",
+            content_export=False,
+        )
+        dcloud_client.list_dashboard_sessions = lambda *_args, **_kwargs: ([], None)
+        missed = dcloud_client.schedule_exported_session(
+            "token",
+            "rtp",
+            "1405274",
+            start_at="2026-11-01T22:14:00.000Z",
+            stop_at="2026-11-06T22:14:00.000Z",
+            content_export=False,
+        )
+    finally:
+        dcloud_client.fetch_content_calendar = real_calendar
+        dcloud_client._pool_attempts_for_demo = real_pools
+        dcloud_client._request = real_request
+        dcloud_client.list_dashboard_sessions = real_list
+
+    check(
+        "a late reply keeps the session dCloud already created",
+        kept.get("ok") is True and kept.get("sessionId") == "1369299",
+        str(kept),
+    )
+    check(
+        "a lost reply is not posted to the next pool",
+        calls == ["POST", "POST"],
+        str(calls),
+    )
+    check(
+        "a missing session says the request may still have landed",
+        missed.get("ok") is False
+        and "may still have been created" in str(missed.get("message") or "")
+        and missed.get("message") != "Schedule failed.",
+        str(missed),
+    )
+    session["status"] = "Error"
+    session["rawStatus"] = 99
+    dcloud_client.fetch_content_calendar = lambda *_args, **_kwargs: ([], None)
+    dcloud_client._pool_attempts_for_demo = lambda *_args, **_kwargs: [
+        ("GDE_CONTENT_DEV", "GDE_CONTENT_DEV"),
+    ]
+    dcloud_client._request = boom
+    dcloud_client.list_dashboard_sessions = lambda *_args, **_kwargs: ([session], None)
+    try:
+        errored = dcloud_client.schedule_exported_session(
+            "token",
+            "rtp",
+            "1405274",
+            start_at="2026-11-01T22:14:00.000Z",
+            stop_at="2026-11-06T22:14:00.000Z",
+            content_export=False,
+        )
+    finally:
+        dcloud_client.fetch_content_calendar = real_calendar
+        dcloud_client._pool_attempts_for_demo = real_pools
+        dcloud_client._request = real_request
+        dcloud_client.list_dashboard_sessions = real_list
+    check(
+        "an Error session from the hub stays available to reset",
+        errored.get("ok") is True
+        and errored.get("sessionError") is True
+        and errored.get("sessionId") == "1369299",
+        str(errored),
+    )
+    schedule_dc = (ROOT / "app.py").read_text(encoding="utf-8")
+    schedule_dc = schedule_dc[schedule_dc.index("def _schedule_one_dc(") : schedule_dc.index("def _staggered_schedule_order(")]
+    check(
+        "that Error session is a workspace card, not a dropped failure",
+        'phase="error" if result.get("sessionError") else "waiting"' in schedule_dc,
+    )
 
 
 def test_active_card_says_nothing() -> None:
@@ -3248,11 +3365,12 @@ def test_event_management_section() -> None:
 
     client_source = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     check(
-        "workspace end and reset do not use the admin session route",
+        "workspace end stays off the admin route, and reset uses it only after a refusal",
         "def _session_action(" in client_source
         and "def reset_event_session(" in client_source
-        and "admin=True" in client_source[client_source.index("def reset_event_session("):client_source.index("def reset_event_session(") + 1200]
+        and "admin=True" in client_source[client_source.index("def reset_session("):client_source.index("def reset_event_session(")]
         and "def refuse_not_owned(" in client_source
+        and "_confirm_session_owner(" not in client_source[client_source.index("def reset_session("):client_source.index("def reset_event_session(")]
         and 'operation = reset_event_session if action == "reset" else end_session' in source,
     )
     event_action = js_function("runEventSessionAction")
@@ -3315,11 +3433,10 @@ def test_event_management_section() -> None:
         calls.clear()
         reset_other = dcloud_client.reset_session(mine, "sjc", "491872")
         check(
-            "reset refuses a session owned by someone else before any destructive call",
-            reset_other["ok"] is False
-            and reset_other.get("notOwner") is True
-            and not any(call.startswith("PUT ") for call in calls),
-            str(calls),
+            "reset of someone else's session is sent to dCloud",
+            reset_other["ok"] is True
+            and calls == ["PUT https://dcloud2-sjc.cisco.com/api/sessions/491872/reset"],
+            str(reset_other) + " " + str(calls),
         )
 
         calls.clear()
@@ -3363,7 +3480,6 @@ def test_event_management_section() -> None:
             "reset of your own session uses the plain route only",
             reset_mine["ok"] is True
             and calls == [
-                "GET https://dcloud2-sjc.cisco.com/api/sessions/123?expand=server",
                 "PUT https://dcloud2-sjc.cisco.com/api/sessions/123/reset",
             ],
             str(calls),
@@ -3698,7 +3814,19 @@ def test_tool_owned_browser_avoids_keychain() -> None:
         "one Log in button drives dCloud sign-in through the tool browser",
         'id="btn-login"' in page
         and "/api/auth/dcloud-browser-login" in page
-        and "import-from-browser" not in page,
+        and "import-from-browser" not in page
+        and 'id="login-site"' in page
+        and "closestDatacenterFromClock" in page
+        and 'zone.startsWith("europe/")' in page
+        and 'return "lon"' in page
+        and '($("login-site") && $("login-site").value)' in page
+        and '($("src-site") && $("src-site").value)' not in page[page.index("async function loginToDcloud") : page.index("async function loginToDcloud") + 800]
+        and "JSON.stringify({ token, site })" in page[page.index("async function validateToken") : page.index("async function loadVms")],
+    )
+    validate = source[source.index("def api_validate_dcloud_token(") : source.index("def api_load_vms(")]
+    check(
+        "token validate tries the sign-in datacenter before the others",
+        "prefer in DCLOUD_SITES" in validate and "sites=order" in validate,
     )
     check(
         "sign-in status sits under both token fields so they share a row",

@@ -2991,6 +2991,17 @@
         If that profile is already signed in, the window finishes as soon as it opens.
         dCloud works off the Cisco network. CAI and CAMGR do not.
       </p>
+      <div style="margin-top:0.65rem; max-width:18rem">
+        <label for="login-site">Sign-in datacenter</label>
+        <select id="login-site" autocomplete="off">
+          <option value="sjc">SJC</option>
+          <option value="rtp">RTP</option>
+          <option value="lon">LON</option>
+          <option value="sng">SNG</option>
+          <option value="syd">SYD</option>
+        </select>
+        <p class="hint" id="login-site-hint">Closest datacenter from this Mac. Change it before Log in if that is wrong.</p>
+      </div>
       <label class="check-line" for="login-hub" style="margin-top:0.65rem">
         <input type="checkbox" id="login-hub" checked />
         <span>Also sign in to CAI and CAMGR</span>
@@ -9059,12 +9070,12 @@
       const canEnd = Boolean(dc.sessionId) && !["ended", "saved"].includes(dc.phase) && !notMine;
       const notStarted = isScheduledNotStarted(dc);
       const ownerLine = notMine
-        ? `<div class="hint" style="color:var(--warn)" data-tip="End, reset, and save are not available on someone else's session. Do those in dCloud.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
+        ? `<div class="hint" style="color:var(--warn)" data-tip="End and save stay off someone else's session. Reset is still available.">Owned by ${escapeHtml(dc.owner || "someone else")}</div>`
         : "";
       const canReset = canResetSession(dc);
       // dCloud reports canReset on healthy sessions too, so only a failed card
       // gets the loud button; everything else keeps Reset in Card actions.
-      const showResetInline = !monitor && canReset && !notMine && ["error", "cancelled"].includes(dc.phase);
+      const showResetInline = !monitor && canReset && ["error", "cancelled"].includes(dc.phase);
       const resetTip = canReset
         ? "Same as Reset in the dCloud dashboard — rebuilds this session under the same demo and session ID."
         : "Reset is offered when dCloud says the session failed or can be reset.";
@@ -9136,7 +9147,7 @@
         : "";
       // Reset stays off monitoring. End stays on a session this user owns,
       // including a monitoring card, so their own sessions can still be stopped.
-      const showReset = !monitor && !notMine;
+      const showReset = !monitor;
       const endingSoon = sessionEndingSoon(dc);
       const endingSoonChip = endingSoon
         ? `<span class="badge ending-soon" data-tip="Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}">Ending Soon</span>`
@@ -11769,12 +11780,139 @@
     // Sign-in happens in the tool's own Chromium, the same profile CAMGR and CAI
     // use, so one Cisco SSO login covers all three and there is no popup to babysit
     // and no Chrome Local Storage to scan.
+    let loginSiteTouched = false;
+
+    function readChosenLoginSite() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        const site = String(saved.loginSite || "").trim().toLowerCase();
+        return saved.loginSiteChosen && DEFAULT_SITE_ORDER.includes(site) ? site : "";
+      } catch {
+        return "";
+      }
+    }
+
+    function writeChosenLoginSite(site) {
+      let settings = {};
+      try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch {}
+      settings.loginSite = site;
+      settings.loginSiteChosen = true;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+    }
+
+    function closestDatacenterFromClock() {
+      const zone = String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").toLowerCase();
+      if (
+        zone.startsWith("australia/")
+        || zone.startsWith("pacific/auckland")
+        || zone === "pacific/fiji"
+      ) return "syd";
+      if (
+        zone.startsWith("asia/singapore")
+        || zone.startsWith("asia/kuala")
+        || zone.startsWith("asia/jakarta")
+        || zone.startsWith("asia/bangkok")
+        || zone.startsWith("asia/ho_chi")
+        || zone.startsWith("asia/manila")
+        || zone.startsWith("asia/hong_kong")
+        || zone.startsWith("asia/shanghai")
+        || zone.startsWith("asia/tokyo")
+        || zone.startsWith("asia/seoul")
+        || zone.startsWith("asia/taipei")
+        || zone.startsWith("asia/kolkata")
+        || zone.startsWith("asia/calcutta")
+        || zone.startsWith("asia/dhaka")
+      ) return "sng";
+      if (
+        zone.startsWith("europe/")
+        || zone.startsWith("africa/")
+        || zone.startsWith("atlantic/")
+        || zone.startsWith("asia/dubai")
+        || zone.startsWith("asia/riyadh")
+        || zone.startsWith("asia/qatar")
+        || zone.startsWith("asia/jerusalem")
+        || zone.startsWith("asia/beirut")
+      ) return "lon";
+      if (
+        zone.startsWith("america/los_angeles")
+        || zone.startsWith("america/vancouver")
+        || zone.startsWith("america/tijuana")
+        || zone.startsWith("america/denver")
+        || zone.startsWith("america/phoenix")
+        || zone.startsWith("america/boise")
+        || zone.startsWith("america/edmonton")
+        || zone.startsWith("america/anchorage")
+        || zone.startsWith("america/juneau")
+        || zone.startsWith("pacific/honolulu")
+      ) return "sjc";
+      if (zone.startsWith("america/") || zone.startsWith("us/")) return "rtp";
+      return "sjc";
+    }
+
+    function setLoginSite(site, hint) {
+      const select = $("login-site");
+      if (!select || loginSiteTouched || readChosenLoginSite()) return;
+      if (DEFAULT_SITE_ORDER.includes(site)) select.value = site;
+      const note = $("login-site-hint");
+      if (note && hint) note.textContent = hint;
+    }
+
+    async function probeClosestLoginSite() {
+      if (readChosenLoginSite()) return;
+      const results = await Promise.all(DEFAULT_SITE_ORDER.map(async (site) => {
+        const started = performance.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        try {
+          await fetch(`https://dcloud2-${site}.cisco.com/`, {
+            mode: "no-cors",
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          return { site, ms: performance.now() - started };
+        } catch {
+          return { site, ms: Infinity };
+        } finally {
+          clearTimeout(timer);
+        }
+      }));
+      const reachable = results.filter((row) => Number.isFinite(row.ms)).sort((a, b) => a.ms - b.ms);
+      if (!reachable.length) return;
+      const best = reachable[0];
+      setLoginSite(
+        best.site,
+        `${best.site.toUpperCase()} answered fastest from here. Change it before Log in if that is wrong.`,
+      );
+    }
+
+    function initLoginSite() {
+      const chosen = readChosenLoginSite();
+      const guess = closestDatacenterFromClock();
+      const select = $("login-site");
+      const site = chosen || guess;
+      if (select && DEFAULT_SITE_ORDER.includes(site)) select.value = site;
+      const note = $("login-site-hint");
+      if (note) {
+        note.textContent = chosen
+          ? `${chosen.toUpperCase()} is the datacenter you picked last time. Change it if you are somewhere else.`
+          : `${guess.toUpperCase()} looks closest from this Mac. Change it before Log in if that is wrong.`;
+      }
+      select?.addEventListener("change", () => {
+        loginSiteTouched = true;
+        const picked = String(select.value || "").toLowerCase();
+        if (!DEFAULT_SITE_ORDER.includes(picked)) return;
+        writeChosenLoginSite(picked);
+        if (note) note.textContent = `${picked.toUpperCase()} will be used for this sign-in.`;
+      });
+      if (!chosen) probeClosestLoginSite().catch(() => {});
+    }
+
     async function loginToDcloud({ allowWindow = true } = {}) {
       const btn = $("btn-login");
       if (btn) btn.disabled = true;
       showError("");
       try {
-        const site = ($("src-site") && $("src-site").value) || "rtp";
+        const site = ($("login-site") && $("login-site").value) || closestDatacenterFromClock() || "rtp";
         const wantHub = loginHubWanted();
         if (allowWindow) {
           $("auth-status").textContent = wantHub
@@ -11811,9 +11949,10 @@
       showError("");
       const token = $("dtoken").value.trim();
       if (!token) { $("auth-status").textContent = "Paste a token first, or import from Chrome."; return; }
+      const site = ($("login-site") && $("login-site").value) || "";
       const data = await api("/api/dcloud/token/validate", {
         method: "POST",
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, site }),
       });
       $("auth-status").textContent = data.message;
       if (data.ok) {
@@ -18098,6 +18237,7 @@
     document.addEventListener("scroll", () => closeSearchActionsMenus(), true);
     window.addEventListener("resize", () => closeSearchActionsMenus());
     rememberLoginHubChoice();
+    initLoginSite();
     $("btn-login").addEventListener("click", () => loginToDcloud().catch((err) => showError(err.message)));
     $("btn-clear-session").addEventListener("click", () => clearLoginSession().catch((err) => showError(err.message)));
     $("btn-validate").addEventListener("click", () => validateToken().catch((err) => showError(err.message)));

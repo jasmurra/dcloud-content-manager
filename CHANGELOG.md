@@ -1,3 +1,9 @@
+## 2.1.12 — 2026-11-02
+
+- **Sign-in datacenter is on the login panel.** It starts on the closest datacenter from this Mac and can be changed before Log in. That choice is remembered. Validate Token checks that datacenter first
+- **A schedule dCloud created stays on the workspace.** A late reply, or a session that comes back in Error, stays on the card so it can be reset
+- **Reset works on a session you do not own.** The tool no longer stops you when dCloud says the session belongs to someone else. End and save still do
+
 ## 2.1.11 — 2026-11-02
 
 - **Reset is on Quick tasks.** It rebuilds that session in dCloud and does not add a workspace or monitoring card

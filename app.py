@@ -6036,7 +6036,14 @@ def api_validate_dcloud_token(body: dict[str, str]) -> dict[str, Any]:
     token = effective_dcloud_token(body.get("token"))
     if not token:
         raise HTTPException(400, "Token is required.")
-    ok, message = validate_dcloud_token(token)
+    # Any datacenter can accept the token. Try the sign-in datacenter first so
+    # this check does not start with a far-away site.
+    prefer = (body.get("site") or "").strip().lower()
+    if prefer in DCLOUD_SITES:
+        order = (prefer, *[code for code in DCLOUD_SITES if code != prefer])
+        ok, message = validate_dcloud_token(token, sites=order)
+    else:
+        ok, message = validate_dcloud_token(token)
     return {"ok": ok, "message": message}
 
 
@@ -6331,7 +6338,7 @@ def _schedule_one_dc(
     _update_dc_card(
         job,
         dc,
-        phase="waiting",
+        phase="error" if result.get("sessionError") else "waiting",
         sessionId=result.get("sessionId") or "",
         pool=result.get("pool") or "",
         viewUrl=result.get("viewUrl") or "",
@@ -7384,11 +7391,6 @@ def _reset_job(job: dict[str, Any], payload: "ResetPayload") -> None:
             continue
         if dc.get("phase") in _TERMINAL_DC_PHASES:
             progress(f"{site.upper()}: skip reset ({dc.get('phase')}).")
-            continue
-        if _dc_owned_by_me(job, dc) is False:
-            progress(
-                f"{site.upper()}: skip reset — session belongs to {dc.get('owner') or 'someone else'}."
-            )
             continue
         attempted += 1
         result = reset_session(token, site, session_id)

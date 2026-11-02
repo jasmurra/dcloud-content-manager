@@ -3051,6 +3051,55 @@ def find_schedule_conflict(
     return first_conflict
 
 
+def _schedule_reply_lost_message(exc: BaseException) -> str:
+    """A lost schedule reply is not proof that dCloud refused the session."""
+    text = str(exc or "").lower()
+    if "timed out" in text or "timeout" in text:
+        return (
+            "dCloud did not answer in time. The session may still have been created, "
+            "and it was not on the session list yet."
+        )
+    return (
+        "The schedule request did not finish. The session may still have been created, "
+        "and it was not on the session list yet."
+    )
+
+
+def _find_session_just_scheduled(
+    token: str,
+    site: str,
+    demo_id: str,
+    start: str,
+    stop: str,
+) -> dict[str, Any] | None:
+    """The session a lost schedule reply already created, matched by demo and window."""
+    rows, err = list_dashboard_sessions(token, site)
+    if err or not rows:
+        return None
+    want_start = parse_schedule_datetime(start)
+    want_stop = parse_schedule_datetime(stop)
+    if want_start is None:
+        return None
+    finished = {"deleted", "cancelled", "canceled", "ended", "saved"}
+    matches: list[dict[str, Any]] = []
+    for row in rows:
+        if str(row.get("demoId") or "") != str(demo_id):
+            continue
+        if str(row.get("status") or "").strip().lower() in finished:
+            continue
+        row_start = parse_schedule_datetime(str(row.get("start") or ""))
+        row_stop = parse_schedule_datetime(str(row.get("stop") or ""))
+        if row_start is None or abs((row_start - want_start).total_seconds()) > 120:
+            continue
+        if want_stop is not None and row_stop is not None and abs((row_stop - want_stop).total_seconds()) > 120:
+            continue
+        matches.append(row)
+    if not matches:
+        return None
+    matches.sort(key=lambda row: int(str(row.get("sessionId") or "0") or "0"))
+    return matches[-1]
+
+
 def _session_id_in_url(url: str) -> str:
     match = re.search(r"/sessions/(\d+)(?:\b|/|$)", str(url or ""))
     return match.group(1) if match else ""
@@ -3197,7 +3246,10 @@ def schedule_exported_session(
         pool_name: str,
         pool_id: str | None,
     ) -> dict[str, Any]:
-        nonlocal last_message
+        nonlocal last_message, posted, posted_start, posted_stop
+        posted = True
+        posted_start = start_ts
+        posted_stop = stop_ts
         if progress:
             progress(f"{site_code.upper()}: trying {pool_name}…")
         payload = _schedule_payload(
@@ -3213,7 +3265,13 @@ def schedule_exported_session(
                 repeat_on_redirect=False,
             )
         except requests.RequestException as exc:
-            return {"ok": False, "message": str(exc)}
+            # The create can already be in dCloud when the reply never comes back.
+            # Say so, and do not let the caller post the same schedule again.
+            return {
+                "ok": False,
+                "reply_lost": True,
+                "message": _schedule_reply_lost_message(exc),
+            }
         body = _json_or_text(response)
         last_message = api_message(body) or f"HTTP {response.status_code}"
         uid, first, extra = _schedule_session_from_response(response)
@@ -3250,6 +3308,101 @@ def schedule_exported_session(
                 "message": "Schedule was sent once and the reply had no session id. Not sending it again.",
             }
         return {"ok": False, "message": last_message}
+
+    posted = False
+    looked = False
+    posted_start = ""
+    posted_stop = ""
+
+    def _from_hub(pool_name: str, start_ts: str, stop_ts: str, adjusted: bool) -> dict[str, Any] | None:
+        """A session already on the user's hub, including one dCloud left in Error."""
+        nonlocal looked
+        looked = True
+        found = _find_session_just_scheduled(token, site_code, demo, start_ts, stop_ts)
+        if not found:
+            return None
+        uid = str(found.get("sessionId") or "")
+        session_error = is_session_error_status(found.get("rawStatus")) or is_session_error_status(
+            found.get("status")
+        )
+        if progress:
+            if session_error:
+                progress(
+                    f"{site_code.upper()}: session {uid} is in Error. "
+                    "Leaving it on the workspace so it can be reset."
+                )
+            else:
+                progress(
+                    f"{site_code.upper()}: session {uid} is already in the datacenter list."
+                )
+        if session_error:
+            message = (
+                f"Session {uid} is in Error in {site_code.upper()}. "
+                "It is on the workspace so you can reset it."
+            )
+        else:
+            message = (
+                f"{kind.capitalize()} session {uid} is in {pool_name}. "
+                "dCloud already has it, so it is on the workspace."
+            )
+        return {
+            "ok": True,
+            "site": site_code,
+            "demoId": demo,
+            "sessionId": uid,
+            "pool": pool_name,
+            "contentExport": content_export,
+            "scheduleStart": start_ts,
+            "scheduleStop": stop_ts,
+            "adjusted": adjusted,
+            "recovered": True,
+            "sessionError": session_error,
+            "message": message,
+            "viewUrl": str(found.get("viewUrl") or ""),
+        }
+
+    def _claim(
+        result: dict[str, Any],
+        pool_name: str,
+        start_ts: str,
+        stop_ts: str,
+        adjusted: bool,
+    ) -> dict[str, Any] | str | None:
+        """Success dict, \"stop\" when the reply was lost, or None to try another pool."""
+        nonlocal last_message
+        if not result.get("ok") and result.get("reply_lost"):
+            found = _from_hub(pool_name, start_ts, stop_ts, adjusted)
+            if found:
+                return found
+            last_message = str(result.get("message") or last_message)
+            return "stop"
+        if not result.get("ok"):
+            return None
+        uid = result.get("sessionId") or ""
+        if progress:
+            progress(f"{site_code.upper()}: scheduled {kind} session {uid} in {pool_name}.")
+        if result.get("recovered"):
+            message = str(result.get("message") or "")
+        else:
+            message = (
+                f"{kind.capitalize()} session {uid} scheduled in {pool_name}"
+                + (" (next available slot)." if adjusted else ".")
+            )
+        return {
+            "ok": True,
+            "site": site_code,
+            "demoId": demo,
+            "sessionId": uid,
+            "pool": pool_name,
+            "contentExport": content_export,
+            "scheduleStart": start_ts,
+            "scheduleStop": stop_ts,
+            "adjusted": adjusted,
+            "recovered": bool(result.get("recovered")),
+            "sessionError": bool(result.get("sessionError")),
+            "message": message,
+            "viewUrl": result.get("viewUrl") or "",
+        }
 
     last_conflict: dict[str, Any] | None = None
     resource_failure: tuple[str, str | None, str, str] | None = None
@@ -3293,26 +3446,11 @@ def schedule_exported_session(
         stop = _dcloud_timestamp(end_use)
 
         result = _post_schedule(start, stop, pool_name, pool_id)
-        if result.get("ok"):
-            uid = result.get("sessionId") or ""
-            if progress:
-                progress(f"{site_code.upper()}: scheduled {kind} session {uid} in {pool_name}.")
-            return {
-                "ok": True,
-                "site": site_code,
-                "demoId": demo,
-                "sessionId": uid,
-                "pool": pool_name,
-                "contentExport": content_export,
-                "scheduleStart": start,
-                "scheduleStop": stop,
-                "adjusted": adjusted,
-                "message": (
-                    f"{kind.capitalize()} session {uid} scheduled in {pool_name}"
-                    + (" (next available slot)." if adjusted else ".")
-                ),
-                "viewUrl": result.get("viewUrl") or "",
-            }
+        claimed = _claim(result, pool_name, start, stop, adjusted)
+        if claimed == "stop":
+            break
+        if isinstance(claimed, dict):
+            return claimed
 
         if progress:
             progress(f"{site_code.upper()}: {pool_name} not available ({result.get('message') or last_message}).")
@@ -3376,26 +3514,11 @@ def schedule_exported_session(
                         f"{retry_begin.strftime('%Y-%m-%d %H:%M')} UTC…"
                     )
                 retry = _post_schedule(retry_start, retry_stop, pool_name, pool_id)
-                if retry.get("ok"):
-                    uid = retry.get("sessionId") or ""
-                    if progress:
-                        progress(f"{site_code.upper()}: scheduled {kind} session {uid} in {pool_name}.")
-                    return {
-                        "ok": True,
-                        "site": site_code,
-                        "demoId": demo,
-                        "sessionId": uid,
-                        "pool": pool_name,
-                        "contentExport": content_export,
-                        "scheduleStart": retry_start,
-                        "scheduleStop": retry_stop,
-                        "adjusted": True,
-                        "message": (
-                            f"{kind.capitalize()} session {uid} scheduled in {pool_name} "
-                            "(next available slot)."
-                        ),
-                        "viewUrl": retry.get("viewUrl") or "",
-                    }
+                claimed = _claim(retry, pool_name, retry_start, retry_stop, True)
+                if claimed == "stop":
+                    break
+                if isinstance(claimed, dict):
+                    return claimed
                 last_message = retry.get("message") or last_message
 
         if not _should_try_next_pool(result.get("message") or last_message):
@@ -3451,6 +3574,16 @@ def schedule_exported_session(
 
     if last_conflict:
         return last_conflict
+
+    if posted and not looked:
+        recovered = _from_hub(
+            "dCloud",
+            posted_start or _dcloud_timestamp(begin),
+            posted_stop or _dcloud_timestamp(end),
+            False,
+        )
+        if recovered:
+            return recovered
 
     return {
         "ok": False,
@@ -4426,14 +4559,21 @@ def end_session(token: str, site: str, session_id: str) -> dict[str, Any]:
 
 
 def reset_session(token: str, site: str, session_id: str) -> dict[str, Any]:
-    """PUT /api/sessions/{id}/reset — the dashboard Reset button. Keeps the same demo and session ID."""
+    """PUT /api/sessions/{id}/reset — the dashboard Reset button. Keeps the same demo and session ID.
+
+    Ownership is not checked first. A session shared with you, or one you are
+    resetting for someone else, is sent to dCloud. If the user route refuses,
+    one admin-route reset follows.
+    """
     sid = (session_id or "").strip()
     if not sid:
         return {"ok": False, "message": "Session ID is required."}
-    blocked = _confirm_session_owner(token, site, sid)
-    if blocked:
-        return {"ok": False, "sessionId": sid, "notOwner": True, "message": blocked}
     ok, body, status, detail, tried = _session_action(token, site, sid, "reset", timeout=60)
+    if not ok and _reset_needs_admin(status, detail):
+        ok, body, status, detail, admin_tried = _session_action(
+            token, site, sid, "reset", timeout=60, admin=True
+        )
+        tried = [*tried, *admin_tried]
     if status == 404 and not ok:
         return {"ok": False, "sessionId": sid, "message": f"Session {sid} not found in {site.upper()}."}
     # dCloud answers a good reset with `"message": []`, so fall back to our own wording.
