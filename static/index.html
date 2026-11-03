@@ -9400,6 +9400,14 @@
     function caiRowsNeedPoll(rows) {
       return (rows || []).some((row) => caiRowNeedsPoll(row));
     }
+
+    function caiReplacesNeedPoll(replaces) {
+      return (replaces || []).some((item) => {
+        if (CAI_PENDING.includes(String(item?.status || ""))) return true;
+        const chips = item?.vmTasks || item?.replaceVmStatus || [];
+        return chips.some((chip) => CAI_PENDING.includes(String(chip.status || chip.phase || "")));
+      });
+    }
     let camgrTransferPollTimer = null;
     let camgrTransferPollInFlight = false;
     let camgrLoggedIn = false;
@@ -10496,7 +10504,11 @@
           renderJob(data.job);
         }
         else if (data.savedIds) applySavedIds(data.savedIds);
-        if (!caiRowsNeedPoll(data.job?.savedIds?.rows || data.savedIds?.rows || lastSavedIdRows || [])) {
+        // The saved-content table keeps one canonical row per saved ID. A
+        // duplicate row's replacement lives on caiReplaces, so a Completed
+        // original must not stop the poll while another target is still queued.
+        const replaceRows = data.job?.caiReplaces || data.job?.savedIds?.replaces || data.savedIds?.replaces || [];
+        if (!caiRowsNeedPoll(lastSavedIdRows) && !caiReplacesNeedPoll(replaceRows)) {
           stopCaiReplacePoll();
         }
       } finally {
@@ -12717,12 +12729,19 @@
             demo_id: id,
             days,
             content_export: exported,
+            job_id: jobId || "",
           }),
         });
         const sessionId = String(data.sessionId || "").trim();
         const label = quickTaskLabel(data.site || site, sessionId);
-        showToast(label ? `Session scheduled. ${label}` : "Session scheduled.");
-        noteLog(`Quick task scheduled ${label || site.toUpperCase()} from demo ${id} for ${days} day(s).`);
+        if (data.job) {
+          setJobId(data.job.id);
+          renderJob(data.job, { forceCards: true });
+          startPolling();
+        }
+        const placed = data.job ? " It's on the workspace." : "";
+        showToast((label ? `Session scheduled. ${label}` : "Session scheduled.") + placed);
+        noteLog(`Quick task scheduled ${label || site.toUpperCase()} from demo ${id} for ${days} day(s).${placed}`);
       } catch (err) {
         showToast(err.message || "Schedule failed.", { kind: "err" });
       } finally {

@@ -1,3 +1,8 @@
+## 2.1.14 — 2026-11-02
+
+- **A Quick tasks schedule lands on the workspace.** Scheduling a regular session or an exported session adds that session card. Extend and Reset still do not
+- **Duplicate replacements follow their own target.** A completed original no longer leaves the copies stuck on Submitted
+
 ## 2.1.13 — 2026-11-02
 
 - **Duplicate a saved VM into several targets.** Duplicate on a saved-content row adds another row for the same saved ID. Each row has its own Target ID. Load VMs once, check the VM once, and Submit creates one replacement per target

@@ -1001,6 +1001,18 @@ def parse_cai_task_server(raw: str) -> tuple[str, str]:
     return "", text
 
 
+def server_names_target(server: str, target: str) -> bool:
+    """True when the Server cell is this replacement's target, not another demo's."""
+    wanted = str(target or "").strip()
+    text = str(server or "").strip()
+    if not wanted or not text:
+        return False
+    if "||" in text:
+        demo, _vm = parse_cai_task_server(text)
+        return demo == wanted
+    return wanted in text.split()
+
+
 def match_replace_task(
     tasks: list[dict[str, str]],
     *,
@@ -1050,11 +1062,15 @@ def match_replace_task(
     if not hits:
         return None
     # Two replacements of the same VM into different targets share a saved ID.
-    # When the Server cell names the target, keep that task on its own row.
+    # The Server cell names the target (`1403643 || CLOUDCONNECT150_2603`).
+    # A row may use the only listed task when CAI does not name a target, but it
+    # must not take a different target's Completed status.
     if target:
-        aimed = [task for task in hits if target in str(task.get("server") or "")]
+        aimed = [task for task in hits if server_names_target(task.get("server") or "", target)]
         if aimed:
             hits = aimed
+        elif len(hits) > 1:
+            return None
     # Prefer the newest-looking row (homepage lists newest first).
     return hits[0]
 

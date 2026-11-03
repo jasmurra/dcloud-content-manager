@@ -1692,9 +1692,10 @@ def test_quick_tasks_on_schedule() -> None:
     quick = source[source.index("def api_quick_schedule(") : source.index("def api_quick_extend(")]
     extend = source[source.index("def api_quick_extend(") : source.index("def _discard_job(")]
     check(
-        "quick schedule and extend do not create a workspace job",
+        "quick schedule puts the new session on the workspace, and extend does not",
         "schedule_exported_session(" in quick
-        and "_persist_job(" not in quick
+        and "_attach_job(" in quick
+        and 'dc["contentExport"] = exported' in quick
         and "_attach_job(" not in extend
         and "probe_max_extend_stop(" in extend,
     )
@@ -1743,7 +1744,11 @@ def test_quick_tasks_on_schedule() -> None:
         and 'action: "reset"' in reset
         and "All ${ids.length} sessions" in INDEX
         and "Failed:" in INDEX[INDEX.index("async function runQuickIdBatch(") : INDEX.index("async function startJob(")]
-        and "${verb} ${i + 1} of ${ids.length}" in INDEX,
+        and "${verb} ${i + 1} of ${ids.length}" in INDEX
+        and "job_id: jobId" in sched
+        and "It's on the workspace." in sched
+        and "function caiReplacesNeedPoll(" in INDEX
+        and "caiReplacesNeedPoll(replaceRows)" in INDEX,
     )
     payloads = source[source.index("class QuickSchedulePayload") : source.index("class AttachSession")]
     check(
@@ -4831,6 +4836,32 @@ def test_duplicate_saved_row_keeps_each_target() -> None:
     check(
         "a replacement whose server cell omits the target still matches",
         lone is not None and lone["status"] == "Processing",
+    )
+    four = [
+        {"type": "VM replacement", "demo": "1407497", "server": "1405274 || CLOUDCONNECT150_2603", "status": "Completed"},
+        {"type": "VM replacement", "demo": "1407497", "server": "1403643 || CLOUDCONNECT150_2603", "status": "Completed"},
+        {"type": "VM replacement", "demo": "1407497", "server": "1405276 || CLOUDCONNECT150_2603", "status": "Completed"},
+        {"type": "VM replacement", "demo": "1407497", "server": "1403631 || CLOUDCONNECT150_2603", "status": "Completed"},
+    ]
+    duplicate = match_replace_task(
+        four, saved_id="1407497", vm_name="CLOUDCONNECT150_2603", target_id="1403643"
+    )
+    stolen = match_replace_task(
+        four, saved_id="1407497", vm_name="CLOUDCONNECT150_2603", target_id="9999999"
+    )
+    check(
+        "a duplicate row follows its own completed target",
+        duplicate is not None and duplicate["server"].startswith("1403643"),
+    )
+    check(
+        "a duplicate does not take another target's completed task",
+        stolen is None,
+    )
+    refresh = (ROOT / "app.py").read_text(encoding="utf-8")
+    refresh_body = refresh[refresh.index("def _refresh_cai_replace_statuses(") : refresh.index("def _upsert_cai_integrate(")]
+    check(
+        "pending duplicate replacements are read from the saved demo page",
+        "fetch_demo_page(cookie, site, saved_id)" in refresh_body,
     )
 
 

@@ -1228,6 +1228,7 @@ class QuickSchedulePayload(TokenPayload):
     demo_id: str
     days: int = Field(default=1, ge=1)
     content_export: bool = False
+    job_id: str = ""
 
 
 class QuickExtendPayload(TokenPayload):
@@ -5269,7 +5270,28 @@ def _refresh_cai_replace_statuses(job: dict[str, Any]) -> dict[str, Any]:
         if listed.get("loggedIn") is False:
             _set_cai_cookie("", "CAI session expired.")
         return listed
-    tasks = listed.get("tasks") or []
+    tasks = list(listed.get("tasks") or [])
+    # The homepage can move on once one target is Completed. Each pending
+    # duplicate still has its task on the saved demo's own CAI page.
+    seen_pages: set[tuple[str, str]] = set()
+    for item in list(job.get("caiReplaces") or []):
+        if str(item.get("status") or "") in {"completed", "error"}:
+            continue
+        site = str(item.get("site") or "").strip().lower()
+        saved_id = str(item.get("savedId") or "").strip()
+        if not site or not saved_id or (site, saved_id) in seen_pages:
+            continue
+        seen_pages.add((site, saved_id))
+        page = fetch_demo_page(cookie, site, saved_id)
+        if not page.get("ok"):
+            continue
+        for task in page.get("tasks") or []:
+            if not isinstance(task, dict):
+                continue
+            stamped = dict(task)
+            if not str(stamped.get("demo") or "").strip():
+                stamped["demo"] = saved_id
+            tasks.append(stamped)
     changed = False
     for item in list(job.get("caiReplaces") or []):
         if str(item.get("status") or "") in {"completed", "error"}:
@@ -8252,7 +8274,7 @@ def api_resolve_monitor(body: ResolveMonitorPayload) -> dict[str, Any]:
 
 @app.post("/api/quick/schedule")
 def api_quick_schedule(body: QuickSchedulePayload) -> dict[str, Any]:
-    """Schedule one session and return its id. Does not add a workspace card."""
+    """Schedule one session and put that session on the workspace."""
     token = _resolve_token(body)
     result = schedule_exported_session(
         token,
@@ -8264,11 +8286,46 @@ def api_quick_schedule(body: QuickSchedulePayload) -> dict[str, Any]:
     )
     if not result.get("ok"):
         raise HTTPException(400, str(result.get("message") or "Schedule failed."))
+    session_id = str(result.get("sessionId") or "").strip()
+    site = str(result.get("site") or body.site or "").strip().lower()
+    job = _workspace_card_for_quick_schedule(body, site, session_id) if session_id else None
     return {
         "ok": True,
-        "sessionId": str(result.get("sessionId") or "").strip(),
-        "site": str(result.get("site") or body.site or "").strip().lower(),
+        "sessionId": session_id,
+        "site": site,
+        "job": _public_job(job) if job is not None else None,
     }
+
+
+def _workspace_card_for_quick_schedule(
+    body: QuickSchedulePayload,
+    site: str,
+    session_id: str,
+) -> dict[str, Any] | None:
+    """Add the session Quick tasks just created. A failed attach does not undo the schedule."""
+    previous = str(body.job_id or "").strip()
+    try:
+        job = _attach_job(
+            AttachPayload(
+                dcloud_token=body.dcloud_token,
+                dcloud_token_source=body.dcloud_token_source,
+                job_id=previous,
+                sessions=[AttachSession(site=site, session_id=session_id)],
+            )
+        )
+    except HTTPException:
+        return None
+    exported = bool(body.content_export)
+    for dc in job.get("dcs") or []:
+        if str(dc.get("site") or "").strip().lower() != site:
+            continue
+        if str(dc.get("sessionId") or "").strip() != session_id:
+            continue
+        dc["contentExport"] = exported
+    if not previous or str(job.get("id") or "") != previous:
+        job["contentExport"] = exported
+    _persist_job(job)
+    return job
 
 
 @app.post("/api/quick/extend")

@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.1.14** | A Quick tasks schedule adds a workspace card; duplicate VM replacements follow each target |
 | **2.1.13** | Duplicate a saved VM into several targets; Extend and Reset take a comma-separated list of sessions |
 | **2.1.12** | Sign-in uses the closest datacenter; a created session stays on the workspace, including Error; Reset is allowed on someone else's session |
 | **2.1.11** | Quick tasks Reset rebuilds a session without adding a card; a missing session no longer ends another card |
