@@ -3614,7 +3614,11 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         _log(job, f"{site.upper()}: session {sid} is finished in dCloud ({status}) — {message}")
 
     # dCloud drops the session and rebuilds it under the same ID, so a gap here is expected.
-    resetting = _dc_reset_in_progress(dc)
+    # Read the grace at the decision, not before the lookup. A reset can start while
+    # this request is still out, and a faster refresh can mark the card Ending
+    # before this one sees Deleted.
+    def reset_in_progress() -> bool:
+        return _dc_reset_in_progress(dc)
 
     public, _pub_err = check_public_session_status(site, sid)
     details, err = fetch_session(token, site, sid)
@@ -3631,7 +3635,7 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         _log(job, f"{site.upper()}: refresh could not sign in for session {sid} — card kept.")
         return
     if err and ("not found" in err.lower() or "404" in err):
-        if resetting:
+        if reset_in_progress():
             bump(
                 phase="resetting",
                 status="reset",
@@ -3672,6 +3676,14 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
     status = format_status(reported)
     was_ending = str(dc.get("phase") or "") == "ending"
     if is_stopping_status(reported):
+        if reset_in_progress():
+            bump(
+                phase="resetting",
+                status=status,
+                vms=[],
+                message="dCloud is rebuilding this session.",
+            )
+            return
         bump(
             phase="ending",
             status=status,
@@ -3706,7 +3718,7 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         )
         return
     if is_failed_status(reported):
-        if resetting:
+        if reset_in_progress():
             bump(
                 phase="resetting",
                 status=status,
@@ -3769,6 +3781,16 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
             _log(job, f"{site.upper()}: session {sid} is Active again — it is no longer stopping.")
         return
     # Starting up (or scheduled) after a stop/reset under the same session ID.
+    # Leave the reset timer alone until the session is Active, so a Deleted
+    # reading while it is still coming back does not take the card off.
+    if reset_in_progress():
+        bump(
+            phase="resetting",
+            status=status,
+            message="Waiting for dCloud to bring this session up.",
+            endedWithoutSave=False,
+        )
+        return
     bump(
         phase="waiting",
         status=status,

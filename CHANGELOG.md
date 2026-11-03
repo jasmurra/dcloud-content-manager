@@ -1,3 +1,9 @@
+## 2.1.15 — 2026-11-03
+
+- **Error sessions have Logs.** Actions on an Error card opens the dCloud session log, the same as an active session
+- **One session opens with its datacenter.** Expanding a datacenter that has a single session opens that session too. Several sessions stay closed until you pick one
+- **A reset keeps the card while dCloud rebuilds it.** A Deleted or Stopping status during the rebuild no longer removes the session, so the selected VMs still power on when it comes back
+
 ## 2.1.14 — 2026-11-02
 
 - **A Quick tasks schedule lands on the workspace.** Scheduling a regular session or an exported session adds that session card. Extend and Reset still do not

@@ -1956,6 +1956,68 @@ def test_ended_card_is_not_a_dead_end() -> None:
                     len(errored["dcs"]) == 1 and errored["dcs"][0]["phase"] == "error",
                     str(errored["dcs"]),
                 )
+
+                # SNG 673446: a refresh that started before Reset came back Deleted
+                # after a faster refresh had already marked the card Ending.
+                rebuilding = {
+                    "id": "j-reset",
+                    "phase": "waiting_active",
+                    "log": [],
+                    "error": "",
+                    "dcs": [{
+                        "site": "sng",
+                        "sessionId": "673446",
+                        "phase": "ending",
+                        "status": "Stopping",
+                        "powerOnPending": True,
+                        "powerOnTargets": ["AD/DNS/ADFS"],
+                        "resetPendingUntil": time.time() + 1800,
+                    }],
+                }
+                app.fetch_session = lambda *a, **k: ({"status": 9}, None)
+                app.check_public_session_status = lambda *a, **k: ("Deleted", None)
+                app._refresh_dc_from_dcloud(rebuilding, rebuilding["dcs"][0], "token")
+                check(
+                    "Deleted during a reset keeps the card so its VMs can power on",
+                    rebuilding["dcs"][0]["phase"] == "resetting"
+                    and rebuilding["dcs"][0]["powerOnPending"] is True
+                    and float(rebuilding["dcs"][0]["resetPendingUntil"]) > time.time(),
+                    str(rebuilding["dcs"][0]),
+                )
+                app._retire_ended_cards(rebuilding)
+                check(
+                    "a resetting card is not removed while dCloud says Deleted",
+                    len(rebuilding["dcs"]) == 1,
+                    str(rebuilding["dcs"]),
+                )
+                app.fetch_session = lambda *a, **k: ({"status": 5}, None)
+                app.check_public_session_status = lambda *a, **k: ("Stopping", None)
+                app._refresh_dc_from_dcloud(rebuilding, rebuilding["dcs"][0], "token")
+                check(
+                    "Stopping during a reset does not mark the card ended",
+                    rebuilding["dcs"][0]["phase"] == "resetting",
+                    str(rebuilding["dcs"][0]),
+                )
+                finished = {
+                    "id": "j-ended-delete",
+                    "phase": "ending",
+                    "log": [],
+                    "error": "",
+                    "dcs": [{
+                        "site": "sng",
+                        "sessionId": "673446",
+                        "phase": "ending",
+                        "status": "Stopping",
+                    }],
+                }
+                app.fetch_session = lambda *a, **k: ({"status": 9}, None)
+                app.check_public_session_status = lambda *a, **k: ("Deleted", None)
+                app._refresh_dc_from_dcloud(finished, finished["dcs"][0], "token")
+                check(
+                    "Deleted after a real end still removes that session",
+                    finished["dcs"][0]["phase"] == "ended",
+                    str(finished["dcs"][0]),
+                )
             finally:
                 app.fetch_session = held_fetch
                 app.check_public_session_status = held_public
@@ -4184,9 +4246,9 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         and 'if (menu.classList.contains("card-actions-menu")) positionSearchActionsMenu(menu);' in page,
     )
     check(
-        "active workspace and monitoring cards include Logs",
+        "active and error session cards include Logs",
         'class="btn-card-logs"' in page
-        and 'dc.sessionId && dc.phase === "ready"' in page
+        and 'dc.phase === "ready" || dc.phase === "error"' in page
         and "showSessionLog({" in page[page.index('closest(".btn-card-logs")') : page.index('closest(".btn-card-logs")') + 500],
     )
     check(
@@ -4195,7 +4257,10 @@ def test_compact_reorderable_session_cards_and_save_description() -> None:
         and 'id="btn-collapse-job-cards"' in page
         and 'id="btn-expand-monitor-cards"' in page
         and 'id="btn-collapse-monitor-cards"' in page
-        and "function setSessionCardsOpen(" in page,
+        and "function setSessionCardsOpen(" in page
+        and "function expandLoneSessionInGroup(" in page
+        and "expandLoneSessionInGroup(group)" in page
+        and "cards.length !== 1" in page,
     )
     check(
         "job workspace matches monitoring with site expand/collapse and a cards label",

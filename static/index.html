@@ -9165,6 +9165,7 @@
       // Reset stays off monitoring. End stays on a session this user owns,
       // including a monitoring card, so their own sessions can still be stopped.
       const showReset = !monitor;
+      const showSessionLogs = Boolean(dc.sessionId) && (dc.phase === "ready" || dc.phase === "error");
       const endingSoon = sessionEndingSoon(dc);
       const endingSoonChip = endingSoon
         ? `<span class="badge ending-soon" data-tip="Ends ${escapeHtml(formatSessionWhen(dc.scheduleStop))}">Ending Soon</span>`
@@ -9180,7 +9181,7 @@
                     ${notMine ? "" : `<button type="button" class="btn-dc-save" ${cardData} ${canSave ? "" : "disabled"} data-tip="${saveTip}">${saveLabel}</button>`}
                     <button type="button" class="btn-dc-extend" ${cardData} ${canExtend ? "" : "disabled"} data-tip="${extendTip}">Extend…</button>
                     ${showReset ? `<button type="button" class="btn-dc-reset" ${cardData} ${canReset ? "" : "disabled"} data-tip="${resetTip}">Reset</button>` : ""}
-                    ${dc.sessionId && dc.phase === "ready" ? `<button type="button" class="btn-card-logs" ${cardData} data-tip="The dCloud session log.">Logs</button>` : ""}
+                    ${showSessionLogs ? `<button type="button" class="btn-card-logs" ${cardData} data-tip="The dCloud session log.">Logs</button>` : ""}
                     ${canEnd ? `<button type="button" class="btn-dc-end" ${cardData} data-tip="${endTip}">${endLabel}</button>` : ""}
                   </div>
                 </details>`;
@@ -18397,6 +18398,14 @@
       grid.addEventListener("click", handleCardGridClick);
       grid.addEventListener("toggle", (ev) => {
         const menu = ev.target;
+        // Opening the session inside this toggle makes the datacenter click
+        // collapse again. Wait until the datacenter has finished opening.
+        if (menu?.matches?.("details.card-site-group") && menu.open) {
+          const group = menu;
+          queueMicrotask(() => {
+            if (group.isConnected && group.open) expandLoneSessionInGroup(group);
+          });
+        }
         if (menu?.matches?.("details.card, details.card-site-group")) {
           captureCardLayoutFromDom();
         }
@@ -18452,6 +18461,13 @@
 
     bindCardGrid("cards");
     bindCardGrid("monitor-cards");
+    function expandLoneSessionInGroup(group) {
+      const cards = [...group.querySelectorAll(":scope > .card-site-cards > details.card")]
+        .filter((card) => !card.classList.contains("filtered-out"));
+      if (cards.length !== 1) return;
+      cards[0].open = true;
+    }
+
     function setCardSiteGroupsOpen(rootId, open) {
       const root = $(rootId);
       if (!root) return;
