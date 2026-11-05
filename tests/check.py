@@ -1289,6 +1289,134 @@ def test_resubmitted_transfer_is_followed() -> None:
     )
 
 
+def test_completed_camgr_transfer_stays_on_the_hub() -> None:
+    """Mario's finished transfers vanished after CAMGR reconnect.
+
+    users/current `id` is numeric and the job owner is the CEC username, so the
+    import treated his own rows as someone else's and hid them. A finished job
+    was also skipped unless the row was already on the list, so a refresh could
+    not bring it back. Remove still has to stick after that one-time restore.
+    """
+    import app
+    from app import CaiDemoRef
+    from camgr_client import camgr_login_user
+
+    check(
+        "CAMGR login keeps the username, not the numeric id",
+        camgr_login_user({"id": "48291", "username": "mgianni"}) == "mgianni"
+        and camgr_login_user({"id": "mgianni"}) == "mgianni",
+    )
+    check(
+        "an offline Hub refresh does not replace the list with an empty one",
+        "keepWhileOffline" in INDEX,
+    )
+
+    real_state = app.MANAGED_SAVED_IDS_FILE
+    real_session = app.CAMGR_SESSION_FILE
+    with app._camgr_auth_lock:
+        saved_auth = dict(app._camgr_auth)
+    real_list = app.list_camgr_jobs
+    real_demo = app.fetch_camgr_demo
+    with tempfile.TemporaryDirectory() as tmp:
+        app.MANAGED_SAVED_IDS_FILE = Path(tmp) / "managed-saved-ids.json"
+        app.CAMGR_SESSION_FILE = Path(tmp) / "camgr-session.json"
+        try:
+            app._set_camgr_cookie("cookie", "CAMGR session is active (48291).", "48291")
+            app._upsert_managed_saved_rows([{"site": "rtp", "savedId": "1403631", "name": "PCCE"}])
+            app._upsert_camgr_transfer(
+                None,
+                {
+                    "site": "rtp",
+                    "savedId": "1403631",
+                    "owner": "mgianni",
+                    "status": "importing",
+                    "statusRaw": "IMPORTING",
+                    "imported": True,
+                },
+            )
+            app._purge_foreign_camgr_imports(None)
+            state = app._managed_saved_state()
+            check(
+                "a numeric CAMGR user id does not hide that person's transfer",
+                any(row.get("savedId") == "1403631" for row in state.get("rows") or [])
+                and any(row.get("savedId") == "1403631" for row in state.get("transfers") or [])
+                and "rtp:1403631" not in app._managed_hidden_set(),
+                str(state),
+            )
+
+            app._set_camgr_cookie("cookie", "CAMGR session is active (mgianni).", "mgianni")
+            app._upsert_camgr_transfer(
+                None,
+                {
+                    "site": "rtp",
+                    "savedId": "999",
+                    "owner": "someoneelse",
+                    "status": "complete",
+                    "statusRaw": "COMPLETE",
+                    "imported": True,
+                },
+            )
+            app._purge_foreign_camgr_imports(None)
+            check(
+                "another person's imported transfer is still dropped",
+                all(
+                    row.get("savedId") != "999"
+                    for row in app._managed_saved_state().get("transfers") or []
+                ),
+            )
+
+            app._hide_saved_ids(None, [CaiDemoRef(site="rtp", saved_id="1405274")])
+            complete = {
+                "guid": "job-1",
+                "demoId": "1405274",
+                "dc": "RTP",
+                "owner": "mgianni",
+                "status": "COMPLETE",
+                "progress": 100,
+                "dcs": ["SJC", "SYD"],
+                "servers": [1],
+            }
+            app.list_camgr_jobs = lambda *_args, **_kwargs: {
+                "ok": True,
+                "loggedIn": True,
+                "jobs": [complete],
+            }
+            app.fetch_camgr_demo = lambda *_args, **_kwargs: {
+                "ok": True,
+                "loggedIn": True,
+                "name": "PCCE",
+                "owner": "mgianni",
+                "rootDemoId": "",
+                "rootIsSelf": True,
+            }
+            app._import_in_progress_camgr_jobs(None)
+            rows = app._saved_id_summary(None).get("rows") or []
+            hit = next((row for row in rows if str(row.get("savedId")) == "1405274"), None)
+            check(
+                "a completed CAMGR transfer is back on the hub",
+                bool(hit) and str(hit.get("transferStatus") or "") == "complete",
+                str(hit or rows),
+            )
+
+            app._hide_saved_ids(None, [CaiDemoRef(site="rtp", saved_id="1405274")])
+            app._import_in_progress_camgr_jobs(None)
+            check(
+                "Remove still drops a completed transfer",
+                all(
+                    str(row.get("savedId")) != "1405274"
+                    for row in (app._saved_id_summary(None).get("rows") or [])
+                ),
+            )
+        finally:
+            app.list_camgr_jobs = real_list
+            app.fetch_camgr_demo = real_demo
+            app.MANAGED_SAVED_IDS_FILE = real_state
+            app.CAMGR_SESSION_FILE = real_session
+            with app._camgr_auth_lock:
+                app._camgr_auth.clear()
+                app._camgr_auth.update(saved_auth)
+
+
 def test_failed_schedule_leaves_no_card() -> None:
     """A card with no session is nothing to act on, so it should not need clearing."""
     source = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -2228,8 +2356,9 @@ def test_removed_id_can_be_added_back() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     check("the add endpoint clears the job hide list", "_unhide_saved_ids(job, rows)" in source)
     check(
-        "only the explicit add un-hides",
-        source.count(", unhide=True)") == 1,
+        "only an explicit add or the one-time CAMGR restore un-hides",
+        source.count(", unhide=True)") == 2
+        and "def _restore_purged_camgr_rows(" in source,
         f"{source.count(', unhide=True)')} callers un-hide",
     )
 

@@ -566,12 +566,36 @@ def _camgr_current_user() -> str:
         return str(_camgr_auth.get("user") or "").strip()
 
 
+def _camgr_owner_is_username(value: str) -> bool:
+    token = str(value or "").strip().lower()
+    return bool(token) and not token.isdigit()
+
+
+def _camgr_owners_conflict(me: str, owner: str) -> bool:
+    """True only when both sides are usernames and they are different people.
+
+    CAMGR's signed-in user id is a number. Transfer jobs store the CEC username.
+    Treating that pair as a mismatch hid the user's own completed transfers.
+    """
+    left = str(me or "").strip().lower()
+    right = str(owner or "").strip().lower()
+    if not left or not right or left == right:
+        return False
+    if not _camgr_owner_is_username(left) or not _camgr_owner_is_username(right):
+        return False
+    return True
+
+
 def _camgr_owner_is_mine(owner: str, *, allow_empty: bool = False) -> bool:
     me = _camgr_current_user().strip().lower()
     them = str(owner or "").strip().lower()
-    if me and them:
-        return them == me
-    return allow_empty or not them
+    if not them:
+        return allow_empty or True
+    if not me:
+        return allow_empty or not them
+    if me == them or not _camgr_owners_conflict(me, them):
+        return True
+    return False
 
 
 def _camgr_mark_unverified(message: str = "") -> None:
@@ -1743,7 +1767,14 @@ def _camgr_transfer_map(job: dict[str, Any] | None) -> dict[str, dict[str, Any]]
 
 
 def _empty_managed_state() -> dict[str, Any]:
-    return {"rows": [], "hidden": [], "transfers": [], "integrates": [], "templates": []}
+    return {
+        "rows": [],
+        "hidden": [],
+        "transfers": [],
+        "integrates": [],
+        "templates": [],
+        "camgrHideRepair": 0,
+    }
 
 
 def _managed_saved_state() -> dict[str, Any]:
@@ -1767,6 +1798,7 @@ def _managed_saved_state() -> dict[str, Any]:
             "transfers": transfers,
             "integrates": integrates,
             "templates": templates,
+            "camgrHideRepair": _as_int(data.get("camgrHideRepair")),
         }
 
 
@@ -1777,6 +1809,7 @@ def _persist_managed_saved_state(state: dict[str, Any]) -> None:
         "transfers": [row for row in (state.get("transfers") or []) if isinstance(row, dict)],
         "integrates": [row for row in (state.get("integrates") or []) if isinstance(row, dict)],
         "templates": [row for row in (state.get("templates") or []) if isinstance(row, dict)],
+        "camgrHideRepair": _as_int(state.get("camgrHideRepair")),
         "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     with _managed_saved_lock:
@@ -5044,7 +5077,7 @@ def _purge_foreign_camgr_imports(job: dict[str, Any] | None) -> None:
 
     def keep_transfer(row: dict[str, Any]) -> bool:
         owner = str(row.get("owner") or "").strip().lower()
-        if owner and owner != me:
+        if _camgr_owners_conflict(me, owner):
             if row.get("imported"):
                 site = str(row.get("site") or "").strip()
                 saved_id = str(row.get("savedId") or "").strip()
@@ -5066,6 +5099,37 @@ def _purge_foreign_camgr_imports(job: dict[str, Any] | None) -> None:
         _hide_saved_ids(job, hide)
         if job is not None:
             _persist_job(job)
+
+
+
+def _restore_purged_camgr_rows(job: dict[str, Any] | None, pubs: list[dict[str, Any]]) -> None:
+    """Put the user's own CAMGR jobs back once.
+
+    A numeric CAMGR user id used to look different from the username on the
+    job, and the import then hid those saved rows. They stay hidden after the
+    comparison is fixed, so the first successful import puts that user's jobs
+    back. Remove after that still sticks.
+    """
+    state = _managed_saved_state()
+    if _as_int(state.get("camgrHideRepair")) >= 1:
+        return
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for pub in pubs:
+        site = camgr_guid_to_site(str(pub.get("dc") or ""))
+        saved_id = str(pub.get("demoId") or "").strip()
+        key = _saved_id_key(site, saved_id)
+        if not site or not saved_id or key in seen:
+            continue
+        seen.add(key)
+        items.append({"site": site, "savedId": saved_id})
+    if items:
+        if job is not None:
+            _unhide_saved_ids(job, items)
+        _upsert_managed_saved_rows(items, unhide=True)
+    state = _managed_saved_state()
+    state["camgrHideRepair"] = 1
+    _persist_managed_saved_state(state)
 
 
 def _import_in_progress_camgr_jobs(
@@ -5103,8 +5167,13 @@ def _import_in_progress_camgr_jobs(
 
     def job_is_mine(raw: dict[str, Any]) -> bool:
         owner = str(raw.get("owner") or "").strip().lower()
-        if me_l and owner:
-            return owner == me_l
+        if not me_l or not owner:
+            return from_only_user
+        if me_l == owner:
+            return True
+        # A numeric signed-in id is not the username stored on the job.
+        if _camgr_owners_conflict(me_l, owner):
+            return False
         return from_only_user
 
     jobs = [item for item in jobs if job_is_mine(item)]
@@ -5122,20 +5191,21 @@ def _import_in_progress_camgr_jobs(
             continue
         pubs.append(pub)
 
+    # Completed jobs used to be attached only when the row was already listed.
+    # Once a bad owner check hid the row, a finished transfer never came back.
+    _restore_purged_camgr_rows(job, pubs)
+
     saved_rows = _saved_id_summary(job).get("rows") or []
     saved_by_key: dict[str, dict[str, Any]] = {}
-    saved_ids: set[str] = set()
     for row in saved_rows:
         site = str(row.get("site") or "").strip().lower()
         saved_id = str(row.get("savedId") or "").strip()
         if not saved_id:
             continue
-        saved_ids.add(saved_id)
         saved_by_key[_saved_id_key(site, saved_id)] = row
     for item in items or []:
         saved_id = str(item.saved_id or "").strip()
         if saved_id:
-            saved_ids.add(saved_id)
             site = str(item.site or "").strip().lower()
             if site:
                 saved_by_key.setdefault(_saved_id_key(site, saved_id), {"site": site, "savedId": saved_id})
@@ -5144,13 +5214,8 @@ def _import_in_progress_camgr_jobs(
     for pub in pubs:
         demo_id = str(pub.get("demoId") or "").strip()
         site = camgr_guid_to_site(str(pub.get("dc") or ""))
-        status = str(pub.get("statusRaw") or "").strip().upper()
-        key = _saved_id_key(site, demo_id)
-        in_list = key in saved_by_key or demo_id in saved_ids
-        if status in IN_FLIGHT_STATUSES:
-            selected.append((site, demo_id, pub))
-        elif in_list:
-            selected.append((site, demo_id, pub))
+        # In progress and finished both stay on the Hub until Remove.
+        selected.append((site, demo_id, pub))
 
     imported: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -5179,7 +5244,7 @@ def _import_in_progress_camgr_jobs(
                 return demo
             if demo.get("ok"):
                 demo_owner = str(demo.get("owner") or "").strip().lower()
-                if me_l and demo_owner and demo_owner != me_l:
+                if _camgr_owners_conflict(me_l, demo_owner):
                     continue
                 name = name or str(demo.get("name") or "").strip()
                 root = root or str(demo.get("rootDemoId") or "").strip()

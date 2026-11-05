@@ -11438,8 +11438,16 @@
           }
           return;
         }
-        if (data.job) renderJob(data.job);
-        else if (data.savedIds) applySavedIds(data.savedIds);
+        const incoming = data.job?.savedIds?.rows || data.savedIds?.rows || [];
+        const keepWhileOffline = (data.hold === "network" || data.hold === "camgr")
+          && !incoming.length
+          && (lastSavedIdRows || []).length;
+        // A dropped CAMGR sign-in used to replace the list with an empty one.
+        // Leave the last rows, including finished transfers, until Remove.
+        if (!keepWhileOffline) {
+          if (data.job) renderJob(data.job);
+          else if (data.savedIds) applySavedIds(data.savedIds);
+        }
         if (data.autoIntegrated?.length) {
           for (const row of data.autoIntegrated) {
             const site = String(row.site || "").toUpperCase();
@@ -11464,8 +11472,14 @@
         );
         if (data.cai) updateCaiStatus(data.cai);
         if (data.camgr) updateCamgrStatus(data.camgr);
-        if (data.job) renderJob(data.job);
-        else applySavedIds(data.savedIds);
+        const incoming = data.job?.savedIds?.rows || data.savedIds?.rows || [];
+        const keepWhileOffline = !data.camgr?.loggedIn
+          && !incoming.length
+          && (lastSavedIdRows || []).length;
+        if (!keepWhileOffline) {
+          if (data.job) renderJob(data.job);
+          else applySavedIds(data.savedIds);
+        }
         if (data.camgr?.loggedIn) {
           await importCamgrJobs({ quiet: true });
         }

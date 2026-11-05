@@ -1,3 +1,7 @@
+## 2.1.16 — 2026-11-05
+
+- **Finished CAMGR transfers stay on the Hub.** A completed transfer, integration, or VM replacement remains on the saved-content list until Remove. Leaving the Cisco network no longer clears that list, and reconnecting shows the finished jobs again
+
 ## 2.1.15 — 2026-11-03
 
 - **Error sessions have Logs.** Actions on an Error card opens the dCloud session log, the same as an active session

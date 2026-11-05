@@ -198,6 +198,26 @@ def _auth_error(message: str) -> dict[str, Any]:
     }
 
 
+def camgr_login_user(body: dict[str, Any] | None) -> str:
+    """Username CAMGR shows on a job, not the numeric user id.
+
+    users/current puts a numeric id in `id` and the CEC username in `username`.
+    Job records store the username (`mgianni`). Preferring `id` made every one of
+    his transfers look like someone else's and the Hub list dropped them.
+    """
+    if not isinstance(body, dict):
+        return ""
+    names: list[str] = []
+    for key in ("username", "user", "userId", "id", "name"):
+        value = str(body.get(key) or "").strip()
+        if value and value not in names:
+            names.append(value)
+    for value in names:
+        if not value.isdigit():
+            return value
+    return names[0] if names else ""
+
+
 def probe_camgr_login(
     cookie_header: str,
     *,
@@ -219,12 +239,7 @@ def probe_camgr_login(
             return _auth_error(describe_request_error(exc, "CAMGR") or "Could not reach CAMGR.")
         if "dcloud-camgr.cisco.com" in str(resp.url or "").lower():
             body = _json_body(resp)
-            user = ""
-            if isinstance(body, dict):
-                for key in ("id", "username", "user", "userId"):
-                    user = str(body.get(key) or "").strip()
-                    if user:
-                        break
+            user = camgr_login_user(body if isinstance(body, dict) else None)
             if resp.status_code < 400 and user:
                 return {
                     "ok": True,

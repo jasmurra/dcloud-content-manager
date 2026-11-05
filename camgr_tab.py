@@ -246,12 +246,9 @@ def probe_camgr_via_chrome_tab(*, open_if_missing: bool = False) -> dict[str, An
     )
     if err:
         return {"ok": False, "loggedIn": False, "message": err}
-    user = ""
-    if isinstance(body, dict):
-        for key in ("id", "username", "user", "userId"):
-            user = str(body.get(key) or "").strip()
-            if user:
-                break
+    from camgr_client import camgr_login_user
+
+    user = camgr_login_user(body if isinstance(body, dict) else None)
     if status >= 400 or not user:
         return {
             "ok": False,

@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.1.16** | Finished CAMGR transfers stay on the Hub until Remove; leaving the Cisco network no longer clears that list |
 | **2.1.15** | Error cards have Logs; one session opens with its datacenter; a reset keeps the card so its VMs still power on |
 | **2.1.14** | A Quick tasks schedule adds a workspace card; duplicate VM replacements follow each target |
 | **2.1.13** | Duplicate a saved VM into several targets; Extend and Reset take a comma-separated list of sessions |
