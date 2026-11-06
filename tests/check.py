@@ -1365,8 +1365,18 @@ def test_completed_camgr_transfer_stays_on_the_hub() -> None:
                 ),
             )
 
-            app._hide_saved_ids(None, [CaiDemoRef(site="rtp", saved_id="1405274")])
-            complete = {
+            app._upsert_managed_saved_rows([{"site": "rtp", "savedId": "1405274", "name": "PCCE"}])
+            old_complete = {
+                "guid": "job-old",
+                "demoId": "1409999",
+                "dc": "RTP",
+                "owner": "mgianni",
+                "status": "COMPLETE",
+                "progress": 100,
+                "dcs": ["SJC"],
+                "servers": [1],
+            }
+            tracked = {
                 "guid": "job-1",
                 "demoId": "1405274",
                 "dc": "RTP",
@@ -1379,7 +1389,7 @@ def test_completed_camgr_transfer_stays_on_the_hub() -> None:
             app.list_camgr_jobs = lambda *_args, **_kwargs: {
                 "ok": True,
                 "loggedIn": True,
-                "jobs": [complete],
+                "jobs": [old_complete, tracked],
             }
             app.fetch_camgr_demo = lambda *_args, **_kwargs: {
                 "ok": True,
@@ -1393,9 +1403,14 @@ def test_completed_camgr_transfer_stays_on_the_hub() -> None:
             rows = app._saved_id_summary(None).get("rows") or []
             hit = next((row for row in rows if str(row.get("savedId")) == "1405274"), None)
             check(
-                "a completed CAMGR transfer is back on the hub",
+                "a completed transfer already on the hub stays there",
                 bool(hit) and str(hit.get("transferStatus") or "") == "complete",
                 str(hit or rows),
+            )
+            check(
+                "an old completed CAMGR job is not added to the hub",
+                all(str(row.get("savedId")) != "1409999" for row in rows),
+                str([row.get("savedId") for row in rows]),
             )
 
             app._hide_saved_ids(None, [CaiDemoRef(site="rtp", saved_id="1405274")])
@@ -1968,6 +1983,7 @@ def test_ended_card_is_not_a_dead_end() -> None:
             real_fetch = app.fetch_session
             real_public = app.check_public_session_status
             real_token = app._refresh_job_token
+            real_vms = app._load_dc_vms
             try:
                 # dCloud answers a stale token with 400 as often as 401, and the
                 # unauthenticated endpoint says Deleted for anything it cannot see.
@@ -2146,10 +2162,60 @@ def test_ended_card_is_not_a_dead_end() -> None:
                     finished["dcs"][0]["phase"] == "ended",
                     str(finished["dcs"][0]),
                 )
+                live = {
+                    "id": "j-still-active",
+                    "phase": "ready",
+                    "log": [],
+                    "error": "",
+                    "dcs": [{
+                        "site": "rtp",
+                        "sessionId": "1369582",
+                        "phase": "ready",
+                        "status": "Active",
+                    }],
+                }
+                app._load_dc_vms = lambda *a, **k: None
+                app.fetch_session = lambda *a, **k: ({"session": {"status": 4}}, None)
+                app.check_public_session_status = lambda *a, **k: ("Deleted", None)
+                app._refresh_dc_from_dcloud(live, live["dcs"][0], "token")
+                check(
+                    "a signed Active session stays when the public check says Deleted",
+                    live["dcs"][0]["phase"] == "ready",
+                    str(live["dcs"][0]),
+                )
+                app.fetch_session = lambda *a, **k: ({"name": "still here"}, None)
+                app.check_public_session_status = lambda *a, **k: ("Saved", None)
+                app._refresh_dc_from_dcloud(live, live["dcs"][0], "token")
+                check(
+                    "a signed session with no status is not hidden as saved",
+                    live["dcs"][0]["phase"] == "ready",
+                    str(live["dcs"][0]),
+                )
+                missing = {
+                    "id": "j-public-active",
+                    "phase": "ready",
+                    "log": [],
+                    "error": "",
+                    "dcs": [{
+                        "site": "rtp",
+                        "sessionId": "1369579",
+                        "phase": "ready",
+                        "status": "Active",
+                    }],
+                }
+                app.fetch_session = lambda *a, **k: (None, "Session 1369579 not found in RTP.")
+                app.check_public_session_status = lambda *a, **k: ("ACTIVE", None)
+                app._refresh_dc_from_dcloud(missing, missing["dcs"][0], "token")
+                check(
+                    "a public Active session is not removed when the signed read misses",
+                    missing["dcs"][0]["phase"] == "ready",
+                    str(missing["dcs"][0]),
+                )
             finally:
                 app.fetch_session = held_fetch
                 app.check_public_session_status = held_public
                 app._refresh_job_token = held_token
+                app._load_dc_vms = real_vms
         finally:
             app.LAST_JOB_FILE = real_last_job
 
@@ -2356,9 +2422,8 @@ def test_removed_id_can_be_added_back() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     check("the add endpoint clears the job hide list", "_unhide_saved_ids(job, rows)" in source)
     check(
-        "only an explicit add or the one-time CAMGR restore un-hides",
-        source.count(", unhide=True)") == 2
-        and "def _restore_purged_camgr_rows(" in source,
+        "only the explicit add un-hides",
+        source.count(", unhide=True)") == 1,
         f"{source.count(', unhide=True)')} callers un-hide",
     )
 

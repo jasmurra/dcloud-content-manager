@@ -1,3 +1,8 @@
+## 2.1.17 — 2026-11-06
+
+- **The Hub no longer fills with old CAMGR transfers.** A finished transfer stays only if that row is already on the list. A transfer that is still running still gets a row
+- **An active session stays on the workspace.** A public Deleted or Saved check does not remove a session that dCloud still has
+
 ## 2.1.16 — 2026-11-05
 
 - **Finished CAMGR transfers stay on the Hub.** A completed transfer, integration, or VM replacement remains on the saved-content list until Remove. Leaving the Cisco network no longer clears that list, and reconnecting shows the finished jobs again

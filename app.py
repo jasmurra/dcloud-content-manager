@@ -3625,6 +3625,37 @@ def _preferred_session_status(numeric: Any, public: Any) -> Any:
     return numeric
 
 
+
+def _session_record_status(details: dict[str, Any] | None) -> Any:
+    """Status from the signed session, including a nested session record."""
+    if not isinstance(details, dict):
+        return ""
+    sources = [details]
+    for key in ("session", "sessionDetails"):
+        nested = details.get(key)
+        if isinstance(nested, dict):
+            sources.append(nested)
+    for source in sources:
+        for key in ("status", "sessionStatus"):
+            value = source.get(key)
+            if value not in (None, ""):
+                return value
+    return ""
+
+
+def _signed_session_is_live(status: Any) -> bool:
+    """True when the signed session is still scheduled, starting, or active."""
+    if is_active_status(status):
+        return True
+    text = str(status or "").strip().lower().replace(" ", "").replace("_", "")
+    if text in {"1", "2", "scheduled", "starting", "startingup"}:
+        return True
+    try:
+        return int(str(status).strip()) in {1, 2}
+    except (TypeError, ValueError):
+        return False
+
+
 def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str) -> None:
     site = dc["site"]
     sid = str(dc.get("sessionId") or "").strip()
@@ -3668,6 +3699,16 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         _log(job, f"{site.upper()}: refresh could not sign in for session {sid} — card kept.")
         return
     if err and ("not found" in err.lower() or "404" in err):
+        if is_active_status(public):
+            bump(
+                message="dCloud's public check still lists this session. Left on the workspace.",
+            )
+            _log(
+                job,
+                f"{site.upper()}: session {sid} stayed on the workspace — "
+                f"the signed read missed it, and the public check said {public}.",
+            )
+            return
         if reset_in_progress():
             bump(
                 phase="resetting",
@@ -3698,14 +3739,28 @@ def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str)
         return
     numeric = ""
     if details:
-        numeric = details.get("status") or details.get("sessionStatus") or ""
+        numeric = _session_record_status(details)
         bump(
             viewUrl=session_view_url(site, sid, session=details),
             **_shared_with_update(details),
             canReset=bool(details.get("canReset")),
             **_dc_ids_from_session(details),
         )
+    if details and str(numeric or "").strip() == "" and (
+        is_failed_status(public) or is_saved_status(public) or is_stopping_status(public)
+    ):
+        # The signed read found the session. A public Deleted or Saved answer is
+        # not enough to take that card off the workspace.
+        bump(message="dCloud still has this session. Left on the workspace.")
+        _log(
+            job,
+            f"{site.upper()}: session {sid} stayed on the workspace — "
+            f"the signed session has no status, and the public check said {public or 'nothing'}.",
+        )
+        return
     reported = _preferred_session_status(numeric, public)
+    if _signed_session_is_live(numeric):
+        reported = numeric
     status = format_status(reported)
     was_ending = str(dc.get("phase") or "") == "ending"
     if is_stopping_status(reported):
@@ -5102,36 +5157,6 @@ def _purge_foreign_camgr_imports(job: dict[str, Any] | None) -> None:
 
 
 
-def _restore_purged_camgr_rows(job: dict[str, Any] | None, pubs: list[dict[str, Any]]) -> None:
-    """Put the user's own CAMGR jobs back once.
-
-    A numeric CAMGR user id used to look different from the username on the
-    job, and the import then hid those saved rows. They stay hidden after the
-    comparison is fixed, so the first successful import puts that user's jobs
-    back. Remove after that still sticks.
-    """
-    state = _managed_saved_state()
-    if _as_int(state.get("camgrHideRepair")) >= 1:
-        return
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for pub in pubs:
-        site = camgr_guid_to_site(str(pub.get("dc") or ""))
-        saved_id = str(pub.get("demoId") or "").strip()
-        key = _saved_id_key(site, saved_id)
-        if not site or not saved_id or key in seen:
-            continue
-        seen.add(key)
-        items.append({"site": site, "savedId": saved_id})
-    if items:
-        if job is not None:
-            _unhide_saved_ids(job, items)
-        _upsert_managed_saved_rows(items, unhide=True)
-    state = _managed_saved_state()
-    state["camgrHideRepair"] = 1
-    _persist_managed_saved_state(state)
-
-
 def _import_in_progress_camgr_jobs(
     job: dict[str, Any] | None,
     items: list[CaiDemoRef] | None = None,
@@ -5191,21 +5216,20 @@ def _import_in_progress_camgr_jobs(
             continue
         pubs.append(pub)
 
-    # Completed jobs used to be attached only when the row was already listed.
-    # Once a bad owner check hid the row, a finished transfer never came back.
-    _restore_purged_camgr_rows(job, pubs)
-
     saved_rows = _saved_id_summary(job).get("rows") or []
     saved_by_key: dict[str, dict[str, Any]] = {}
+    saved_ids: set[str] = set()
     for row in saved_rows:
         site = str(row.get("site") or "").strip().lower()
         saved_id = str(row.get("savedId") or "").strip()
         if not saved_id:
             continue
+        saved_ids.add(saved_id)
         saved_by_key[_saved_id_key(site, saved_id)] = row
     for item in items or []:
         saved_id = str(item.saved_id or "").strip()
         if saved_id:
+            saved_ids.add(saved_id)
             site = str(item.site or "").strip().lower()
             if site:
                 saved_by_key.setdefault(_saved_id_key(site, saved_id), {"site": site, "savedId": saved_id})
@@ -5214,8 +5238,13 @@ def _import_in_progress_camgr_jobs(
     for pub in pubs:
         demo_id = str(pub.get("demoId") or "").strip()
         site = camgr_guid_to_site(str(pub.get("dc") or ""))
-        # In progress and finished both stay on the Hub until Remove.
-        selected.append((site, demo_id, pub))
+        status = str(pub.get("statusRaw") or "").strip().upper()
+        key = _saved_id_key(site, demo_id)
+        in_list = key in saved_by_key or demo_id in saved_ids
+        # A running transfer is worth a new row. A finished one only updates a
+        # row already on the Hub, so old COMPLETE jobs do not fill the list.
+        if status in IN_FLIGHT_STATUSES or in_list:
+            selected.append((site, demo_id, pub))
 
     imported: list[dict[str, Any]] = []
     seen: set[str] = set()
