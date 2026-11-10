@@ -7,7 +7,7 @@ import sqlite3
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import requests
 import urllib3
@@ -1284,3 +1284,437 @@ def refresh_camgr_job(
     if hit is None:
         return {"ok": True, "loggedIn": True, "found": False, "job": {}}
     return {"ok": True, "loggedIn": True, "found": True, "job": public_camgr_job(hit)}
+
+
+# Same choices the CAMGR End of Life dialog offers.
+EOL_DAYS = (1, 5, 10, 15, 20, 25, 30, 45, 60)
+
+
+def eol_day_count(value: Any) -> tuple[int, str]:
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        days = 0
+    if days not in EOL_DAYS:
+        return 0, "Choose 1, 5, 10, 15, 20, 25, 30, 45, or 60 days."
+    return days, ""
+
+
+def _eol_dc_and_site(label: str) -> tuple[str, str]:
+    token = str(label or "").strip().split(" ", 1)[0].upper()
+    site = camgr_guid_to_site(token)
+    if site and site != token.lower():
+        return token, site
+    if token.lower() in CAMGR_DC_FOR_SITE:
+        return site_to_camgr_guid(token.lower()), token.lower()
+    return token, site or token.lower()
+
+
+def _public_eol_hit(row: dict[str, Any]) -> dict[str, Any]:
+    label = str(row.get("name") or "").strip()
+    dc, site = _eol_dc_and_site(label)
+    demo_id = str(row.get("id") or "").strip()
+    return {
+        "site": site,
+        "dc": dc,
+        "demoId": demo_id,
+        "name": str(row.get("demoName") or label).strip(),
+        "label": label or f"{dc} {demo_id}".strip(),
+        "guid": str(row.get("guid") or "").strip(),
+        "architecture": str(row.get("architecture") or "").strip(),
+        "content": str(row.get("content") or "").strip(),
+        "launches": row.get("launches") or 0,
+    }
+
+
+def _public_eol_request(row: dict[str, Any]) -> dict[str, Any]:
+    dc = str(row.get("dc") or "").strip()
+    complete = row.get("completeAt")
+    try:
+        complete_at = int(complete) if complete else None
+    except (TypeError, ValueError):
+        complete_at = None
+    try:
+        timer = int(row.get("timer") or 0)
+    except (TypeError, ValueError):
+        timer = 0
+    try:
+        progress = int(row.get("progress") or 0)
+    except (TypeError, ValueError):
+        progress = 0
+    return {
+        "site": camgr_guid_to_site(dc),
+        "dc": dc,
+        "demoId": str(row.get("demoId") or "").strip(),
+        "name": str(row.get("name") or "").strip(),
+        "status": str(row.get("status") or "").strip(),
+        "progress": progress,
+        "starterId": str(row.get("starterId") or "").strip(),
+        "approverId": str(row.get("approverId") or "").strip(),
+        "ownerId": str(row.get("ownerId") or "").strip(),
+        "timer": timer if timer in EOL_DAYS else None,
+        "rid": str(row.get("rid") or "").strip(),
+        "guid": str(row.get("guid") or "").strip(),
+        "completeAt": complete_at,
+        "savesCount": row.get("savesCount") or 0,
+        "futuresCount": row.get("futuresCount") or 0,
+        "architecture": str(row.get("architecture") or "").strip(),
+        "altContent": str(row.get("altContent") or "").strip(),
+    }
+
+
+def _slim_eol_sessions(body: Any) -> list[dict[str, Any]]:
+    if not isinstance(body, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in body:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "id": str(item.get("pksessId") or item.get("id") or "").strip(),
+                "name": str(item.get("sname") or item.get("name") or "").strip(),
+                "user": str(item.get("fkuserId") or item.get("user") or "").strip(),
+                "start": item.get("start") or "",
+                "parentId": str(item.get("fkparentDemoId") or "").strip(),
+            }
+        )
+    return rows
+
+
+def _slim_eol_saves(body: Any) -> list[dict[str, Any]]:
+    if not isinstance(body, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in body:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "id": str(item.get("pkdemoId") or item.get("id") or "").strip(),
+                "name": str(item.get("dname") or item.get("name") or "").strip(),
+                "owner": str(item.get("fkownerId") or item.get("owner") or "").strip(),
+                "updated": item.get("updated") or "",
+                "launches": item.get("launches") or 0,
+            }
+        )
+    return rows
+
+
+def search_eol_content(cookie_header: str, query: str) -> dict[str, Any]:
+    text = str(query or "").strip()
+    if len(text) < 2:
+        return {"ok": False, "loggedIn": True, "message": "Enter a content name or ID."}
+    body, _, err = _get_json(
+        cookie_header,
+        f"{CAMGR_API}/eols/hnode/search?{urlencode({'searchStr': text})}",
+    )
+    if err == "CAMGR session expired.":
+        return _auth_error(err)
+    if err:
+        return {"ok": False, "loggedIn": True, "message": err}
+    if not isinstance(body, list):
+        return {"ok": False, "loggedIn": True, "message": "CAMGR did not return a content search."}
+    items: list[dict[str, Any]] = []
+    for row in body:
+        if not isinstance(row, dict):
+            continue
+        try:
+            demo_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            demo_id = 0
+        # Folders come back with id 0. A real demo has its content number.
+        if demo_id <= 0:
+            continue
+        items.append(_public_eol_hit(row))
+    return {"ok": True, "loggedIn": True, "items": items}
+
+
+def _match_eol_hit(items: list[dict[str, Any]], site: str, demo_id: str) -> dict[str, Any] | None:
+    wanted_site = str(site or "").strip().lower()
+    wanted_id = str(demo_id or "").strip()
+    for item in items:
+        if str(item.get("demoId") or "") != wanted_id:
+            continue
+        if wanted_site and str(item.get("site") or "") != wanted_site:
+            continue
+        return item
+    for item in items:
+        if str(item.get("demoId") or "") == wanted_id:
+            return item
+    return None
+
+
+def preview_eol_content(cookie_header: str, site: str, demo_id: str, guid: str = "") -> dict[str, Any]:
+    demo_id = str(demo_id or "").strip()
+    site = str(site or "").strip().lower()
+    if not demo_id or not site:
+        return {"ok": False, "loggedIn": True, "message": "Datacenter and content ID are required."}
+    demo = fetch_camgr_demo(cookie_header, site, demo_id)
+    if not demo.get("ok"):
+        return demo
+    path = str(demo.get("camgrPath") or site)
+    saved = str(demo.get("savedId") or demo_id)
+    saves_body, _, saves_err = _get_json(cookie_header, f"{CAMGR_BASE}/{path}/ca/api/demos/{saved}/saves")
+    if saves_err == "CAMGR session expired.":
+        return _auth_error(saves_err)
+    futures_body, _, futures_err = _get_json(cookie_header, f"{CAMGR_BASE}/{path}/ca/api/demos/{saved}/futures")
+    if futures_err == "CAMGR session expired.":
+        return _auth_error(futures_err)
+    resolved = str(guid or "").strip()
+    if not resolved:
+        found = search_eol_content(cookie_header, demo_id)
+        if found.get("loggedIn") is False:
+            return found
+        hit = _match_eol_hit(found.get("items") or [], site, demo_id) if found.get("ok") else None
+        resolved = str((hit or {}).get("guid") or "")
+    else:
+        hit = None
+    return {
+        "ok": True,
+        "loggedIn": True,
+        "item": {
+            "site": site,
+            "dc": site_to_camgr_guid(site),
+            "demoId": str(demo.get("demoId") or demo_id),
+            "name": str(demo.get("name") or ""),
+            "owner": str(demo.get("owner") or ""),
+            "guid": resolved,
+            "label": str((hit or {}).get("label") or f"{site_to_camgr_guid(site)} {demo_id}"),
+            "sessions": _slim_eol_sessions(futures_body),
+            "saves": _slim_eol_saves(saves_body),
+            "sessionsError": "" if not futures_err else str(futures_err),
+            "savesError": "" if not saves_err else str(saves_err),
+        },
+    }
+
+
+def lookup_eol_replacement(cookie_header: str, dc: str, demo_id: str) -> dict[str, Any]:
+    """Confirm on the superseding-content row: GET /{dc}/ca/api/demos/{id}."""
+    label = eol_alt_dc(dc)
+    demo_id = str(demo_id or "").strip()
+    if not label or not demo_id.isdigit():
+        return {"ok": False, "loggedIn": True, "message": "Pick a datacenter and a demo ID."}
+    path = EOL_ALT_DC_PATH[label]
+    body, _, err = _get_json(cookie_header, f"{CAMGR_BASE}/{path}/ca/api/demos/{demo_id}")
+    if err == "CAMGR session expired.":
+        return _auth_error(err)
+    if err or not isinstance(body, dict):
+        return {"ok": False, "loggedIn": True, "message": err or "CAMGR did not find that content."}
+    name = str(body.get("dname") or "").strip()
+    found_id = str(body.get("pkdemoId") or demo_id).strip()
+    if not name:
+        return {"ok": False, "loggedIn": True, "message": "CAMGR did not find that content."}
+    return {"ok": True, "loggedIn": True, "dc": label, "demoId": found_id, "name": name}
+
+
+def list_eol_requests(cookie_header: str) -> dict[str, Any]:
+    body, _, err = _get_json(cookie_header, f"{CAMGR_API}/eols?onlyOpCode=1")
+    if err == "CAMGR session expired.":
+        return _auth_error(err)
+    if err:
+        return {"ok": False, "loggedIn": True, "message": err}
+    if not isinstance(body, list):
+        return {"ok": False, "loggedIn": True, "message": "CAMGR did not return the end-of-life list."}
+    user, _, user_err = _get_json(cookie_header, f"{CAMGR_API}/users/current")
+    if user_err == "CAMGR session expired.":
+        return _auth_error(user_err)
+    access = user.get("access") if isinstance(user, dict) else {}
+    can_approve = bool(isinstance(access, dict) and access.get("isEoL"))
+    items = [_public_eol_request(row) for row in body if isinstance(row, dict)]
+    return {"ok": True, "loggedIn": True, "canApprove": can_approve, "items": items}
+
+
+# Datacenters in the CAMGR superseding-content dropdown. The confirm lookup
+# uses the label lowercased as the path, which is how SJC was captured:
+# /sjc/ca/api/demos/{id}. The create call puts DC and id in one segment:
+# /eols/{guid}/create/{days}/SJC.484858/0
+EOL_ALT_DC_PATH = {
+    "APJ": "apj",
+    "ContentDEV.RTP": "contentdev.rtp",
+    "EMEAR": "emear",
+    "InfraDEV": "infradev",
+    "RTP": "rtp",
+    "SJC": "sjc",
+    "SYD": "syd",
+}
+
+
+def eol_alt_dc(value: str) -> str:
+    text = str(value or "").strip()
+    for label in EOL_ALT_DC_PATH:
+        if label.lower() == text.lower():
+            return label
+    return ""
+
+
+def _eol_alt_segment(alt_dc: str = "", alt_demo_id: str = "") -> str:
+    alt_id = str(alt_demo_id or "").strip()
+    dc = eol_alt_dc(alt_dc) if alt_id else ""
+    if alt_id and dc:
+        return f"{dc}.{alt_id}"
+    return "0"
+
+
+def _eol_create_url(guid: str, days: int, alt_dc: str = "", alt_demo_id: str = "") -> str:
+    """CAMGR creates with GET.
+
+    No replacement is /eols/{guid}/create/{days}/0/0. A confirmed replacement
+    is /eols/{guid}/create/{days}/{DC}.{demoId}/0, captured as
+    /create/15/SJC.484858/0.
+    """
+    segment = _eol_alt_segment(alt_dc, alt_demo_id)
+    return (
+        f"{CAMGR_API}/eols/{quote(str(guid or '').strip(), safe=':')}"
+        f"/create/{days}/{quote(segment, safe='.')}/0"
+    )
+
+
+def _eol_approve_url(rid: str, days: int, alt_dc: str = "", alt_demo_id: str = "") -> str:
+    """Approval is /eols/0/create/{days}/0/{rid}, or /{DC}.{demoId}/{rid} when a replacement was set.
+
+    The captured superseding approval was /create/10/SYD.319942/{rid}.
+    """
+    segment = _eol_alt_segment(alt_dc, alt_demo_id)
+    return (
+        f"{CAMGR_API}/eols/0/create/{days}/{quote(segment, safe='.')}/"
+        f"{quote(str(rid or '').strip(), safe='')}"
+    )
+
+
+def submit_eol(
+    cookie_header: str,
+    items: list[dict[str, Any]],
+    days: Any,
+    alt_demo_id: str = "",
+) -> dict[str, Any]:
+    count, day_err = eol_day_count(days)
+    if day_err:
+        return {"ok": False, "loggedIn": True, "message": day_err}
+    alt = str(alt_demo_id or "").strip()
+    if not items:
+        return {"ok": False, "loggedIn": True, "message": "Choose content to end of life."}
+    results: list[dict[str, Any]] = []
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        site = str(raw.get("site") or "").strip().lower()
+        demo_id = str(raw.get("demo_id") or raw.get("demoId") or "").strip()
+        guid = str(raw.get("guid") or "").strip()
+        name = str(raw.get("name") or "").strip()
+        if not guid:
+            found = search_eol_content(cookie_header, demo_id)
+            if found.get("loggedIn") is False:
+                return found
+            hit = _match_eol_hit(found.get("items") or [], site, demo_id) if found.get("ok") else None
+            guid = str((hit or {}).get("guid") or "")
+            name = name or str((hit or {}).get("name") or "")
+        if not guid:
+            results.append({
+                "ok": False,
+                "site": site,
+                "demoId": demo_id,
+                "name": name,
+                "message": "CAMGR did not return an end-of-life id for this content.",
+            })
+            continue
+        item_alt = str(raw.get("alt_demo_id") or raw.get("altDemoId") or alt).strip()
+        item_dc = eol_alt_dc(str(raw.get("alt_dc") or raw.get("altDc") or ""))
+        if item_alt or item_dc:
+            if not item_alt.isdigit() or not item_dc:
+                results.append({
+                    "ok": False,
+                    "site": site,
+                    "demoId": demo_id,
+                    "name": name,
+                    "message": "Pick the replacement datacenter and confirm its demo ID.",
+                })
+                continue
+        body, _, err = _get_json(cookie_header, _eol_create_url(guid, count, item_dc, item_alt))
+        if err == "CAMGR session expired.":
+            return _auth_error(err)
+        if err or not isinstance(body, dict):
+            results.append({
+                "ok": False,
+                "site": site,
+                "demoId": demo_id,
+                "name": name,
+                "message": err or "CAMGR did not accept the end-of-life request.",
+            })
+            continue
+        created = _public_eol_request(body)
+        created["ok"] = True
+        results.append(created)
+    succeeded = [row for row in results if row.get("ok")]
+    failed = [row for row in results if not row.get("ok")]
+    message = ""
+    if failed and not succeeded:
+        message = str(failed[0].get("message") or "CAMGR did not accept the end-of-life request.")
+    elif failed:
+        message = f"Submitted {len(succeeded)}. {len(failed)} could not be submitted."
+    return {
+        "ok": bool(succeeded) and not failed,
+        "loggedIn": True,
+        "results": results,
+        "submitted": len(succeeded),
+        "message": message,
+    }
+
+
+def approve_eol(
+    cookie_header: str,
+    rids: list[str],
+    days: Any,
+    item_days: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    jobs: list[tuple[str, int, str, str]] = []
+    if item_days:
+        for raw in item_days:
+            if not isinstance(raw, dict):
+                continue
+            rid = str(raw.get("rid") or "").strip()
+            count, day_err = eol_day_count(raw.get("days"))
+            if day_err:
+                return {"ok": False, "loggedIn": True, "message": day_err}
+            alt_id = str(raw.get("alt_demo_id") or raw.get("altDemoId") or "").strip()
+            alt_dc = str(raw.get("alt_dc") or raw.get("altDc") or "").strip()
+            if (alt_id or alt_dc) and (not alt_id.isdigit() or not eol_alt_dc(alt_dc)):
+                return {
+                    "ok": False,
+                    "loggedIn": True,
+                    "message": "The superseding content needs its datacenter and demo ID.",
+                }
+            if rid:
+                jobs.append((rid, count, alt_dc, alt_id))
+    else:
+        count, day_err = eol_day_count(days)
+        if day_err:
+            return {"ok": False, "loggedIn": True, "message": day_err}
+        jobs = [(str(rid or "").strip(), count, "", "") for rid in rids if str(rid or "").strip()]
+    if not jobs:
+        return {"ok": False, "loggedIn": True, "message": "Choose a request to approve."}
+    results: list[dict[str, Any]] = []
+    for rid, count, alt_dc, alt_id in jobs:
+        body, _, err = _get_json(cookie_header, _eol_approve_url(rid, count, alt_dc, alt_id))
+        if err == "CAMGR session expired.":
+            return _auth_error(err)
+        if err or not isinstance(body, dict):
+            results.append({"ok": False, "rid": rid, "message": err or "CAMGR did not approve this request."})
+            continue
+        approved = _public_eol_request(body)
+        approved["ok"] = True
+        results.append(approved)
+    succeeded = [row for row in results if row.get("ok")]
+    failed = [row for row in results if not row.get("ok")]
+    message = ""
+    if failed and not succeeded:
+        message = str(failed[0].get("message") or "CAMGR did not approve this request.")
+    elif failed:
+        message = f"Approved {len(succeeded)}. {len(failed)} could not be approved."
+    return {
+        "ok": bool(succeeded) and not failed,
+        "loggedIn": True,
+        "results": results,
+        "approved": len(succeeded),
+        "message": message,
+    }

@@ -1179,6 +1179,12 @@
       background: rgba(4, 159, 217, 0.24);
     }
     .vm-menu-list button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .eol-action { display: inline-block; max-width: 100%; }
+    .vm-menu-list .eol-action { display: block; }
+    .eol-search-wrap { display: block; width: 100%; }
+    .eol-search-wrap input { width: 100%; }
+    /* A disabled control does not receive the hover, so the wrapper shows the tip. */
+    .eol-action > :disabled { pointer-events: none; }
     .badge {
       display: inline-flex;
       align-items: center;
@@ -1200,6 +1206,10 @@
       color: var(--err);
     }
     .badge.neutral { background: rgba(139, 156, 179, 0.15); color: var(--muted); }
+    #action-alert,
+    #token-alert {
+      z-index: 1200;
+    }
     .modal {
       position: fixed;
       inset: 0;
@@ -1775,27 +1785,6 @@
     table.dc-list th.saved-sort[aria-sort="descending"]::after { content: " \2193"; font-size: 0.75em; }
     table.dc-list td.saved-at-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
     tr.saved-row-locked td { color: var(--muted); }
-    details.saved-promoted-group {
-      margin-top: 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.35rem 0.55rem 0.5rem;
-      background: rgba(11, 16, 24, 0.35);
-    }
-    details.saved-promoted-group > summary {
-      cursor: pointer;
-      color: var(--warn);
-      font-size: 0.82rem;
-      font-weight: 600;
-      list-style: none;
-    }
-    details.saved-promoted-group > summary::-webkit-details-marker { display: none; }
-    .saved-promoted-site {
-      margin-top: 0.55rem;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--muted);
-    }
     .badge.eol {
       background: rgba(251, 191, 36, 0.15);
       color: var(--warn);
@@ -2613,6 +2602,45 @@
     button:not(.icon-btn):not(.account-trigger):not(.linkish):not(.clear-demo-id):not(.banner-dismiss):not(.dt-trigger):not(.dt-day):not(.dt-nav-btn):not(.dt-now):not(.help-toggle):not(.auth-panel-close):not(.card-x):not(.card-refresh) {
       border-radius: 999px;
     }
+    /* Menu rows stay left-aligned text. The pill button style was landing on Favorite. */
+    .vm-menu-list > a,
+    .vm-menu-list > button,
+    .vm-menu-list .eol-action > button {
+      display: block !important;
+      width: 100% !important;
+      box-sizing: border-box;
+      min-height: 0 !important;
+      height: auto;
+      margin: 0;
+      padding: 0.4rem 0.55rem !important;
+      border: none !important;
+      border-radius: 4px !important;
+      background: transparent !important;
+      color: var(--text);
+      font-weight: 500;
+      font-size: 0.8rem;
+      line-height: 1.35;
+      text-align: left !important;
+      justify-content: flex-start !important;
+      box-shadow: none !important;
+      white-space: nowrap;
+    }
+    .vm-menu-list > button.danger,
+    .vm-menu-list .eol-action > button.danger {
+      color: #f87171 !important;
+      background: transparent !important;
+    }
+    .vm-menu-list > a:hover,
+    .vm-menu-list > button:hover,
+    .vm-menu-list .eol-action > button:not(:disabled):hover {
+      background: rgba(4, 159, 217, 0.16) !important;
+    }
+    .vm-menu-list > button.danger:hover {
+      background: rgba(248, 113, 113, 0.14) !important;
+    }
+    .saved-actions .vm-menu-list > button + button {
+      margin-left: 0;
+    }
     .vm-menu > summary { border-radius: 999px; }
     input, select, textarea, .dt-trigger { border-radius: 4px; }
   </style>
@@ -2690,6 +2718,10 @@
         <hbr-icon slot="prefix" name="squares-four"></hbr-icon>
         <span slot="content">My Content</span>
       </hbr-nav-item>
+      <hbr-nav-item data-view="favorites">
+        <hbr-icon slot="prefix" name="star"></hbr-icon>
+        <span slot="content">Favorites</span>
+      </hbr-nav-item>
       <hbr-nav-item data-view="workspace">
         <hbr-icon slot="prefix" name="nav-jobs"></hbr-icon>
         <span slot="content">Workspace</span>
@@ -2701,6 +2733,10 @@
       <hbr-nav-item data-view="hub">
         <hbr-icon slot="prefix" name="nav-inventory"></hbr-icon>
         <span slot="content">Hub</span>
+      </hbr-nav-item>
+      <hbr-nav-item data-view="eol">
+        <hbr-icon slot="prefix" name="clock"></hbr-icon>
+        <span slot="content">EOL</span>
       </hbr-nav-item>
       <hbr-nav-item data-view="expo" class="hidden" hidden>
         <hbr-icon slot="prefix" name="squares-four"></hbr-icon>
@@ -2912,6 +2948,38 @@
         <div class="actions">
           <button type="button" id="shutdown-wait-keep">Keep Waiting</button>
           <button type="button" class="danger" id="shutdown-wait-power">Power Off Remaining VMs</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="eol-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="eol-modal-title">
+      <div class="modal-backdrop" id="eol-modal-backdrop"></div>
+      <div class="modal-card action-modal-card">
+        <h2 id="eol-modal-title">End of Life</h2>
+        <p id="eol-modal-subtitle"></p>
+        <div class="prompt-field">
+          <label for="eol-days">Complete EoL in</label>
+          <select id="eol-days">
+            <option>1</option>
+            <option>5</option>
+            <option>10</option>
+            <option>15</option>
+            <option>20</option>
+            <option>25</option>
+            <option>30</option>
+            <option>45</option>
+            <option selected>60</option>
+          </select>
+          <span>days</span>
+        </div>
+        <label class="hint"><input type="checkbox" id="eol-supersede" /> There is a superseding Content?</label>
+        <div id="eol-alt-list" class="hidden"></div>
+        <div id="eol-modal-impact" class="hint" style="max-height:16rem;overflow:auto"></div>
+        <p id="eol-modal-error" class="hint" style="color:var(--err)"></p>
+        <button type="button" class="secondary hidden" id="btn-eol-recheck">Check sessions and saves</button>
+        <div class="actions">
+          <button type="button" class="danger" id="eol-modal-ok" disabled>OK. EoL</button>
+          <button type="button" class="secondary" id="eol-modal-cancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -3141,6 +3209,7 @@
       <p id="lookup-status" class="hint"></p>
       <div class="dc-id-toolbar">
         <button type="button" class="linkish" id="btn-lookup-demo-ids" data-tip="Uses the demo ID in one datacenter to fill the other datacenters from the global catalog. Does not load VMs.">Look Up IDs</button>
+        <button type="button" class="linkish" id="btn-save-demo-ids-favorite" data-tip="Stores each filled demo ID on Favorites so you can load it into Schedule later.">Save to Favorites</button>
         <button type="button" class="linkish" id="btn-clear-all-demo-ids">Clear All IDs</button>
       </div>
       <div class="row" id="schedule-dc-fields" data-dc-order>
@@ -3309,6 +3378,9 @@
             <button type="button" class="secondary" id="btn-copy-saved-to-schedule" disabled data-tip="Copies the checked content ID in each DC into Schedule sessions, then loads that demo’s VMs so you can pick which ones power on. Use this for an exported session. Stay here to schedule without Load VMs.">Copy to Schedule Sessions</button>
             <button type="button" class="secondary" id="btn-share-schedule-saved" disabled data-tip="Opens one share dialog for every checked saved copy. The people you add are applied to all of them, across datacenters. Existing sharing is kept.">Share Checked</button>
             <button type="button" class="danger" id="btn-delete-schedule-saved" disabled data-tip="Permanently deletes checked deletable content across all DCs after showing a confirmation list. Promoted TBv2 content remains EOL-only.">Delete Checked</button>
+            <span class="eol-action" data-tip="Please connect to CAMGR first.">
+              <button type="button" class="secondary" id="btn-eol-schedule-saved" disabled>EOL Checked</button>
+            </span>
           </div>
           <div class="list-toolbar">
             <input type="search" class="list-filter" id="filter-schedule-saved" autocomplete="off" placeholder="Filter by name, content ID, owner, or state" aria-label="Filter your saved content" data-tip="Narrows every datacenter below as you type. Check all then takes just the rows still showing, so you can filter, check, filter again, and schedule or delete them together." />
@@ -3912,6 +3984,50 @@
     </details>
     </section>
 
+    <section class="app-view" id="view-eol" data-view="eol">
+    <h2 class="view-title">End of Life</h2>
+    <details class="panel panel-collapse" id="panel-eol" open>
+      <summary class="panel-collapse-summary">End of Life</summary>
+      <div class="panel-collapse-body">
+      <p class="hint">
+        Submits content for deletion in CAMGR, the same place as the Hub.
+        Search, pick how many days, and review scheduled sessions and saved copies before you confirm.
+        Approval shows up here when your CAMGR login can approve it. Cisco network required.
+      </p>
+      <div class="list-toolbar">
+        <button type="button" id="btn-eol-camgr-connect" data-tip="Opens CAMGR in a tool-owned Chromium window. Sign in with Cisco SSO/Duo once; later Connect uses that same session.">Connect to CAMGR</button>
+        <a class="secondary" id="btn-eol-camgr-open" href="https://dcloud-camgr.cisco.com/#/eols" target="_blank" rel="noopener noreferrer" data-tip="Opens the CAMGR End of Life list in a new tab.">Open EOL in CAMGR</a>
+      </div>
+      <p id="eol-status" class="warn-box" aria-live="polite">CAMGR is not connected. Please connect to CAMGR first.</p>
+      <div class="row">
+        <div style="flex:1">
+          <label for="eol-search">Content name or ID</label>
+          <span class="eol-action eol-search-wrap" data-tip="Please connect to CAMGR first.">
+            <input type="search" id="eol-search" autocomplete="off" placeholder="480730 or a content name" disabled />
+          </span>
+        </div>
+        <div class="actions" style="align-self:end">
+          <span class="eol-action" data-tip="Please connect to CAMGR first.">
+            <button type="button" id="btn-eol-search" disabled>Search</button>
+          </span>
+        </div>
+      </div>
+      <div id="eol-search-results" style="margin-top:0.75rem"></div>
+      <div class="task-group-head" style="margin-top:1.25rem">
+        <p class="task-group-title">End of Life Requests</p>
+        <span class="eol-action" data-tip="Please connect to CAMGR first.">
+          <button type="button" class="secondary" id="btn-eol-refresh" disabled>Refresh</button>
+        </span>
+      </div>
+      <div class="list-toolbar">
+        <button type="button" id="btn-eol-approve-selected" class="hidden" disabled>Approve Selected</button>
+      </div>
+      <p id="eol-queue-note" class="hint"></p>
+      <div id="eol-queue"></div>
+      </div>
+    </details>
+    </section>
+
     <section class="app-view" id="view-expo" data-view="expo">
     <h2 class="view-title">Expo</h2>
     <p class="hint" id="expo-user">Uses the same dCloud login as the rest of this app. The page is only listed if that login can open Expo.</p>
@@ -4092,6 +4208,28 @@
         <p class="hint list-filter-status" id="filter-events-status" aria-live="polite"></p>
         <p id="events-status" class="hint"></p>
         <div id="events-results"></div>
+      </div>
+    </details>
+    </section>
+
+    <section class="app-view" id="view-favorites" data-view="favorites">
+    <h2 class="view-title">Favorites</h2>
+    <details class="panel panel-collapse" id="panel-favorites" open>
+      <summary class="panel-collapse-summary">Favorite content</summary>
+      <div class="panel-collapse-body">
+      <p class="hint">Content you access frequently</p>
+      <div class="list-toolbar">
+        <button type="button" class="secondary" id="btn-favorites-check">Check All</button>
+        <button type="button" class="secondary" id="btn-favorites-uncheck">Uncheck All</button>
+        <button type="button" class="secondary" id="btn-favorites-load" disabled data-tip="Fills Schedule with the checked favorite in each datacenter. One row per datacenter.">Load into Schedule</button>
+        <button type="button" class="secondary" id="btn-favorites-remove" disabled>Remove Checked</button>
+      </div>
+      <div class="list-toolbar">
+        <input type="search" class="list-filter" id="filter-favorites" autocomplete="off" placeholder="Filter by name, content ID, or owner" aria-label="Filter favorites" data-tip="Narrows every datacenter below as you type." />
+      </div>
+      <p class="hint list-filter-status" id="filter-favorites-status" aria-live="polite"></p>
+      <p class="hint" id="favorites-status" aria-live="polite"></p>
+      <div id="favorites-list" style="margin-top:0.35rem"></div>
       </div>
     </details>
     </section>
@@ -6120,10 +6258,14 @@
         if (source === "content") {
           actions = `
             ${row.scheduleId ? `<button type="button" class="search-row-action" data-action="content-schedule">Schedule</button>` : ""}
+            <button type="button" class="search-row-action" data-action="content-favorite">${isFavorite(site, id) ? "Remove Favorite" : "Favorite"}</button>
             ${row.topologyUrl ? `<a href="${escapeHtml(row.topologyUrl)}" target="_blank" rel="noopener noreferrer">Edit Topology</a>` : ""}
             <button type="button" class="search-row-action" data-action="content-filters">Filters</button>
             <button type="button" class="search-row-action" data-action="content-permissions">Permissions</button>
             <button type="button" class="search-row-action" data-action="content-resources">Content Resources</button>
+            <span class="eol-action" data-tip="${contentIsPromoted(row) ? (camgrLoggedIn ? "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first." : "Please connect to CAMGR first.") : "Only promoted content can be end of life."}">
+              <button type="button" class="search-row-action" data-action="content-eol" data-promoted="${contentIsPromoted(row) ? "true" : "false"}" ${camgrLoggedIn && contentIsPromoted(row) ? "" : "disabled"}>End of Life…</button>
+            </span>
           `;
         } else {
           const status = String(row.status || "").toLowerCase();
@@ -9501,11 +9643,16 @@
       const becameConnected = loggedIn && !camgrLoggedIn;
       camgrLoggedIn = loggedIn;
       markConnectButton("btn-camgr-connect", info?.loggedIn, "CAMGR Connected ✓", "Connect to CAMGR");
+      markConnectButton("btn-eol-camgr-connect", info?.loggedIn, "CAMGR Connected ✓", "Connect to CAMGR");
       syncCamgrWatch(Boolean(info?.loggedIn));
       syncRootIdHint();
       if (becameConnected) {
         refreshRootIds().catch(() => {});
         refreshCamgrTransfers().catch(() => {});
+      }
+      syncEolControls();
+      if (becameConnected && document.querySelector(".app-view.is-active")?.dataset.view === "eol") {
+        loadEolQueue().catch(() => {});
       }
       if (!info) {
         setConnectStatus(el, "Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.");
@@ -9521,6 +9668,611 @@
         return;
       }
       setConnectStatus(el, info.message || "Click Connect to CAMGR. Sign in with Cisco SSO in the tool browser if asked.");
+    }
+
+    const EOL_DAY_VALUES = [1, 5, 10, 15, 20, 25, 30, 45, 60];
+    let eolCanApprove = false;
+    let eolQueue = [];
+    let eolModalState = null;
+    let eolModalToken = 0;
+
+    function savedContentIsMine(box) {
+      const owner = String(box?.dataset?.owner || "").trim().toLowerCase();
+      const me = String(lastSessionUser?.id || "").trim().toLowerCase();
+      return Boolean(owner && me && owner === me);
+    }
+
+    function contentIsPromoted(row) {
+      if (!row || typeof row !== "object") return false;
+      if (row.promoted === true || row.eolOnly === true) return true;
+      const text = `${row.state || ""} ${row.status || ""}`.toLowerCase();
+      if (text.includes("promoted")) return true;
+      return Array.isArray(row.states) && row.states.some((part) => String(part).toLowerCase() === "promoted");
+    }
+
+    function syncEolControls() {
+      const off = !camgrLoggedIn;
+      const tip = off
+        ? "Please connect to CAMGR first."
+        : "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first.";
+      ["eol-search", "btn-eol-search", "btn-eol-refresh"].forEach((id) => {
+        const el = $(id);
+        if (!el) return;
+        el.disabled = off;
+        const host = el.closest(".eol-action") || el;
+        if (off) host.dataset.tip = "Please connect to CAMGR first.";
+        else host.removeAttribute("data-tip");
+      });
+      document.querySelectorAll(".btn-managed-eol, .search-row-action[data-action='content-eol'], .btn-eol-hit").forEach((btn) => {
+        const notPromoted = btn.dataset.promoted === "false";
+        btn.disabled = off || notPromoted;
+        const host = btn.closest(".eol-action") || btn;
+        host.dataset.tip = notPromoted
+          ? "Only promoted content can be end of life."
+          : tip;
+      });
+      const status = $("eol-status");
+      if (status && off) {
+        status.classList.add("warn-box");
+        status.classList.remove("hint");
+        status.textContent = "CAMGR is not connected. Please connect to CAMGR first.";
+      }
+      const approveSelected = $("btn-eol-approve-selected");
+      if (approveSelected) {
+        const picked = document.querySelectorAll(".eol-approve-check:checked").length;
+        approveSelected.classList.toggle("hidden", !eolCanApprove);
+        approveSelected.disabled = off || !eolCanApprove || picked === 0;
+      }
+      syncDeleteSavedButton();
+    }
+
+    function eolSubmittedDays(items) {
+      const timers = (items || []).map((item) => Number(item && item.timer));
+      if (!timers.length || timers.some((days) => !EOL_DAY_VALUES.includes(days))) return null;
+      return timers.every((days) => days === timers[0]) ? timers[0] : null;
+    }
+
+    function eolWhen(item) {
+      const at = Number(item?.completeAt || 0);
+      if (!at) return "—";
+      const when = new Date(at);
+      const date = when.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      const hoursLeft = Math.round((at - Date.now()) / 3600000);
+      if (hoursLeft <= 0) return date;
+      const remain = hoursLeft < 48 ? `~ ${hoursLeft} hrs` : `~ ${Math.round(hoursLeft / 24)} days`;
+      return `${date} (${remain})`;
+    }
+
+    function renderEolSearchResults(items) {
+      const root = $("eol-search-results");
+      if (!root) return;
+      if (!items.length) {
+        root.innerHTML = `<p class="hint">No content matched.</p>`;
+        return;
+      }
+      root.innerHTML = `
+        <table class="dc-list">
+          <thead><tr><th>DC</th><th>Content</th><th>Name</th><th></th></tr></thead>
+          <tbody>
+            ${items.map((item, index) => `
+              <tr>
+                <td class="mono">${escapeHtml(item.dc || "")} ${escapeHtml(item.demoId || "")}</td>
+                <td>${escapeHtml(item.content || "")}</td>
+                <td class="name-cell" title="${escapeHtml(item.name || "")}">${escapeHtml(item.name || "")}</td>
+                <td><span class="eol-action" data-tip="${camgrLoggedIn ? "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first." : "Please connect to CAMGR first."}"><button type="button" class="secondary btn-eol-hit" data-eol-index="${index}" ${camgrLoggedIn ? "" : "disabled"}>End of Life…</button></span></td>
+              </tr>`).join("")}
+          </tbody>
+        </table>`;
+      root.querySelectorAll(".btn-eol-hit").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const item = items[Number(btn.dataset.eolIndex)];
+          if (!item || !camgrLoggedIn) return;
+          openEolDialog([{
+            site: item.site,
+            demo_id: item.demoId,
+            guid: item.guid || "",
+            name: item.name || "",
+            label: item.label || "",
+          }], "submit");
+        });
+      });
+    }
+
+    function renderEolQueue(items) {
+      const root = $("eol-queue");
+      if (!root) return;
+      if (!items.length) {
+        root.innerHTML = `<p class="hint">No end-of-life requests.</p>`;
+        return;
+      }
+      root.innerHTML = `
+        <table class="dc-list">
+          <thead>
+            <tr><th></th><th>Content</th><th>Initiator</th><th>Status</th><th>Deletion</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${items.map((item) => {
+              const who = item.approverId ? `${item.starterId} [${item.approverId}]` : (item.starterId || "");
+              const approvable = eolCanApprove && String(item.status || "").toUpperCase() === "APPROVAL";
+              const status = String(item.status || "");
+              const progress = status.toUpperCase() === "EOLING" ? ` ${Number(item.progress) || 0}%` : "";
+              const pendingDays = EOL_DAY_VALUES.includes(Number(item.timer)) ? `${Number(item.timer)} days` : "—";
+              const deletion = Number(item.completeAt) ? eolWhen(item) : pendingDays;
+              return `<tr>
+                <td>${approvable ? `<input type="checkbox" class="eol-approve-check" data-rid="${escapeHtml(item.rid || "")}" />` : ""}</td>
+                <td><span class="mono">${escapeHtml(item.dc || "")} ${escapeHtml(item.demoId || "")}</span><div title="${escapeHtml(item.name || "")}">${escapeHtml(item.name || "")}</div></td>
+                <td>${escapeHtml(who)}</td>
+                <td>${escapeHtml(status)}${escapeHtml(progress)}</td>
+                <td>${escapeHtml(deletion)}</td>
+                <td>${approvable ? `<button type="button" class="btn-eol-approve" data-rid="${escapeHtml(item.rid || "")}">Approve</button>` : ""}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+      root.querySelectorAll(".eol-approve-check").forEach((box) => {
+        box.addEventListener("change", syncEolControls);
+      });
+      root.querySelectorAll(".btn-eol-approve").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const item = items.find((row) => row.rid === btn.dataset.rid);
+          if (!item || !camgrLoggedIn) return;
+          openEolDialog([item], "approve");
+        });
+      });
+    }
+
+    async function loadEolQueue() {
+      const status = $("eol-status");
+      if (!camgrLoggedIn) {
+        eolCanApprove = false;
+        eolQueue = [];
+        renderEolQueue([]);
+        syncEolControls();
+        if (status) {
+          status.classList.add("warn-box");
+          status.classList.remove("hint");
+          status.textContent = "CAMGR is not connected. Please connect to CAMGR first.";
+        }
+        const note = $("eol-queue-note");
+        if (note) note.textContent = "";
+        return;
+      }
+      if (status) {
+        status.classList.remove("warn-box");
+        status.classList.add("hint");
+        status.textContent = "Loading end-of-life requests…";
+      }
+      try {
+        const data = await api("/api/camgr/eol", { quiet: true });
+        eolCanApprove = Boolean(data.canApprove);
+        eolQueue = data.items || [];
+        renderEolQueue(eolQueue);
+        syncEolControls();
+        const note = $("eol-queue-note");
+        if (note) {
+          note.textContent = eolCanApprove
+            ? "You can approve requests from this list."
+            : "This CAMGR login can submit end of life. Approval stays hidden until CAMGR grants it.";
+        }
+        if (status) {
+          status.classList.remove("warn-box");
+          status.classList.add("hint");
+          status.textContent = `${eolQueue.length} end-of-life request${eolQueue.length === 1 ? "" : "s"}.`;
+        }
+      } catch (err) {
+        renderEolQueue([]);
+        if (status) status.textContent = err.message || "Could not load end-of-life requests.";
+      }
+    }
+
+    async function searchEolContent() {
+      if (!camgrLoggedIn) return;
+      const q = String($("eol-search")?.value || "").trim();
+      const status = $("eol-status");
+      if (q.length < 2) {
+        if (status) status.textContent = "Enter a content name or ID.";
+        return;
+      }
+      if (status) status.textContent = "Searching CAMGR…";
+      const data = await api(`/api/camgr/eol/search?q=${encodeURIComponent(q)}`, { quiet: true });
+      renderEolSearchResults(data.items || []);
+      if (status) status.textContent = `${(data.items || []).length} match${(data.items || []).length === 1 ? "" : "es"}.`;
+    }
+
+    function closeEolModal() {
+      eolModalToken += 1;
+      eolModalState = null;
+      $("eol-modal")?.classList.add("hidden");
+    }
+
+    const EOL_PREVIEW_KEY = "dcloud-content-manager-eol-preview-v1";
+
+    function eolItemTitle(item) {
+      return item?.label
+        || `${String(item?.dc || item?.site || "").toUpperCase()} ${item?.demoId || item?.demo_id || ""}`.trim()
+        || item?.name
+        || "Content";
+    }
+
+    function eolPreviewKey(item) {
+      const site = String(item?.site || "").trim().toLowerCase();
+      const id = String(item?.demoId || item?.demo_id || "").trim();
+      return site && id ? `${site}:${id}` : "";
+    }
+
+    function readEolPreviewStore() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(EOL_PREVIEW_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function writeEolPreviewStore(store) {
+      const entries = Object.entries(store).slice(-200);
+      localStorage.setItem(EOL_PREVIEW_KEY, JSON.stringify(Object.fromEntries(entries)));
+    }
+
+    function rememberEolPreviews(previews, results) {
+      const store = readEolPreviewStore();
+      const byDemo = new Map();
+      for (const preview of previews || []) {
+        if (!preview || preview.ok === false || preview.unchecked) continue;
+        const key = eolPreviewKey(preview);
+        if (!key) continue;
+        const previous = store[key] || {};
+        const saved = {
+          site: preview.site,
+          demoId: String(preview.demoId || ""),
+          name: preview.name || "",
+          owner: preview.owner || "",
+          label: preview.label || "",
+          guid: preview.guid || "",
+          sessions: preview.sessions || [],
+          saves: preview.saves || [],
+          sessionsError: preview.sessionsError || "",
+          savesError: preview.savesError || "",
+          replacement: preview.replacement || previous.replacement || null,
+        };
+        store[key] = saved;
+        byDemo.set(key, saved);
+      }
+      for (const result of results || []) {
+        if (!result?.rid) continue;
+        let saved = byDemo.get(eolPreviewKey(result)) || null;
+        if (!saved) {
+          const id = String(result.demoId || result.demo_id || "");
+          for (const [key, row] of byDemo) {
+            if (id && key.endsWith(`:${id}`)) saved = row;
+          }
+        }
+        if (saved) store[`rid:${result.rid}`] = saved;
+      }
+      writeEolPreviewStore(store);
+    }
+
+    function replacementFromAlt(text) {
+      const parts = String(text || "").trim().split(/\s+/).filter(Boolean);
+      if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+        return { dc: parts[0], demoId: parts[1], name: parts.slice(2).join(" ") };
+      }
+      if (parts.length === 1) return { dc: "", demoId: "", name: parts[0] };
+      return null;
+    }
+
+    function eolAltForKey(key) {
+      const row = [...document.querySelectorAll("#eol-alt-list .eol-alt-row")].find((el) => el.dataset.key === key);
+      if (!row || row.dataset.confirmed !== "1" || !row.dataset.altId) return null;
+      return { dc: row.dataset.altDc || "", demoId: row.dataset.altId || "", name: row.dataset.altName || "" };
+    }
+
+    function cachedEolPreview(item) {
+      const store = readEolPreviewStore();
+      const saved = (item?.rid && store[`rid:${item.rid}`]) || store[eolPreviewKey(item)] || null;
+      const title = eolItemTitle(item);
+      const replacement = (saved && saved.replacement) || replacementFromAlt(item?.altContent) || null;
+      if (!saved) {
+        return {
+          ok: true,
+          unchecked: true,
+          mentionReplacement: true,
+          site: item.site || "",
+          demoId: String(item.demoId || item.demo_id || ""),
+          name: item.name || "",
+          label: title,
+          owner: item.owner || item.ownerId || "",
+          replacement,
+        };
+      }
+      return { ...saved, ok: true, unchecked: false, mentionReplacement: true, replacement, label: saved.label || title };
+    }
+
+    const EOL_ALT_DCS = ["APJ", "ContentDEV.RTP", "EMEAR", "InfraDEV", "RTP", "SJC", "SYD"];
+
+    function eolAltDcForItem(item) {
+      const site = String(item?.site || "").trim().toLowerCase();
+      return { sjc: "SJC", rtp: "RTP", lon: "EMEAR", sng: "APJ", syd: "SYD" }[site] || "SJC";
+    }
+
+    function renderEolAltFields(items) {
+      const root = $("eol-alt-list");
+      if (!root) return;
+      root.innerHTML = (items || []).map((item) => {
+        const title = eolItemTitle(item);
+        const key = eolPreviewKey(item) || title;
+        const picked = eolAltDcForItem(item);
+        const options = EOL_ALT_DCS.map((dc) => `<option${dc === picked ? " selected" : ""}>${escapeHtml(dc)}</option>`).join("");
+        const heading = items.length === 1 ? "" : `<p><strong>${escapeHtml(title)}</strong></p>`;
+        return `<div class="eol-alt-row" data-key="${escapeHtml(key)}">
+          ${heading}
+          <div class="prompt-field">
+            <label>Content from</label>
+            <select class="eol-alt-dc">${options}</select>
+            <label>With [ Demo Id ]</label>
+            <input class="eol-alt-id" type="text" inputmode="numeric" autocomplete="off" placeholder="Demo ID" />
+            <button type="button" class="secondary eol-alt-confirm">Confirm</button>
+          </div>
+          <p class="eol-alt-name hint"></p>
+        </div>`;
+      }).join("");
+    }
+
+    async function confirmEolAlt(row) {
+      if (!row || !camgrLoggedIn) return;
+      const dc = String(row.querySelector(".eol-alt-dc")?.value || "").trim();
+      const id = String(row.querySelector(".eol-alt-id")?.value || "").trim();
+      const nameEl = row.querySelector(".eol-alt-name");
+      row.dataset.confirmed = "";
+      if (!/^\d+$/.test(id)) {
+        if (nameEl) nameEl.textContent = "Demo ID has to be the content number.";
+        refreshEolOk();
+        return;
+      }
+      if (nameEl) nameEl.textContent = "Looking up…";
+      const data = await api(`/api/camgr/eol/replacement?dc=${encodeURIComponent(dc)}&demo_id=${encodeURIComponent(id)}`, { quiet: true });
+      row.dataset.confirmed = "1";
+      row.dataset.altDc = data.dc || dc;
+      row.dataset.altId = String(data.demoId || id);
+      row.dataset.altName = data.name || "";
+      if (nameEl) nameEl.textContent = `${data.demoId || id} ${data.name || ""}`.trim();
+      refreshEolOk();
+    }
+
+    function syncEolAltFields() {
+      const on = Boolean($("eol-supersede")?.checked) && eolModalState?.mode === "submit";
+      $("eol-alt-list")?.classList.toggle("hidden", !on);
+    }
+
+    function eolImpactHtml(items) {
+      return items.map((item) => {
+        const title = item.label || `${item.dc || ""} ${item.demoId || ""}`.trim() || "Content";
+        const extraName = item.name && item.name !== title ? item.name : "";
+        if (!item.ok && item.message) {
+          return `<p><strong>${escapeHtml(title)}</strong> — ${escapeHtml(item.message)}</p>`;
+        }
+        const replacement = eolReplacementHtml(item);
+        if (item.unchecked) {
+          return `<p><strong>${escapeHtml(title)}</strong>${extraName ? ` — ${escapeHtml(extraName)}` : ""}${item.owner ? ` · ${escapeHtml(item.owner)}` : ""}</p>
+            ${replacement}
+            <p>Sessions and saved content from the submit are not stored on this browser.</p>`;
+        }
+        const sessions = item.sessions || [];
+        const saves = item.saves || [];
+        const lines = (rows, empty) => (rows.length
+          ? rows.slice(0, 12).map((row) => `<li>${escapeHtml(row.id)} ${escapeHtml(row.name)} · ${escapeHtml(row.user || row.owner || "")}</li>`).join("")
+          : `<li>${empty}</li>`);
+        const extra = (rows) => (rows.length > 12 ? `<li>… ${rows.length - 12} more</li>` : "");
+        const problems = [item.sessionsError, item.savesError].filter(Boolean).map((text) => `<p>${escapeHtml(text)}</p>`).join("");
+        return `<p><strong>${escapeHtml(title)}</strong>${extraName ? ` — ${escapeHtml(extraName)}` : ""}${item.owner ? ` · ${escapeHtml(item.owner)}` : ""}</p>
+          ${problems}
+          ${replacement}
+          <p>Scheduled Sessions (${sessions.length})</p><ul>${lines(sessions, "None")}${extra(sessions)}</ul>
+          <p>Saved Contents (${saves.length})</p><ul>${lines(saves, "None")}${extra(saves)}</ul>`;
+      }).join("");
+    }
+
+    function eolReplacementHtml(item) {
+      if (!item?.mentionReplacement) return "";
+      const repl = item.replacement;
+      if (!repl || !(repl.demoId || repl.name || repl.dc)) {
+        return `<p>Superseding Content</p><ul><li>None</li></ul>`;
+      }
+      const id = [repl.dc, repl.demoId].filter(Boolean).join(" ");
+      const name = String(repl.name || "").trim();
+      const label = name && name !== id ? `${id} — ${name}` : (id || name);
+      return `<p>Superseding Content</p><ul><li>${escapeHtml(label)}</li></ul>`;
+    }
+
+    function refreshEolOk() {
+      const ok = $("eol-modal-ok");
+      if (!ok || ok.dataset.busy === "1" || !eolModalState || !camgrLoggedIn) {
+        if (ok && ok.dataset.busy !== "1") ok.disabled = true;
+        return;
+      }
+      const altOn = eolModalState.mode === "submit" && $("eol-supersede")?.checked;
+      const altRows = [...document.querySelectorAll("#eol-alt-list .eol-alt-row")];
+      const altOk = !altOn || (altRows.length > 0 && altRows.every((row) => {
+        const id = String(row.querySelector(".eol-alt-id")?.value || "").trim();
+        const dc = String(row.querySelector(".eol-alt-dc")?.value || "").trim();
+        return row.dataset.confirmed === "1" && row.dataset.altId === id && row.dataset.altDc === dc;
+      }));
+      const ready = eolModalState.mode === "approve"
+        ? (eolModalState.items || []).some((item) => item.rid)
+        : (eolModalState.previews || []).some((item) => item.guid);
+      ok.disabled = !(altOk && ready);
+    }
+
+    async function openEolDialog(rawItems, mode, note) {
+      if (!camgrLoggedIn) return;
+      const items = (rawItems || []).filter(Boolean);
+      if (!items.length) return;
+      const token = ++eolModalToken;
+      const submitted = mode === "approve" ? eolSubmittedDays(items) : null;
+      const keepOwnDays = mode === "approve" && submitted == null && items.every((item) => EOL_DAY_VALUES.includes(Number(item.timer)));
+      eolModalState = { mode, items, previews: [], note: note || "", daysTouched: false, keepOwnDays };
+      $("eol-modal")?.classList.remove("hidden");
+      const one = items.length === 1 ? items[0] : null;
+      const label = one
+        ? (one.label || `${String(one.dc || one.site || "").toUpperCase()} ${one.demoId || one.demo_id || ""}`.trim())
+        : "";
+      $("eol-modal-title").textContent = one ? `End of Life :: ${label}` : `End of Life :: ${items.length} items`;
+      const base = keepOwnDays
+        ? "Each request keeps the day count it was submitted with, unless you pick a different number."
+        : (submitted != null && !one
+          ? `These were submitted for ${submitted} days. The same day count is used for every item.`
+          : (one ? (one.name || "") : "The same day count is used for every item."));
+      $("eol-modal-subtitle").textContent = [base, note].filter(Boolean).join(" ");
+      const days = $("eol-days");
+      const preferred = submitted != null
+        ? String(submitted)
+        : (keepOwnDays ? String(Number(items[0].timer)) : "60");
+      if (days) days.value = preferred;
+      const supersede = $("eol-supersede");
+      if (supersede) {
+        supersede.checked = false;
+        supersede.disabled = mode !== "submit";
+      }
+      renderEolAltFields(items);
+      syncEolAltFields();
+      const ok = $("eol-modal-ok");
+      if (ok) {
+        ok.dataset.busy = "";
+        ok.disabled = true;
+        ok.textContent = one ? `OK. EoL ${label}` : "OK. EoL";
+      }
+      const modalError = $("eol-modal-error");
+      if (modalError) modalError.textContent = "";
+      const impact = $("eol-modal-impact");
+      const recheck = $("btn-eol-recheck");
+      if (mode === "approve") {
+        const cached = items.map((item) => cachedEolPreview(item));
+        eolModalState.previews = cached;
+        if (impact) impact.innerHTML = eolImpactHtml(cached);
+        if (recheck) {
+          recheck.classList.remove("hidden");
+          recheck.textContent = cached.some((item) => !item.unchecked) ? "Check again" : "Check sessions and saves";
+          recheck.disabled = false;
+        }
+        refreshEolOk();
+        return;
+      }
+      if (recheck) recheck.classList.add("hidden");
+      await loadEolImpact(token);
+    }
+
+    async function loadEolImpact(token) {
+      const state = eolModalState;
+      if (!state) return;
+      const impact = $("eol-modal-impact");
+      const recheck = $("btn-eol-recheck");
+      if (impact) impact.textContent = "Loading scheduled sessions and saved content…";
+      if (recheck) recheck.disabled = true;
+      try {
+        const data = await api("/api/camgr/eol/preview", {
+          method: "POST",
+          quiet: true,
+          body: JSON.stringify({
+            days: Number($("eol-days")?.value || 60),
+            items: (state.items || []).map((item) => ({
+              site: item.site || "",
+              demo_id: String(item.demoId || item.demo_id || ""),
+              guid: item.guid || "",
+              name: item.name || "",
+            })),
+          }),
+        });
+        if (token !== eolModalToken || !eolModalState) return;
+        eolModalState.previews = (data.items || []).map((preview) => {
+          if (state.mode !== "approve") return preview;
+          const match = (state.items || []).find((item) => eolPreviewKey(item) === eolPreviewKey(preview) || String(item.demoId || item.demo_id || "") === String(preview.demoId || ""));
+          const cached = cachedEolPreview({ ...(match || {}), ...preview, rid: match?.rid || preview.rid });
+          return { ...preview, mentionReplacement: true, replacement: cached.replacement || null };
+        });
+        if (impact) impact.innerHTML = eolImpactHtml(eolModalState.previews);
+        rememberEolPreviews(eolModalState.previews, state.items || []);
+        if (recheck && state.mode === "approve") recheck.textContent = "Check again";
+      } catch (err) {
+        if (token !== eolModalToken) return;
+        if (impact) impact.textContent = err.message || "Could not load sessions and saved content.";
+      } finally {
+        if (recheck) recheck.disabled = false;
+        refreshEolOk();
+      }
+    }
+
+    async function confirmEolModal() {
+      if (!eolModalState || !camgrLoggedIn) return;
+      const ok = $("eol-modal-ok");
+      if (!ok || ok.disabled) return;
+      const days = Number($("eol-days")?.value || 60);
+      const mode = eolModalState.mode;
+      const keepOwn = mode === "approve" && eolModalState.keepOwnDays && !eolModalState.daysTouched;
+      const altByKey = {};
+      if (mode === "submit" && $("eol-supersede")?.checked) {
+        document.querySelectorAll("#eol-alt-list .eol-alt-row").forEach((row) => {
+          altByKey[row.dataset.key] = {
+            alt_demo_id: row.dataset.altId || "",
+            alt_dc: row.dataset.altDc || "",
+          };
+        });
+      }
+      const savedPreviews = eolModalState.previews || [];
+      ok.dataset.busy = "1";
+      ok.disabled = true;
+      ok.textContent = mode === "approve" ? "Approving…" : "Submitting…";
+      try {
+        if (mode === "approve") {
+          const requests = (eolModalState.items || []).filter((item) => item.rid).map((item) => {
+            const repl = cachedEolPreview(item).replacement || {};
+            return {
+              rid: item.rid,
+              days: keepOwn ? Number(item.timer) : days,
+              alt_dc: repl.dc || "",
+              alt_demo_id: repl.demoId || "",
+            };
+          });
+          const data = await api("/api/camgr/eol/approve", {
+            method: "POST",
+            quiet: true,
+            body: JSON.stringify({ days, rids: requests.map((item) => item.rid), items: requests }),
+          });
+          showToast(data.message || (requests.length === 1 ? "End of life approved." : `Approved ${data.approved || requests.length} end-of-life requests.`));
+        } else {
+          const items = (eolModalState.previews || []).filter((item) => item.guid).map((item) => ({
+            site: item.site,
+            demo_id: String(item.demoId || ""),
+            guid: item.guid,
+            name: item.name || "",
+            alt_demo_id: (altByKey[eolPreviewKey(item)] || {}).alt_demo_id || "",
+            alt_dc: (altByKey[eolPreviewKey(item)] || {}).alt_dc || "",
+          }));
+          if (!items.length) throw new Error("CAMGR did not return an end-of-life id for this content.");
+          const data = await api("/api/camgr/eol", {
+            method: "POST",
+            quiet: true,
+            body: JSON.stringify({ days, items }),
+          });
+          rememberEolPreviews(savedPreviews.map((preview) => ({
+            ...preview,
+            replacement: eolAltForKey(eolPreviewKey(preview)) || preview.replacement || null,
+          })), data.results || []);
+          const n = data.submitted || items.length;
+          showToast(data.message || (n === 1 ? "End of life submitted." : `Submitted ${n} end-of-life requests.`));
+        }
+        closeEolModal();
+        if (document.querySelector(".app-view.is-active")?.dataset.view === "eol") {
+          loadEolQueue().catch(() => {});
+        }
+      } catch (err) {
+        ok.dataset.busy = "";
+        ok.textContent = "OK. EoL";
+        const message = err.message || "End of life failed.";
+        const modalError = $("eol-modal-error");
+        if (modalError) modalError.textContent = message;
+        refreshEolOk();
+        showError(message);
+      }
     }
 
     let caiLoggedIn = false;
@@ -11208,9 +11960,19 @@
     }
 
     async function connectCamgr() {
-      $("btn-camgr-connect").disabled = true;
+      ["btn-camgr-connect", "btn-eol-camgr-connect"].forEach((id) => {
+        const btn = $(id);
+        if (btn) btn.disabled = true;
+      });
+      const opening = "Opening the tool browser… After you finish signing in, that window opens CAMGR to save the session.";
       const status = $("camgr-status");
-        if (status) status.textContent = "Opening the tool browser… After you finish signing in, that window opens CAMGR to save the session.";
+      if (status) status.textContent = opening;
+      const eolStatus = $("eol-status");
+      if (eolStatus && !camgrLoggedIn) {
+        eolStatus.classList.remove("warn-box");
+        eolStatus.classList.add("hint");
+        eolStatus.textContent = opening;
+      }
       try {
         // quiet: the reason belongs under the button, not in a pop-up.
         const data = await api("/api/camgr/connect", { method: "POST", body: "{}", quiet: true });
@@ -11224,7 +11986,10 @@
         updateCamgrStatus({ loggedIn: false, message: err.message });
         noteLog(err.message || "Could not connect to CAMGR.");
       } finally {
-        $("btn-camgr-connect").disabled = false;
+        ["btn-camgr-connect", "btn-eol-camgr-connect"].forEach((id) => {
+          const btn = $(id);
+          if (btn) btn.disabled = false;
+        });
       }
     }
 
@@ -14571,9 +15336,11 @@
     const DEFAULT_NAV_ITEMS = Object.freeze([
       { id: "schedule", title: "Schedule" },
       { id: "saved", title: "My Content" },
+      { id: "favorites", title: "Favorites" },
       { id: "workspace", title: "Workspace" },
       { id: "monitor", title: "Monitor" },
       { id: "hub", title: "Hub" },
+      { id: "eol", title: "EOL" },
       { id: "expo", title: "Expo" },
       { id: "events", title: "Events" },
       { id: "search", title: "Search" },
@@ -14585,7 +15352,6 @@
     let expoAccessAllowed = false;
     let expoAccessTokenKey = "";
     let SITE_ORDER = readDatacenterOrder();
-    const DCLOUD_CATALOG_EOL_URL = "https://dcloud-camgr.cisco.com/#/catalogue";
     const UI_STATE_KEY = "dcloud-content-manager-ui-v1";
     const LEGACY_UI_STATE_KEY = "dcloud-session-manager-ui-v1";
     const DEFAULT_SECTION_ORDER = [
@@ -14607,8 +15373,6 @@
       "details#found-events-panel",
       "details#found-schedule-saved-panel",
       "details#saved-ids-found-panel",
-      "details#saved-promoted-group",
-      "details#saved-ids-promoted-group",
     ].join(", ");
     const TOP_LEVEL_PANEL_SELECTOR = "details.panel-collapse";
     const DEFAULT_PANEL_OPEN = new Map();
@@ -14618,6 +15382,7 @@
       "found-workspace-sessions",
       "saved-ids-found",
       "found-schedule-saved",
+      "favorites-list",
       "found-events",
     ];
     const PERSIST_DC_GROUP_SELECTOR = PERSIST_DC_GROUP_CONTAINERS
@@ -14755,9 +15520,17 @@
       const next = Array.isArray(order) ? [...order] : [];
       for (const id of DEFAULT_NAV_IDS) {
         if (next.includes(id)) continue;
-        if (id === "expo") {
+        if (id === "favorites") {
+          const savedIdx = next.indexOf("saved");
+          if (savedIdx >= 0) next.splice(savedIdx + 1, 0, id);
+          else next.push(id);
+        } else if (id === "eol" || id === "expo") {
           const hubIdx = next.indexOf("hub");
-          if (hubIdx >= 0) next.splice(hubIdx + 1, 0, id);
+          const eolIdx = next.indexOf("eol");
+          const at = id === "eol"
+            ? hubIdx
+            : (eolIdx >= 0 ? eolIdx : hubIdx);
+          if (at >= 0) next.splice(at + 1, 0, id);
           else next.push(id);
         } else {
           next.push(id);
@@ -15253,6 +16026,8 @@
       });
       try { sessionStorage.setItem(APP_VIEW_STORE, next); } catch {}
       if (next === "expo") initExpoView();
+      if (next === "eol") loadEolQueue().catch(() => {});
+      if (next === "favorites") renderFavorites();
     }
 
     function initAppNav() {
@@ -15459,6 +16234,228 @@
       }));
     }
 
+    const FAVORITES_KEY = "dcloud-content-manager-favorites-v1";
+
+    function readFavorites() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.filter((row) => row && row.site && row.contentId) : [];
+      } catch (err) {
+        return [];
+      }
+    }
+
+    function writeFavorites(rows) {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify((rows || []).slice(0, 400)));
+    }
+
+    function favoriteKey(site, contentId) {
+      return `${String(site || "").trim().toLowerCase()}:${String(contentId || "").trim()}`;
+    }
+
+    function isFavorite(site, contentId) {
+      const key = favoriteKey(site, contentId);
+      return readFavorites().some((row) => favoriteKey(row.site, row.contentId) === key);
+    }
+
+    function rememberFavorite(entry) {
+      const site = String(entry?.site || "").trim().toLowerCase();
+      const contentId = String(entry?.contentId || entry?.id || "").trim();
+      if (!site || !contentId) return false;
+      const key = favoriteKey(site, contentId);
+      const previous = readFavorites().find((row) => favoriteKey(row.site, row.contentId) === key);
+      const rest = readFavorites().filter((row) => favoriteKey(row.site, row.contentId) !== key);
+      const name = String(entry.name || previous?.name || `Content ${contentId}`).trim();
+      rest.unshift({
+        site,
+        contentId,
+        name,
+        owner: String(entry.owner || previous?.owner || "").trim(),
+        contentViewUrl: String(entry.contentViewUrl || entry.topologyUrl || previous?.contentViewUrl || "").trim(),
+        promoted: entry.promoted === undefined ? Boolean(previous?.promoted) : Boolean(entry.promoted),
+        deletable: entry.deletable === undefined ? Boolean(previous?.deletable) : Boolean(entry.deletable),
+        addedAt: Date.now(),
+      });
+      writeFavorites(rest);
+      renderFavorites();
+      return true;
+    }
+
+    function forgetFavorite(site, contentId) {
+      const key = favoriteKey(site, contentId);
+      writeFavorites(readFavorites().filter((row) => favoriteKey(row.site, row.contentId) !== key));
+      renderFavorites();
+    }
+
+    function toggleContentFavorite(entry) {
+      const site = entry?.site;
+      const contentId = entry?.contentId || entry?.id;
+      if (isFavorite(site, contentId)) {
+        forgetFavorite(site, contentId);
+        showToast("Removed from favorites.");
+        return false;
+      }
+      rememberFavorite(entry);
+      showToast("Saved to favorites.");
+      return true;
+    }
+
+    function saveScheduleIdsToFavorites() {
+      const entries = [];
+      document.querySelectorAll(".demo-id").forEach((input) => {
+        const contentId = String(input.value || "").trim();
+        const site = String(input.dataset.dc || "").trim().toLowerCase();
+        if (!site || !/^\d+$/.test(contentId)) return;
+        const hint = String($(`hint-${site}`)?.textContent || "").replace(/\s+/g, " ").trim();
+        const name = hint && hint.length < 180 && !/error|fail|not found|sign in/i.test(hint)
+          ? hint
+          : `Content ${contentId}`;
+        entries.push({ site, contentId, name });
+      });
+      if (!entries.length) {
+        showError("Enter a demo ID before saving it to Favorites.");
+        return;
+      }
+      const rows = readFavorites();
+      for (const entry of entries) {
+        const key = favoriteKey(entry.site, entry.contentId);
+        const previous = rows.find((row) => favoriteKey(row.site, row.contentId) === key);
+        const rest = rows.filter((row) => favoriteKey(row.site, row.contentId) !== key);
+        const generic = entry.name === `Content ${entry.contentId}`;
+        rows.splice(0, rows.length, {
+          site: entry.site,
+          contentId: entry.contentId,
+          name: generic && previous?.name ? previous.name : entry.name,
+          owner: previous?.owner || "",
+          contentViewUrl: previous?.contentViewUrl || "",
+          promoted: Boolean(previous?.promoted),
+          deletable: Boolean(previous?.deletable),
+          addedAt: Date.now(),
+        }, ...rest);
+      }
+      writeFavorites(rows);
+      renderFavorites();
+      const dcs = entries.map((entry) => entry.site.toUpperCase()).join(", ");
+      showToast(`Saved ${dcs} to Favorites.`);
+    }
+
+    function checkedFavoriteRows() {
+      return [...document.querySelectorAll(".favorite-content:checked")].map((box) => ({
+        site: box.dataset.site,
+        contentId: box.dataset.contentId,
+        name: box.dataset.name || "",
+      }));
+    }
+
+    function syncFavoriteButtons() {
+      const selected = checkedFavoriteRows();
+      const load = $("btn-favorites-load");
+      const remove = $("btn-favorites-remove");
+      if (load) load.disabled = selected.length === 0;
+      if (remove) remove.disabled = selected.length === 0;
+      syncGroupChecks("", ".favorite-content", "favorite-dc-head");
+    }
+
+    function loadFavoritesIntoSchedule(rows) {
+      const bySite = {};
+      const extra = [];
+      for (const row of rows || []) {
+        const site = String(row.site || "").toLowerCase();
+        if (!site || !row.contentId) continue;
+        if (bySite[site]) extra.push(site.toUpperCase());
+        else bySite[site] = row.contentId;
+      }
+      if (!Object.keys(bySite).length) {
+        showError("Check a favorite to load into Schedule.");
+        return;
+      }
+      if (extra.length) {
+        showError(`Check only one favorite per DC. Extra checks in ${[...new Set(extra)].join(", ")}.`);
+        return;
+      }
+      const dcs = Object.keys(bySite).map((site) => site.toUpperCase()).join(", ");
+      openScheduleWithIds(bySite, `Loaded ${dcs} from Favorites.`, "favorites-status");
+    }
+
+    function favoriteActionsMenu(row) {
+      const rowData = `data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name || "")}" data-owner="${escapeHtml(row.owner || "")}"`;
+      const promoted = row.promoted === true;
+      const eolTip = !promoted
+        ? "Only promoted content can be end of life."
+        : (camgrLoggedIn
+          ? "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first."
+          : "Please connect to CAMGR first.");
+      const topology = row.contentViewUrl
+        ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">Edit Topology</a>`
+        : "";
+      const deleteBtn = row.deletable
+        ? `<button type="button" class="danger btn-favorite-delete" ${rowData}>Delete…</button>`
+        : "";
+      return `<details class="vm-menu search-actions-menu favorite-actions-menu" ${rowData}>
+        <summary data-tip="Schedule, edit, share, end of life, delete, or remove this favorite.">Actions</summary>
+        <div class="vm-menu-list">
+          <button type="button" class="btn-favorite-schedule" ${rowData}>Schedule</button>
+          ${topology}
+          <button type="button" class="btn-saved-share" ${rowData} data-share-kind="content">Share…</button>
+          <span class="eol-action" data-tip="${escapeHtml(eolTip)}">
+            <button type="button" class="btn-managed-eol" ${rowData} data-promoted="${promoted ? "true" : "false"}" ${camgrLoggedIn && promoted ? "" : "disabled"}>End of Life…</button>
+          </span>
+          ${deleteBtn}
+          <button type="button" class="btn-favorite-remove" ${rowData}>Remove from Favorites</button>
+        </div>
+      </details>`;
+    }
+
+    function renderFavorites() {
+      const container = $("favorites-list");
+      if (!container) return;
+      const checked = new Set(
+        [...container.querySelectorAll(".favorite-content:checked")].map((box) => favoriteKey(box.dataset.site, box.dataset.contentId))
+      );
+      const rows = readFavorites();
+      const status = $("favorites-status");
+      if (!rows.length) {
+        container.innerHTML = `<p class="hint">No favorites yet. Use Favorite on Search or My Content, or save the demo IDs on Schedule.</p>`;
+        if (status) status.textContent = "";
+        syncFavoriteButtons();
+        return;
+      }
+      const groups = groupRowsBySite(rows);
+      container.innerHTML = groups.map(({ site, rows: siteRows }) => {
+        const openAttr = dcGroupIsOpen("favorites-list", site, true) ? "open" : "";
+        const body = siteRows.map((row) => {
+          const key = favoriteKey(row.site, row.contentId);
+          const link = row.contentViewUrl
+            ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.contentId)}</a>`
+            : escapeHtml(row.contentId);
+          return `<tr>
+            <td><input type="checkbox" class="favorite-content" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name || "")}" ${checked.has(key) ? "checked" : ""} /></td>
+            <td class="name-cell" title="${escapeHtml(row.name || "")}">${escapeHtml(row.name || "")}</td>
+            <td class="mono">${link}</td>
+            <td>${escapeHtml(row.owner || "")}</td>
+            <td class="saved-actions">${favoriteActionsMenu(row)}</td>
+          </tr>`;
+        }).join("");
+        return `<details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
+          <summary><span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span></summary>
+          <table class="dc-list">
+            <thead><tr><th><input type="checkbox" class="favorite-dc-head" data-site="${escapeHtml(site)}" title="Select favorites in ${escapeHtml(site.toUpperCase())}" /></th><th>Name</th><th>Content ID</th><th>Owner</th><th></th></tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </details>`;
+      }).join("");
+      if (status) status.textContent = `${rows.length} favorite${rows.length === 1 ? "" : "s"}.`;
+      container.querySelectorAll("details.favorite-actions-menu").forEach((menu) => {
+        menu.addEventListener("toggle", () => {
+          if (!menu.open) return;
+          closeSearchActionsMenus(menu);
+          positionSearchActionsMenu(menu);
+        });
+      });
+      refreshListFilters();
+      syncFavoriteButtons();
+    }
+
     function dcloudDashboardUrl(site, page) {
       return `https://dcloud2-${String(site || "").trim().toLowerCase()}.cisco.com/dashboard/${page}`;
     }
@@ -15509,16 +16506,22 @@
 
     function syncGroupChecks(allHeadId, itemSelector, dcHeadClass) {
       const boxes = visibleBoxes(itemSelector);
-      const checked = boxes.filter((box) => box.checked).length;
+      const selectable = boxes.filter((box) => !box.disabled);
+      const checked = selectable.filter((box) => box.checked).length;
       const head = $(allHeadId);
       if (head) {
-        head.checked = boxes.length > 0 && checked === boxes.length;
-        head.indeterminate = checked > 0 && checked < boxes.length;
+        head.checked = selectable.length > 0 && checked === selectable.length;
+        head.indeterminate = checked > 0 && checked < selectable.length;
       }
       for (const site of SITE_ORDER) {
-        const dcBoxes = boxes.filter((box) => box.dataset.site === site);
+        const dcBoxes = selectable.filter((box) => box.dataset.site === site);
         const dcHead = document.querySelector(`.${dcHeadClass}[data-site="${site}"]`);
-        if (!dcHead || !dcBoxes.length) continue;
+        if (!dcHead) continue;
+        if (!dcBoxes.length) {
+          dcHead.checked = false;
+          dcHead.indeterminate = false;
+          continue;
+        }
         const dcChecked = dcBoxes.filter((box) => box.checked).length;
         dcHead.checked = dcChecked === dcBoxes.length;
         dcHead.indeterminate = dcChecked > 0 && dcChecked < dcBoxes.length;
@@ -15538,6 +16541,12 @@
     // turn and scheduled together; anything checked but hidden is called out in the
     // status line rather than silently dropped.
     const LIST_FILTERS = [
+      {
+        input: "filter-favorites",
+        container: "favorites-list",
+        noun: "favorite",
+        sync: () => syncFavoriteButtons(),
+      },
       {
         input: "filter-schedule-saved",
         container: "found-schedule-saved",
@@ -15587,6 +16596,7 @@
     // can be scheduled, attached, or deleted as a batch.
     function setBoxesChecked(boxes, checked) {
       [...boxes].forEach((box) => {
+        if (box.disabled) return;
         if (checked && rowIsFilteredOut(box)) return;
         box.checked = checked;
       });
@@ -15621,7 +16631,7 @@
         if (row.querySelector('input[type="checkbox"]:checked')) hiddenChecked += 1;
       });
       // Inner groups first, so a site group sees its own hidden children.
-      const groupSelectors = ["details.event-group", "details.saved-promoted-group", "details.dc-group"];
+      const groupSelectors = ["details.event-group", "details.dc-group"];
       for (const selector of groupSelectors) {
         container.querySelectorAll(selector).forEach((group) => {
           const rows = [...group.querySelectorAll(rowSelector)];
@@ -16367,6 +17377,7 @@
     function restoreFoundContentChecks(itemClass, keys) {
       if (!keys || !keys.size) return;
       document.querySelectorAll(`.${itemClass}`).forEach((el) => {
+        if (el.disabled) return;
         if (keys.has(`${el.dataset.site}:${el.dataset.contentId}`)) el.checked = true;
       });
     }
@@ -16384,23 +17395,32 @@
         : escapeHtml(row.contentId);
       const stateCell = row.eolOnly && showEolBadge
         ? `<span class="badge eol">${titleChip("EOL only")}</span> <span class="hint">${escapeHtml(row.state || "")}</span>`
-        // No TBv3 badge: nearly everything is v3 now, and the v2 items already sit
-        // under their own "Topology Builder v2 promoted — EOL only" section.
         : escapeHtml(row.state || "");
-      const checkCell = `<input type="checkbox" class="${itemClass}" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}" data-parent-id="${escapeHtml(row.parentId || "")}" data-deletable="${deletable ? "true" : "false"}" />`;
+      const canDelete = deletable !== false && row.deletable !== false && !row.eolOnly;
+      const promoted = contentIsPromoted(row);
+      const checkCell = `<input type="checkbox" class="${itemClass}" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}" data-owner="${escapeHtml(row.owner || "")}" data-parent-id="${escapeHtml(row.parentId || "")}" data-deletable="${canDelete ? "true" : "false"}" data-promoted="${promoted ? "true" : "false"}" />`;
       const shareBtn = `<button type="button" class="secondary btn-saved-share" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-share-kind="content" data-name="${escapeHtml(row.name)}" data-tip="Share this saved content in dCloud (DSX user search)">Share</button>`;
       const addBtn = showAdd
         ? `<button type="button" class="secondary btn-add-saved-id" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}" data-parent-id="${escapeHtml(row.parentId || "")}" data-tip="Add this saved content to the Saved content IDs list">Add</button>`
         : "";
-      const rowData = `data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}"`;
+      const rowData = `data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name)}" data-owner="${escapeHtml(row.owner || "")}"`;
+      const eolTip = !promoted
+        ? "Only promoted content can be end of life."
+        : (camgrLoggedIn
+          ? "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first."
+          : "Please connect to CAMGR first.");
       const managedMenu = managedActions
         ? `<details class="vm-menu search-actions-menu saved-content-actions-menu" ${rowData}>
-            <summary data-tip="Schedule, edit, share, or delete this saved content.">Actions</summary>
+            <summary data-tip="Schedule, edit, share, end of life, or delete this saved content.">Actions</summary>
             <div class="vm-menu-list">
               <button type="button" class="btn-managed-schedule" ${rowData}>Schedule</button>
+              <button type="button" class="btn-managed-favorite" ${rowData} data-content-view-url="${escapeHtml(row.contentViewUrl || "")}" data-promoted="${promoted ? "true" : "false"}" data-deletable="${canDelete ? "true" : "false"}">${isFavorite(row.site, row.contentId) ? "Remove Favorite" : "Favorite"}</button>
               ${row.contentViewUrl ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">Edit Topology</a>` : ""}
               <button type="button" class="btn-saved-share" ${rowData} data-share-kind="content">Share…</button>
-              ${deletable ? `<button type="button" class="danger btn-managed-delete" ${rowData}>Delete…</button>` : ""}
+              <span class="eol-action" data-tip="${escapeHtml(eolTip)}">
+                <button type="button" class="btn-managed-eol" ${rowData} data-promoted="${promoted ? "true" : "false"}" ${camgrLoggedIn && promoted ? "" : "disabled"}>End of Life…</button>
+              </span>
+              ${canDelete ? `<button type="button" class="danger btn-managed-delete" ${rowData}>Delete…</button>` : ""}
             </div>
           </details>`
         : "";
@@ -16408,7 +17428,7 @@
         ? `<td class="mono saved-at-cell" title="${escapeHtml(row.savedAt || "")}">${escapeHtml(formatSavedAt(row.savedAt))}</td>`
         : "";
       return `
-        <tr class="${deletable ? "" : "saved-row-locked"}">
+        <tr class="${canDelete ? "" : "saved-row-locked"}">
           <td>${checkCell}</td>
           <td class="mono">${idLink}</td>
           <td class="name-cell" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
@@ -16451,6 +17471,18 @@
       }
       const shareBtn = $("btn-share-schedule-saved");
       if (shareBtn) shareBtn.disabled = checkedBoxes.length === 0;
+      const eolBtn = $("btn-eol-schedule-saved");
+      if (eolBtn) {
+        const owned = checkedBoxes.filter((box) => savedContentIsMine(box) && box.dataset.promoted === "true").length;
+        eolBtn.disabled = !camgrLoggedIn || owned === 0;
+        const tip = !camgrLoggedIn
+          ? "Please connect to CAMGR first."
+          : (owned
+            ? `End of life ${owned} promoted content item${owned === 1 ? "" : "s"} you own, with one day setting.`
+            : "Check promoted content you own. Other checked rows stay off this button.");
+        const host = eolBtn.closest(".eol-action") || eolBtn;
+        host.dataset.tip = tip;
+      }
       syncAddSavedButtons();
     }
 
@@ -16480,7 +17512,7 @@
         </table>`;
     }
 
-    function renderManagedSavedTable(site, rows, { deletable, sort }) {
+    function renderManagedSavedTable(site, rows, { sort }) {
       // One sort choice drives every datacenter table, the way Search dCloud sorts
       // each of its DC groups from a single column pick.
       const sortTh = (key, label) => {
@@ -16503,8 +17535,9 @@
             </tr>
           </thead>
           <tbody>${sortFoundSavedRows(rows, sort).map((row) => {
+            const canDelete = row.deletable !== false && !row.eolOnly;
             const rendered = renderSavedContentRow(row, {
-              deletable,
+              deletable: canDelete,
               itemClass: "schedule-saved-content",
               showEolBadge: true,
               showSavedAt: true,
@@ -16513,7 +17546,7 @@
             // The shared row helper keeps legacy column order; reorder these cells
             // for the management table without duplicating its badges and actions.
             const cells = rendered.match(/<td[\s\S]*?<\/td>/g) || [];
-            return `<tr class="${deletable ? "" : "saved-row-locked"}">${[
+            return `<tr class="${canDelete ? "" : "saved-row-locked"}">${[
               cells[0], cells[2], cells[1], cells[4], cells[3], cells[5], cells[6],
             ].filter(Boolean).join("")}</tr>`;
           }).join("")}</tbody>
@@ -16576,7 +17609,6 @@
       const containerId = foundSavedContainerId(mount);
       const itemClass = foundSavedItemClass(mount);
       const dcHeadClass = foundSavedDcHeadClass(mount);
-      const promotedId = mount === "saved-ids" ? "saved-ids-promoted-group" : "saved-promoted-group";
       const rows = data.contents || [];
       const hubMount = mount === "saved-ids";
       const checkedKeys = captureFoundContentChecks(itemClass);
@@ -16625,14 +17657,11 @@
         return;
       }
       if (mount === "schedule") {
-        const deletableRows = rows.filter((row) => row.deletable !== false && !row.eolOnly);
-        const promotedRows = rows.filter((row) => row.eolOnly);
-        const deletableGroups = groupRowsBySite(deletableRows, { includeEmpty: true });
-        const promotedGroups = groupRowsBySite(promotedRows).filter((group) => group.rows.length > 0);
-        const mainBody = deletableGroups.map(({ site, rows: siteRows }) => {
+        const groups = groupRowsBySite(rows, { includeEmpty: true });
+        const body = groups.map(({ site, rows: siteRows }) => {
           const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
-          const body = siteRows.length
-            ? renderManagedSavedTable(site, siteRows, { deletable: true, sort: managedSavedSort })
+          const table = siteRows.length
+            ? renderManagedSavedTable(site, siteRows, { sort: managedSavedSort })
             : `<p class="hint">None in this datacenter.</p>`;
           return `
             <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
@@ -16640,31 +17669,17 @@
                 <span class="dc-group-title">${escapeHtml(site.toUpperCase())} (${siteRows.length})</span>
                 ${dcViewLink(site, "customcontent")}
               </summary>
-              ${body}
+              ${table}
             </details>`;
         }).join("");
-        const promotedBody = promotedGroups.length
-          ? `
-            <details class="saved-promoted-group" id="saved-promoted-group">
-              <summary>Topology Builder V2 Promoted — EOL only (${promotedRows.length})</summary>
-              <p class="hint">These items can still be scheduled, edited, or shared, but dCloud does not allow them to be deleted directly. EOL them in the <a href="${DCLOUD_CATALOG_EOL_URL}" target="_blank" rel="noopener noreferrer">dCloud Content Catalog</a>.</p>
-              ${promotedGroups.map(({ site, rows: siteRows }) => `
-                <p class="saved-promoted-site">${escapeHtml(site.toUpperCase())} (${siteRows.length})</p>
-                ${renderManagedSavedTable(site, siteRows, { deletable: false, sort: managedSavedSort })}
-              `).join("")}
-            </details>`
-          : "";
-        const body = `${mainBody}${promotedBody}`;
         if (container) {
           container.innerHTML = `
             ${renderErrorHints(data.errors)}
-            ${rows.length ? `<p class="hint">${rows.length} saved content item(s) across all DCs · ${deletableRows.length} directly deletable${promotedRows.length ? ` · ${promotedRows.length} TBv2 promoted/EOL-only` : ""}. Click a column header to sort every datacenter.</p>` : ""}
+            ${rows.length ? `<p class="hint">${rows.length} saved content item(s) across all DCs. Click a column header to sort every datacenter.</p>` : ""}
             ${body}
           `;
         }
         setScheduleSavedPanelVisible(true, { contentCount: rows.length });
-        const promotedEl = $("saved-promoted-group");
-        if (promotedEl) promotedEl.open = persistedPanelOpen("saved-promoted-group", promotedEl.open);
         restoreFoundContentChecks(itemClass, checkedKeys);
         syncScheduleSavedAll();
         syncDeleteSavedButton();
@@ -16673,14 +17688,10 @@
         refreshListFilters();
         return;
       }
-      const deletableRows = rows.filter((row) => row.deletable !== false && !row.eolOnly);
-      const promotedRows = rows.filter((row) => row.eolOnly);
-      const deletableGroups = groupRowsBySite(deletableRows).filter((group) => group.rows.length > 0);
-      const promotedGroups = groupRowsBySite(promotedRows).filter((group) => group.rows.length > 0);
+      const groups = groupRowsBySite(rows).filter((group) => group.rows.length > 0);
       const tableOpts = { deletable: true, itemClass, dcHeadClass, showEolBadge: true };
-      const lockedOpts = { deletable: false, itemClass, dcHeadClass, showEolBadge: true };
-      const deletableBody = deletableGroups.length
-        ? deletableGroups.map(({ site, rows: siteRows }) => {
+      const body = groups.length
+        ? groups.map(({ site, rows: siteRows }) => {
             const openAttr = dcGroupIsOpen(containerId, site) ? "open" : "";
             return `
             <details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
@@ -16688,40 +17699,14 @@
               ${renderSavedContentTable(site, siteRows, tableOpts)}
             </details>`;
           }).join("")
-        : `<p class="hint">No deletable saved content in any DC.</p>`;
-      const promotedSummary = `Topology Builder v2 promoted — EOL only (${promotedRows.length})`;
-      const promotedHint = `<p class="hint">These TBv2 promoted items cannot use the dCloud delete API. EOL them in the <a href="${DCLOUD_CATALOG_EOL_URL}" target="_blank" rel="noopener noreferrer">dCloud Content Catalog</a>.</p>`;
-      const promotedBody = promotedGroups.length
-        ? `
-          <details class="saved-promoted-group" id="${promotedId}">
-            <summary>${promotedSummary}</summary>
-            ${promotedHint}
-            ${promotedGroups.map(({ site, rows: siteRows }) => `
-              <p class="saved-promoted-site">${escapeHtml(site.toUpperCase())} (${siteRows.length})</p>
-              ${renderSavedContentTable(site, siteRows, lockedOpts)}
-            `).join("")}
-          </details>`
-        : "";
-      const deletableCount = deletableRows.length;
-      const promotedCount = promotedRows.length;
-      const countHint = promotedCount
-        ? `<p class="hint">${deletableCount} deletable · ${promotedCount} TBv2 promoted (<a href="${DCLOUD_CATALOG_EOL_URL}" target="_blank" rel="noopener noreferrer">EOL in Catalog</a> · expand below to view)</p>`
-        : "";
-      const body = deletableGroups.length || promotedGroups.length
-        ? `${deletableBody}${promotedBody}`
         : `<p class="hint">No saved custom content found in any DC.</p>`;
       if (container) {
         container.innerHTML = `
           ${renderErrorHints(data.errors)}
-          ${countHint}
           ${body}
         `;
       }
       setFoundSavedPanelVisible(rows.length > 0);
-      if (promotedGroups.length) {
-        const promotedEl = $(promotedId);
-        if (promotedEl) promotedEl.open = persistedPanelOpen(promotedId, promotedEl.open);
-      }
       restoreFoundContentChecks(itemClass, checkedKeys);
       syncGroupChecks("found-saved-all-head", `.${itemClass}`, dcHeadClass);
       syncDeleteSavedButton();
@@ -16771,7 +17756,7 @@
     }
 
     function setScheduleSavedChecks(checked) {
-      setGroupChecks(checked, ".schedule-saved-content", "schedule-saved-dc-head");
+      setGroupChecks(checked, ".schedule-saved-content:not(:disabled)", "schedule-saved-dc-head");
       syncScheduleSavedAll();
     }
 
@@ -18710,6 +19695,22 @@
           selectManagedSavedRow(scheduleBtn);
           return;
         }
+        const favoriteBtn = ev.target.closest(".btn-managed-favorite");
+        if (favoriteBtn) {
+          ev.preventDefault();
+          toggleContentFavorite({
+            site: favoriteBtn.dataset.site,
+            contentId: favoriteBtn.dataset.contentId,
+            name: favoriteBtn.dataset.name || "",
+            owner: favoriteBtn.dataset.owner || "",
+            contentViewUrl: favoriteBtn.dataset.contentViewUrl || "",
+            promoted: favoriteBtn.dataset.promoted === "true",
+            deletable: favoriteBtn.dataset.deletable === "true",
+          });
+          const on = isFavorite(favoriteBtn.dataset.site, favoriteBtn.dataset.contentId);
+          favoriteBtn.textContent = on ? "Remove Favorite" : "Favorite";
+          return;
+        }
         const deleteBtn = ev.target.closest(".btn-managed-delete");
         if (deleteBtn) {
           ev.preventDefault();
@@ -18718,6 +19719,17 @@
             content_id: deleteBtn.dataset.contentId,
             name: deleteBtn.dataset.name || "",
           }]).catch((err) => showError(err.message));
+          return;
+        }
+        const eolBtn = ev.target.closest(".btn-managed-eol");
+        if (eolBtn) {
+          ev.preventDefault();
+          if (eolBtn.disabled || !camgrLoggedIn) return;
+          openEolDialog([{
+            site: eolBtn.dataset.site,
+            demo_id: eolBtn.dataset.contentId,
+            name: eolBtn.dataset.name || "",
+          }], "submit");
           return;
         }
         const addBtn = ev.target.closest(".btn-add-saved-id");
@@ -18742,7 +19754,7 @@
         if (ev.target.classList.contains(dcHeadClass)) {
           const site = ev.target.dataset.site;
           setBoxesChecked(
-            root.querySelectorAll(`.${itemClass}[data-site="${site}"]`),
+            root.querySelectorAll(`.${itemClass}[data-site="${site}"]:not(:disabled)`),
             ev.target.checked,
           );
           syncFn();
@@ -18803,6 +19815,145 @@
       }).catch((err) => showError(err.message));
     });
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
+    $("btn-save-demo-ids-favorite")?.addEventListener("click", () => saveScheduleIdsToFavorites());
+    $("btn-favorites-check")?.addEventListener("click", () => {
+      setBoxesChecked(document.querySelectorAll(".favorite-content:not(:disabled)"), true);
+      syncFavoriteButtons();
+    });
+    $("btn-favorites-uncheck")?.addEventListener("click", () => {
+      setBoxesChecked(document.querySelectorAll(".favorite-content"), false);
+      syncFavoriteButtons();
+    });
+    $("btn-favorites-load")?.addEventListener("click", () => loadFavoritesIntoSchedule(checkedFavoriteRows()));
+    $("btn-favorites-remove")?.addEventListener("click", () => {
+      checkedFavoriteRows().forEach((row) => forgetFavorite(row.site, row.contentId));
+      showToast("Removed from favorites.");
+    });
+    $("favorites-list")?.addEventListener("change", (ev) => {
+      if (ev.target.classList.contains("favorite-dc-head")) {
+        const site = ev.target.dataset.site;
+        setBoxesChecked(
+          document.querySelectorAll(`.favorite-content[data-site="${site}"]:not(:disabled)`),
+          ev.target.checked,
+        );
+      }
+      syncFavoriteButtons();
+    });
+    $("favorites-list")?.addEventListener("click", (ev) => {
+      const schedule = ev.target.closest(".btn-favorite-schedule");
+      if (schedule) {
+        openScheduleWithIds(
+          { [schedule.dataset.site]: schedule.dataset.contentId },
+          `Loaded ${String(schedule.dataset.site || "").toUpperCase()} ${schedule.dataset.contentId} from Favorites.`,
+          "favorites-status",
+        );
+        return;
+      }
+      const remove = ev.target.closest(".btn-favorite-remove");
+      if (remove) {
+        forgetFavorite(remove.dataset.site, remove.dataset.contentId);
+        showToast("Removed from favorites.");
+        return;
+      }
+      const share = ev.target.closest(".btn-saved-share");
+      if (share) {
+        ev.preventDefault();
+        openShareModal(share).catch((err) => showError(err.message));
+        return;
+      }
+      const eol = ev.target.closest(".btn-managed-eol");
+      if (eol) {
+        ev.preventDefault();
+        if (eol.disabled || !camgrLoggedIn) return;
+        openEolDialog([{
+          site: eol.dataset.site,
+          demo_id: eol.dataset.contentId,
+          name: eol.dataset.name || "",
+        }], "submit");
+        return;
+      }
+      const del = ev.target.closest(".btn-favorite-delete");
+      if (del) {
+        ev.preventDefault();
+        deleteSavedItems([{
+          site: del.dataset.site,
+          content_id: del.dataset.contentId,
+          name: del.dataset.name || "",
+        }]).catch((err) => showError(err.message));
+      }
+    });
+    $("btn-eol-schedule-saved")?.addEventListener("click", () => {
+      if (!camgrLoggedIn) return;
+      const boxes = [...document.querySelectorAll(".schedule-saved-content:checked")];
+      const mine = boxes.filter((box) => savedContentIsMine(box) && box.dataset.promoted === "true").map((box) => ({
+        site: box.dataset.site,
+        demo_id: box.dataset.contentId,
+        name: box.dataset.name || "",
+      }));
+      const others = boxes.filter((box) => !savedContentIsMine(box)).length;
+      const plain = boxes.filter((box) => savedContentIsMine(box) && box.dataset.promoted !== "true").length;
+      if (!mine.length) return;
+      const notes = [];
+      if (others) notes.push(others === 1 ? "1 checked item belongs to someone else and will be left as-is." : `${others} checked items belong to someone else and will be left as-is.`);
+      if (plain) notes.push(plain === 1 ? "1 checked item is not promoted and will be left as-is." : `${plain} checked items are not promoted and will be left as-is.`);
+      const note = notes.join(" ");
+      openEolDialog(mine, "submit", note);
+    });
+    $("btn-eol-search")?.addEventListener("click", () => searchEolContent().catch((err) => showError(err.message)));
+    $("eol-search")?.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      searchEolContent().catch((err) => showError(err.message));
+    });
+    $("btn-eol-refresh")?.addEventListener("click", () => loadEolQueue().catch((err) => showError(err.message)));
+    $("btn-eol-approve-selected")?.addEventListener("click", () => {
+      const rids = [...document.querySelectorAll(".eol-approve-check:checked")].map((box) => box.dataset.rid);
+      const items = eolQueue.filter((row) => rids.includes(row.rid));
+      if (items.length) openEolDialog(items, "approve");
+    });
+    $("eol-modal-cancel")?.addEventListener("click", closeEolModal);
+    $("eol-modal-backdrop")?.addEventListener("click", closeEolModal);
+    $("eol-modal-ok")?.addEventListener("click", () => confirmEolModal());
+    $("eol-days")?.addEventListener("change", () => {
+      if (eolModalState) eolModalState.daysTouched = true;
+    });
+    $("eol-supersede")?.addEventListener("change", () => {
+      syncEolAltFields();
+      refreshEolOk();
+    });
+    $("eol-alt-list")?.addEventListener("input", (ev) => {
+      const row = ev.target.closest(".eol-alt-row");
+      if (row) {
+        row.dataset.confirmed = "";
+        const name = row.querySelector(".eol-alt-name");
+        if (name) name.textContent = "";
+      }
+      refreshEolOk();
+    });
+    $("eol-alt-list")?.addEventListener("change", (ev) => {
+      const row = ev.target.closest(".eol-alt-row");
+      if (row) {
+        row.dataset.confirmed = "";
+        const name = row.querySelector(".eol-alt-name");
+        if (name) name.textContent = "";
+      }
+      refreshEolOk();
+    });
+    $("eol-alt-list")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".eol-alt-confirm");
+      if (!btn) return;
+      const row = btn.closest(".eol-alt-row");
+      confirmEolAlt(row).catch((err) => {
+        if (row) row.dataset.confirmed = "";
+        const name = row?.querySelector(".eol-alt-name");
+        if (name) name.textContent = err.message || "Could not find that content.";
+        refreshEolOk();
+      });
+    });
+    $("btn-eol-recheck")?.addEventListener("click", () => {
+      if (!eolModalState) return;
+      loadEolImpact(eolModalToken).catch((err) => showError(err.message));
+    });
     $("btn-copy-saved-to-schedule")?.addEventListener("click", () => copyCheckedSavedToSchedule().catch((err) => showError(err.message)));
     $("btn-share-schedule-saved")?.addEventListener("click", () => {
       openBulkShareModal(checkedSavedShareTargets());
@@ -19057,6 +20208,7 @@
     $("btn-cai-template-refresh").addEventListener("click", () => refreshCaiTemplates().catch((err) => showError(err.message)));
     $("btn-cai-template-clear").addEventListener("click", () => clearCaiTemplates().catch((err) => showError(err.message)));
     $("btn-camgr-connect").addEventListener("click", () => connectCamgr().catch((err) => showError(err.message)));
+    $("btn-eol-camgr-connect")?.addEventListener("click", () => connectCamgr().catch((err) => showError(err.message)));
     $("btn-camgr-load-vms").addEventListener("click", () => loadCamgrVms().catch((err) => showError(err.message)));
     $("btn-camgr-transfer").addEventListener("click", () => submitCamgrTransfer().catch((err) => showError(err.message)));
     $("camgr-vm-list").addEventListener("click", (ev) => {
@@ -19377,6 +20529,28 @@
             `Loaded ${site.toUpperCase()} content ${row.id} into Schedule sessions.`,
             "unified-search-status",
           );
+          return;
+        }
+        if (action === "content-favorite") {
+          toggleContentFavorite({
+            site,
+            contentId: row.id,
+            name: row.name || row.title || "",
+            owner: row.owner || "",
+            topologyUrl: row.topologyUrl || "",
+            promoted: contentIsPromoted(row),
+            deletable: row.deletable === true && !row.eolOnly,
+          });
+          renderUnifiedDcData();
+          return;
+        }
+        if (action === "content-eol") {
+          if (actionButton.disabled || !camgrLoggedIn) return;
+          openEolDialog([{
+            site,
+            demo_id: row.id,
+            name: row.name || row.title || "",
+          }], "submit");
           return;
         }
         if (action.startsWith("content-")) {
@@ -19769,7 +20943,9 @@
       hideHoverTip();
       if (!host?.getAttribute("data-tip") || host.disabled) return;
       hoverTipHost = host;
-      const delay = host.classList.contains("icon-btn") ? 400 : HOVER_TIP_DELAY_MS;
+      const delay = host.classList.contains("icon-btn") || host.classList.contains("eol-action")
+        ? 400
+        : HOVER_TIP_DELAY_MS;
       hoverTipTimer = setTimeout(() => showHoverTip(host), delay);
     }
 

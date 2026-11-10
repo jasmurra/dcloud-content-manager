@@ -198,8 +198,14 @@ from camgr_client import (
     CAMGR_LOGIN_HINT,
     IN_FLIGHT_STATUSES,
     camgr_guid_to_site,
+    approve_eol,
     fetch_camgr_demo,
     fetch_camgr_vms,
+    list_eol_requests,
+    lookup_eol_replacement,
+    preview_eol_content,
+    search_eol_content,
+    submit_eol,
     format_camgr_status,
     camgr_dc_status_chips,
     camgr_cdev_home_dc,
@@ -1175,6 +1181,35 @@ class CamgrVpodTransferPayload(BaseModel):
 class CamgrImportJobsPayload(BaseModel):
     job_id: str = ""
     items: list[CaiDemoRef] = Field(default_factory=list)
+
+
+class EolItem(BaseModel):
+    site: str = ""
+    demo_id: str = ""
+    guid: str = ""
+    name: str = ""
+    rid: str = ""
+    alt_demo_id: str = ""
+    alt_dc: str = ""
+
+
+class EolSubmitPayload(BaseModel):
+    days: int = 60
+    alt_demo_id: str = ""
+    items: list[EolItem] = Field(default_factory=list)
+
+
+class EolApproveItem(BaseModel):
+    rid: str = ""
+    days: int = 60
+    alt_dc: str = ""
+    alt_demo_id: str = ""
+
+
+class EolApprovePayload(BaseModel):
+    days: int = 60
+    rids: list[str] = Field(default_factory=list)
+    items: list[EolApproveItem] = Field(default_factory=list)
 
 
 class SessionRef(BaseModel):
@@ -10832,6 +10867,82 @@ def api_camgr_jobs_import(body: CamgrImportJobsPayload) -> dict[str, Any]:
         "savedIds": _saved_id_summary(job),
         "camgr": _camgr_public_status(),
     }
+
+
+def _eol_http(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("loggedIn") is False:
+        raise HTTPException(401, result.get("message") or CAMGR_LOGIN_HINT)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("message") or "CAMGR end of life failed.")
+    return result
+
+
+@app.get("/api/camgr/eol/replacement")
+def api_camgr_eol_replacement(dc: str = "", demo_id: str = "") -> dict[str, Any]:
+    return _eol_http(lookup_eol_replacement(_require_camgr_cookie(), dc, demo_id))
+
+
+@app.get("/api/camgr/eol/search")
+def api_camgr_eol_search(q: str = "") -> dict[str, Any]:
+    return _eol_http(search_eol_content(_require_camgr_cookie(), q))
+
+
+@app.post("/api/camgr/eol/preview")
+def api_camgr_eol_preview(body: EolSubmitPayload) -> dict[str, Any]:
+    cookie = _require_camgr_cookie()
+    items: list[dict[str, Any]] = []
+    for row in body.items:
+        preview = preview_eol_content(cookie, row.site, row.demo_id, row.guid)
+        if preview.get("loggedIn") is False:
+            return _eol_http(preview)
+        if not preview.get("ok"):
+            items.append({
+                "ok": False,
+                "site": row.site,
+                "demoId": row.demo_id,
+                "name": row.name,
+                "message": preview.get("message") or "Could not load this content.",
+            })
+            continue
+        item = dict(preview.get("item") or {})
+        item["ok"] = True
+        items.append(item)
+    return {"ok": True, "items": items}
+
+
+@app.get("/api/camgr/eol")
+def api_camgr_eol_list() -> dict[str, Any]:
+    return _eol_http(list_eol_requests(_require_camgr_cookie()))
+
+
+@app.post("/api/camgr/eol")
+def api_camgr_eol_submit(body: EolSubmitPayload) -> dict[str, Any]:
+    result = submit_eol(
+        _require_camgr_cookie(),
+        [row.model_dump() for row in body.items],
+        body.days,
+        body.alt_demo_id,
+    )
+    if result.get("loggedIn") is False:
+        raise HTTPException(401, result.get("message") or CAMGR_LOGIN_HINT)
+    if not result.get("ok") and not result.get("submitted"):
+        raise HTTPException(400, result.get("message") or "CAMGR did not accept the end-of-life request.")
+    return result
+
+
+@app.post("/api/camgr/eol/approve")
+def api_camgr_eol_approve(body: EolApprovePayload) -> dict[str, Any]:
+    result = approve_eol(
+        _require_camgr_cookie(),
+        body.rids,
+        body.days,
+        [row.model_dump() for row in body.items] or None,
+    )
+    if result.get("loggedIn") is False:
+        raise HTTPException(401, result.get("message") or CAMGR_LOGIN_HINT)
+    if not result.get("ok") and not result.get("approved"):
+        raise HTTPException(400, result.get("message") or "CAMGR did not approve this request.")
+    return result
 
 
 @app.post("/api/share/users/search")

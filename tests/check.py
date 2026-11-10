@@ -2984,7 +2984,7 @@ if (foundSessionCardReady(undefined) !== false) throw new Error("missing card is
     check(
         "the management list keeps a collapsible group per DC",
         "function renderManagedSavedTable(site, rows" in INDEX
-        and "groupRowsBySite(deletableRows, { includeEmpty: true })" in INDEX
+        and "groupRowsBySite(rows, { includeEmpty: true })" in INDEX
         and 'dcViewLink(site, "customcontent")' in INDEX
         and 'id="btn-expand-schedule-saved"' in INDEX
         and 'id="btn-collapse-schedule-saved"' in INDEX
@@ -3025,10 +3025,11 @@ if (foundSessionCardReady(undefined) !== false) throw new Error("missing card is
         and '${row.site.toUpperCase()} ${row.content_id} — ${row.name || "saved content"}' in INDEX,
     )
     check(
-        "TBv2 promoted content stays EOL-only and cannot render Delete",
-        "Topology Builder v2 promoted — EOL only" in INDEX
-        and "renderManagedSavedTable(site, siteRows, { deletable: false" in INDEX
-        and 'deletable ? `<button type="button" class="danger btn-managed-delete"' in INDEX,
+        "TBv2 promoted content stays in the datacenter list and cannot render Delete",
+        "saved-promoted-group" not in INDEX
+        and "Topology Builder v2 promoted — EOL only" not in INDEX
+        and "const canDelete = row.deletable !== false && !row.eolOnly;" in INDEX
+        and 'canDelete ? `<button type="button" class="danger btn-managed-delete"' in INDEX,
     )
     check(
         "Search dCloud no longer offers Share",
@@ -5121,6 +5122,241 @@ def test_duplicate_saved_row_keeps_each_target() -> None:
     check(
         "pending duplicate replacements are read from the saved demo page",
         "fetch_demo_page(cookie, site, saved_id)" in refresh_body,
+    )
+
+
+def test_eol_page_uses_the_camgr_capture() -> None:
+    """End of life is a Hub neighbor and talks to CAMGR with the captured URLs."""
+    nav = INDEX[INDEX.index("<hbr-shell-nav"): INDEX.index("</hbr-shell-nav>")]
+    hub = nav.index('data-view="hub"')
+    eol = nav.index('data-view="eol"')
+    expo = nav.index('data-view="expo"')
+    check("EOL sits under Hub", hub < eol < expo)
+    eol_item = nav[eol:expo]
+    check(
+        "EOL uses the clock icon",
+        'name="clock"' in eol_item
+        and (ROOT / "static/vendor/harbor-elements/icons/magnetic/svg/clock.svg").is_file(),
+    )
+    check(
+        "EOL page is in the app",
+        'id="view-eol"' in INDEX and 'id="eol-modal"' in INDEX and 'id="btn-eol-camgr-connect"' in INDEX
+        and 'href="https://dcloud-camgr.cisco.com/#/eols"' in INDEX[INDEX.index('id="view-eol"'): INDEX.index('id="view-expo"')],
+    )
+    check(
+        "the EOL note does not say the search box is greyed out",
+        "Search is greyed out because" not in INDEX,
+    )
+    check(
+        "saved content can end of life next to delete",
+        'id="btn-eol-schedule-saved"' in INDEX
+        and "btn-managed-eol" in INDEX
+        and 'data-action="content-eol"' in INDEX,
+    )
+    check(
+        "end of life stays off until CAMGR is connected",
+        "function syncEolControls(" in INDEX
+        and "eolBtn.disabled = !camgrLoggedIn || owned === 0" in INDEX
+        and "function savedContentIsMine(" in INDEX
+        and "Please connect to CAMGR first." in INDEX
+        and 'class="eol-action"' in INDEX
+        and "Only promoted content can be end of life." in INDEX
+        and "function contentIsPromoted(" in INDEX
+        and "function eolSubmittedDays(" in INDEX
+        and 'id="eol-alt-list"' in INDEX
+        and "function renderEolAltFields(" in INDEX
+        and "With [ Demo Id ]" in INDEX
+        and "function confirmEolAlt(" in INDEX
+        and 'id="eol-modal-error"' in INDEX
+        and "function rememberEolPreviews(" in INDEX
+        and 'id="btn-eol-recheck"' in INDEX
+        and "function cachedEolPreview(" in INDEX
+        and "Superseding Content" in INDEX
+        and "function replacementFromAlt(" in INDEX,
+    )
+    import camgr_client
+
+    calls: list[str] = []
+
+    def fake_get(cookie, url):
+        calls.append(url)
+        if url.endswith("/eols/hnode/search?searchStr=480730"):
+            return [
+                {"id": 0, "name": "Collaboration", "guid": "99:1"},
+                {
+                    "id": 480730,
+                    "name": "SJC 480730",
+                    "demoName": "Cisco CX CC Troubleshooting Summit 2026 - UCCX Lab",
+                    "guid": "000099:00100342564",
+                    "architecture": "None",
+                    "content": "None",
+                },
+            ], None, ""
+        if url.endswith("/users/current"):
+            return {"id": "jasmurra", "access": {"isEoL": True}}, None, ""
+        if "/eols?onlyOpCode=1" in url:
+            return [{
+                "dc": "SJC",
+                "demoId": 480730,
+                "name": "Lab",
+                "status": "EOLING",
+                "progress": 0,
+                "starterId": "jasmurra",
+                "approverId": "jasmurra",
+                "timer": 1,
+                "rid": "req-1",
+                "completeAt": 1794410317164,
+                "guid": "000010:00007090833",
+                "altContent": "SJC 484858",
+            }], None, ""
+        if url.endswith("/create/1/0/0"):
+            return {"dc": "SJC", "demoId": 480730, "status": "APPROVAL", "rid": "req-1", "timer": 1}, None, ""
+        if url.endswith("/create/1/0/req-1"):
+            return {
+                "dc": "SJC",
+                "demoId": 480730,
+                "status": "EOLING",
+                "rid": "req-1",
+                "timer": 1,
+                "completeAt": 1794410317164,
+                "approverId": "jasmurra",
+            }, None, ""
+        if url.endswith("/sjc/ca/api/demos/484858"):
+            return {
+                "pkdemoId": 484858,
+                "dname": "Discover Cisco Meeting Server 3.11 with VQ Conference Manager v4.9",
+            }, None, ""
+        if "/create/" in url:
+            rid = url.rstrip("/").rsplit("/", 1)[-1]
+            return {
+                "dc": "SJC",
+                "demoId": 480730,
+                "status": "APPROVAL",
+                "rid": rid if rid != "0" else "req-new",
+                "timer": 1,
+            }, None, ""
+        return None, None, f"unexpected {url}"
+
+    real_get = camgr_client._get_json
+    camgr_client._get_json = fake_get
+    try:
+        found = camgr_client.search_eol_content("cookie", "480730")
+        check(
+            "content search keeps the demo and drops folders",
+            found.get("ok") and len(found.get("items") or []) == 1
+            and found["items"][0]["guid"] == "000099:00100342564"
+            and found["items"][0]["site"] == "sjc",
+        )
+        calls.clear()
+        bad = camgr_client.submit_eol("cookie", [{"guid": "000099:00100342564"}], 7)
+        check("a day count outside the dialog is refused", not bad.get("ok") and not calls)
+        made = camgr_client.submit_eol(
+            "cookie",
+            [{"site": "sjc", "demo_id": "480730", "guid": "000099:00100342564", "name": "Lab"}],
+            1,
+        )
+        check(
+            "submit uses the captured create URL",
+            made.get("ok") and made.get("submitted") == 1
+            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100342564/create/1/0/0"],
+        )
+        calls.clear()
+        alts = camgr_client.submit_eol(
+            "cookie",
+            [
+                {"site": "sjc", "demo_id": "423466", "guid": "000099:00100295099", "alt_dc": "SJC", "alt_demo_id": "484858"},
+                {"site": "rtp", "demo_id": "1408123", "guid": "000099:00100342565", "alt_dc": "RTP", "alt_demo_id": "222"},
+            ],
+            15,
+        )
+        check(
+            "each selected content sends its own replacement id",
+            alts.get("ok") and alts.get("submitted") == 2
+            and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100295099/create/15/SJC.484858/0",
+                "https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100342565/create/15/RTP.222/0",
+            ],
+        )
+        calls.clear()
+        found_alt = camgr_client.lookup_eol_replacement("cookie", "SJC", "484858")
+        check(
+            "confirm looks up the replacement demo by datacenter",
+            found_alt.get("ok")
+            and found_alt.get("name") == "Discover Cisco Meeting Server 3.11 with VQ Conference Manager v4.9"
+            and calls == ["https://dcloud-camgr.cisco.com/sjc/ca/api/demos/484858"],
+        )
+        calls.clear()
+        mixed = camgr_client.approve_eol(
+            "cookie",
+            [],
+            60,
+            [{"rid": "req-15", "days": 15}, {"rid": "req-1", "days": 1}],
+        )
+        check(
+            "approval can keep each submitted day count",
+            mixed.get("ok") and mixed.get("approved") == 2
+            and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/eols/0/create/15/0/req-15",
+                "https://dcloud-camgr.cisco.com/ca/api/eols/0/create/1/0/req-1",
+            ],
+        )
+        calls.clear()
+        super_ok = camgr_client.approve_eol(
+            "cookie",
+            [],
+            60,
+            [{"rid": "hjRwP5YQg1vl2wYm0sDwfBRjdzWKhSH", "days": 10, "alt_dc": "SYD", "alt_demo_id": "319942"}],
+        )
+        check(
+            "approval keeps the superseding content on the captured URL",
+            super_ok.get("ok")
+            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols/0/create/10/SYD.319942/hjRwP5YQg1vl2wYm0sDwfBRjdzWKhSH"],
+        )
+        calls.clear()
+        approved = camgr_client.approve_eol("cookie", ["req-1"], 1)
+        check(
+            "approve uses the captured request id URL",
+            approved.get("ok")
+            and approved["results"][0]["status"] == "EOLING"
+            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols/0/create/1/0/req-1"],
+        )
+        listed = camgr_client.list_eol_requests("cookie")
+        check(
+            "the queue reports who can approve and when deletion happens",
+            listed.get("canApprove") is True
+            and listed["items"][0]["completeAt"] == 1794410317164
+            and listed["items"][0]["site"] == "sjc"
+            and listed["items"][0]["altContent"] == "SJC 484858",
+        )
+    finally:
+        camgr_client._get_json = real_get
+
+
+def test_favorites_page_remembers_content_ids() -> None:
+    nav = INDEX[INDEX.index("<hbr-shell-nav"): INDEX.index("</hbr-shell-nav>")]
+    saved = nav.index('data-view="saved"')
+    favorites = nav.index('data-view="favorites"')
+    workspace = nav.index('data-view="workspace"')
+    check("Favorites sits after My Content", saved < favorites < workspace)
+    check(
+        "Favorites uses the star icon",
+        'name="star"' in nav[favorites:workspace]
+        and (ROOT / "static/vendor/harbor-elements/icons/magnetic/svg/star.svg").is_file(),
+    )
+    view = INDEX[INDEX.index('id="view-favorites"'): INDEX.index('id="view-search"')]
+    check(
+        "Favorites page loads checked IDs back into Schedule",
+        'id="btn-favorites-load"' in view
+        and 'id="filter-favorites"' in view
+        and "dcloud-content-manager-favorites-v1" in INDEX
+        and 'data-action="content-favorite"' in INDEX
+        and "btn-managed-favorite" in INDEX
+        and 'id="btn-save-demo-ids-favorite"' in INDEX
+        and "loadFavoritesIntoSchedule" in INDEX
+        and "Content you access frequently" in view
+        and "Star content you schedule often" not in INDEX
+        and "favorite-actions-menu" in INDEX
+        and "Remove from Favorites" in INDEX,
     )
 
 
