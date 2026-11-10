@@ -1591,6 +1591,24 @@ def submit_eol(
     count, day_err = eol_day_count(days)
     if day_err:
         return {"ok": False, "loggedIn": True, "message": day_err}
+    open_rows, _, list_err = _get_json(cookie_header, f"{CAMGR_API}/eols?onlyOpCode=1")
+    if list_err == "CAMGR session expired.":
+        return _auth_error(list_err)
+    if list_err or not isinstance(open_rows, list):
+        return {
+            "ok": False,
+            "loggedIn": True,
+            "message": list_err or "CAMGR did not return the end-of-life list.",
+        }
+    open_keys = set()
+    for row in open_rows:
+        if not isinstance(row, dict):
+            continue
+        public = _public_eol_request(row)
+        site_key = str(public.get("site") or "").strip().lower()
+        demo_key = str(public.get("demoId") or "").strip()
+        if site_key and demo_key:
+            open_keys.add((site_key, demo_key))
     alt = str(alt_demo_id or "").strip()
     if not items:
         return {"ok": False, "loggedIn": True, "message": "Choose content to end of life."}
@@ -1609,6 +1627,15 @@ def submit_eol(
             hit = _match_eol_hit(found.get("items") or [], site, demo_id) if found.get("ok") else None
             guid = str((hit or {}).get("guid") or "")
             name = name or str((hit or {}).get("name") or "")
+        if (site, demo_id) in open_keys:
+            results.append({
+                "ok": False,
+                "site": site,
+                "demoId": demo_id,
+                "name": name,
+                "message": "An end-of-life request is already open for this content.",
+            })
+            continue
         if not guid:
             results.append({
                 "ok": False,

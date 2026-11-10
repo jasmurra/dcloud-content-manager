@@ -5172,7 +5172,11 @@ def test_eol_page_uses_the_camgr_capture() -> None:
         and 'id="btn-eol-recheck"' in INDEX
         and "function cachedEolPreview(" in INDEX
         and "Superseding Content" in INDEX
-        and "function replacementFromAlt(" in INDEX,
+        and "function replacementFromAlt(" in INDEX
+        and 'id="btn-eol-check-mine"' in INDEX
+        and "function checkMyEolRequests(" in INDEX
+        and "function eolAlreadyOpen(" in INDEX
+        and "An end-of-life request is already open for this content." in INDEX,
     )
     import camgr_client
 
@@ -5197,7 +5201,7 @@ def test_eol_page_uses_the_camgr_capture() -> None:
         if "/eols?onlyOpCode=1" in url:
             return [{
                 "dc": "SJC",
-                "demoId": 480730,
+                "demoId": 111111,
                 "name": "Lab",
                 "status": "EOLING",
                 "progress": 0,
@@ -5258,7 +5262,22 @@ def test_eol_page_uses_the_camgr_capture() -> None:
         check(
             "submit uses the captured create URL",
             made.get("ok") and made.get("submitted") == 1
-            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100342564/create/1/0/0"],
+            and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/eols?onlyOpCode=1",
+                "https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100342564/create/1/0/0",
+            ],
+        )
+        calls.clear()
+        again = camgr_client.submit_eol(
+            "cookie",
+            [{"site": "sjc", "demo_id": "111111", "guid": "000010:00007090833", "name": "Lab"}],
+            1,
+        )
+        check(
+            "a second end of life is refused while one is already open",
+            not again.get("ok") and again.get("submitted") == 0
+            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols?onlyOpCode=1"]
+            and "already open" in str(again.get("message") or again["results"][0].get("message")),
         )
         calls.clear()
         alts = camgr_client.submit_eol(
@@ -5273,6 +5292,7 @@ def test_eol_page_uses_the_camgr_capture() -> None:
             "each selected content sends its own replacement id",
             alts.get("ok") and alts.get("submitted") == 2
             and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/eols?onlyOpCode=1",
                 "https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100295099/create/15/SJC.484858/0",
                 "https://dcloud-camgr.cisco.com/ca/api/eols/000099:00100342565/create/15/RTP.222/0",
             ],
@@ -5359,7 +5379,9 @@ def test_favorites_page_remembers_content_ids() -> None:
         and "Remove from Favorites" in INDEX
         and "function favoriteNameIsPlaceholder(" in INDEX
         and "hint.dataset.demoName" in INDEX
-        and "global catalog availability" in INDEX,
+        and "global catalog availability" in INDEX
+        and "filledDemoIds" in INDEX
+        and '$("src-session")' in INDEX,
     )
 
 

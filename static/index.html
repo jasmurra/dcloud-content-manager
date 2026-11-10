@@ -4020,6 +4020,7 @@
         </span>
       </div>
       <div class="list-toolbar">
+        <button type="button" class="secondary hidden" id="btn-eol-check-mine" disabled data-tip="Checks the end-of-life requests you submitted that are waiting for approval.">Check My Requests</button>
         <button type="button" id="btn-eol-approve-selected" class="hidden" disabled>Approve Selected</button>
       </div>
       <p id="eol-queue-note" class="hint"></p>
@@ -9654,6 +9655,7 @@
       if (becameConnected) {
         refreshRootIds().catch(() => {});
         refreshCamgrTransfers().catch(() => {});
+        loadEolQueue().catch(() => {});
       }
       syncEolControls();
       if (becameConnected && document.querySelector(".app-view.is-active")?.dataset.view === "eol") {
@@ -9678,6 +9680,31 @@
     const EOL_DAY_VALUES = [1, 5, 10, 15, 20, 25, 30, 45, 60];
     let eolCanApprove = false;
     let eolQueue = [];
+
+    function eolRequestIsMine(item) {
+      const me = String(lastSessionUser?.id || "").trim().toLowerCase();
+      const starter = String(item?.starterId || "").trim().toLowerCase();
+      return Boolean(me && starter && starter === me);
+    }
+
+    function eolAlreadyOpen(item, queue = eolQueue) {
+      const site = String(item?.site || "").trim().toLowerCase();
+      const demoId = String(item?.demoId || item?.demo_id || "").trim();
+      const guid = String(item?.guid || "").trim();
+      return (queue || []).some((row) => {
+        if (guid && row.guid && String(row.guid) === guid) return true;
+        return site && demoId
+          && String(row.site || "").trim().toLowerCase() === site
+          && String(row.demoId || "").trim() === demoId;
+      });
+    }
+
+    function checkMyEolRequests() {
+      document.querySelectorAll(".eol-approve-check").forEach((box) => {
+        box.checked = box.dataset.mine === "1";
+      });
+      syncEolControls();
+    }
     let eolModalState = null;
     let eolModalToken = 0;
 
@@ -9710,11 +9737,15 @@
       });
       document.querySelectorAll(".btn-managed-eol, .search-row-action[data-action='content-eol'], .btn-eol-hit").forEach((btn) => {
         const notPromoted = btn.dataset.promoted === "false";
-        btn.disabled = off || notPromoted;
+        const menu = btn.closest(".search-actions-menu");
+        const site = btn.dataset.site || menu?.dataset.site || "";
+        const demoId = btn.dataset.contentId || btn.dataset.demoId || menu?.dataset.id || "";
+        const already = !notPromoted && eolAlreadyOpen({ site, demoId, guid: btn.dataset.guid || "" });
+        btn.disabled = off || notPromoted || already;
         const host = btn.closest(".eol-action") || btn;
         host.dataset.tip = notPromoted
           ? "Only promoted content can be end of life."
-          : tip;
+          : (already ? "An end-of-life request is already open for this content." : tip);
       });
       const status = $("eol-status");
       if (status && off) {
@@ -9723,6 +9754,12 @@
         status.textContent = "CAMGR is not connected. Please connect to CAMGR first.";
       }
       const approveSelected = $("btn-eol-approve-selected");
+      const checkMine = $("btn-eol-check-mine");
+      const mineCount = document.querySelectorAll('.eol-approve-check[data-mine="1"]').length;
+      if (checkMine) {
+        checkMine.classList.toggle("hidden", !eolCanApprove);
+        checkMine.disabled = off || !eolCanApprove || mineCount === 0;
+      }
       if (approveSelected) {
         const picked = document.querySelectorAll(".eol-approve-check:checked").length;
         approveSelected.classList.toggle("hidden", !eolCanApprove);
@@ -9764,7 +9801,7 @@
                 <td class="mono">${escapeHtml(item.dc || "")} ${escapeHtml(item.demoId || "")}</td>
                 <td>${escapeHtml(item.content || "")}</td>
                 <td class="name-cell" title="${escapeHtml(item.name || "")}">${escapeHtml(item.name || "")}</td>
-                <td><span class="eol-action" data-tip="${camgrLoggedIn ? "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first." : "Please connect to CAMGR first."}"><button type="button" class="secondary btn-eol-hit" data-eol-index="${index}" ${camgrLoggedIn ? "" : "disabled"}>End of Life…</button></span></td>
+                <td><span class="eol-action" data-tip="${camgrLoggedIn ? "Asks CAMGR to delete this content after the number of days you pick. Scheduled sessions and saved copies are listed first." : "Please connect to CAMGR first."}"><button type="button" class="secondary btn-eol-hit" data-eol-index="${index}" data-site="${escapeHtml(item.site || "")}" data-demo-id="${escapeHtml(item.demoId || "")}" data-guid="${escapeHtml(item.guid || "")}" ${camgrLoggedIn ? "" : "disabled"}>End of Life…</button></span></td>
               </tr>`).join("")}
           </tbody>
         </table>`;
@@ -9781,6 +9818,7 @@
           }], "submit");
         });
       });
+      syncEolControls();
     }
 
     function renderEolQueue(items) {
@@ -9799,12 +9837,13 @@
             ${items.map((item) => {
               const who = item.approverId ? `${item.starterId} [${item.approverId}]` : (item.starterId || "");
               const approvable = eolCanApprove && String(item.status || "").toUpperCase() === "APPROVAL";
+              const mine = eolRequestIsMine(item);
               const status = String(item.status || "");
               const progress = status.toUpperCase() === "EOLING" ? ` ${Number(item.progress) || 0}%` : "";
               const pendingDays = EOL_DAY_VALUES.includes(Number(item.timer)) ? `${Number(item.timer)} days` : "—";
               const deletion = Number(item.completeAt) ? eolWhen(item) : pendingDays;
               return `<tr>
-                <td>${approvable ? `<input type="checkbox" class="eol-approve-check" data-rid="${escapeHtml(item.rid || "")}" />` : ""}</td>
+                <td>${approvable ? `<input type="checkbox" class="eol-approve-check" data-rid="${escapeHtml(item.rid || "")}" data-mine="${mine ? "1" : "0"}" data-starter="${escapeHtml(item.starterId || "")}" />` : ""}</td>
                 <td><span class="mono">${escapeHtml(item.dc || "")} ${escapeHtml(item.demoId || "")}</span><div title="${escapeHtml(item.name || "")}">${escapeHtml(item.name || "")}</div></td>
                 <td>${escapeHtml(who)}</td>
                 <td>${escapeHtml(status)}${escapeHtml(progress)}</td>
@@ -10110,8 +10149,33 @@
 
     async function openEolDialog(rawItems, mode, note) {
       if (!camgrLoggedIn) return;
-      const items = (rawItems || []).filter(Boolean);
+      let items = (rawItems || []).filter(Boolean);
       if (!items.length) return;
+      if (mode !== "approve") {
+        try {
+          const data = await api("/api/camgr/eol", { quiet: true });
+          eolCanApprove = Boolean(data.canApprove);
+          eolQueue = data.items || [];
+          if (document.querySelector(".app-view.is-active")?.dataset.view === "eol") renderEolQueue(eolQueue);
+          syncEolControls();
+        } catch {
+          // The submit still checks the live queue before CAMGR creates another request.
+        }
+        const already = items.filter((item) => eolAlreadyOpen(item));
+        items = items.filter((item) => !eolAlreadyOpen(item));
+        if (!items.length) {
+          showError(already.length === 1
+            ? "An end-of-life request is already open for this content."
+            : "An end-of-life request is already open for each of these.");
+          return;
+        }
+        if (already.length) {
+          const extra = already.length === 1
+            ? "1 item already has an end-of-life request and will be left as-is."
+            : `${already.length} items already have an end-of-life request and will be left as-is.`;
+          note = [note, extra].filter(Boolean).join(" ");
+        }
+      }
       const token = ++eolModalToken;
       const submitted = mode === "approve" ? eolSubmittedDays(items) : null;
       const keepOwnDays = mode === "approve" && submitted == null && items.every((item) => EOL_DAY_VALUES.includes(Number(item.timer)));
@@ -16323,9 +16387,49 @@
       return text;
     }
 
-    function saveScheduleIdsToFavorites() {
+    async function saveScheduleIdsToFavorites() {
+      const filledDemoIds = () => [...document.querySelectorAll("#schedule-dc-fields .demo-id")]
+        .filter((el) => /^\d+$/.test(String(el.value || "").trim()));
+      if (!filledDemoIds().length && vmSourceMode() === "content") {
+        const id = String($("src-session")?.value || "").trim();
+        const site = String($("src-site")?.value || "").trim().toLowerCase();
+        const input = site ? document.querySelector(`#schedule-dc-fields .demo-id[data-dc="${site}"]`) : null;
+        if (input && /^\d+$/.test(id)) input.value = id;
+      }
+      if (!filledDemoIds().length) {
+        showError("Enter a content ID in Load VMs, or in a datacenter box, before saving it to Favorites.");
+        return;
+      }
+      const named = filledDemoIds().every((el) => {
+        const title = String($(`hint-${el.dataset.dc}`)?.dataset.demoName || "").trim();
+        return title && !favoriteNameIsPlaceholder(title, el.value.trim());
+      });
+      if (filledDemoIds().length === 1 || !named) {
+        if (!ensureTokenReady("saving favorites")) return;
+        const source = filledDemoIds()[0];
+        const btn = $("btn-save-demo-ids-favorite");
+        if (btn) btn.disabled = true;
+        try {
+          const data = await api("/api/schedule/lookup-ids", {
+            method: "POST",
+            body: JSON.stringify({
+              ...tokenPayload(),
+              site: source.dataset.dc,
+              demo_id: source.value.trim(),
+            }),
+          });
+          applyLookups(data, { idsOnly: true });
+        } catch (err) {
+          if (!filledDemoIds().length) {
+            showError(err.message || "Could not look up that content.");
+            return;
+          }
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
       const entries = [];
-      document.querySelectorAll(".demo-id").forEach((input) => {
+      document.querySelectorAll("#schedule-dc-fields .demo-id").forEach((input) => {
         const contentId = String(input.value || "").trim();
         const site = String(input.dataset.dc || "").trim().toLowerCase();
         if (!site || !/^\d+$/.test(contentId)) return;
@@ -16334,7 +16438,7 @@
         entries.push({ site, contentId, name });
       });
       if (!entries.length) {
-        showError("Enter a demo ID before saving it to Favorites.");
+        showError("Enter a content ID in Load VMs, or in a datacenter box, before saving it to Favorites.");
         return;
       }
       const rows = readFavorites();
@@ -19839,7 +19943,9 @@
       }).catch((err) => showError(err.message));
     });
     $("btn-delete-schedule-saved")?.addEventListener("click", () => deleteSelectedSaved().catch((err) => showError(err.message)));
-    $("btn-save-demo-ids-favorite")?.addEventListener("click", () => saveScheduleIdsToFavorites());
+    $("btn-save-demo-ids-favorite")?.addEventListener("click", () => {
+      saveScheduleIdsToFavorites().catch((err) => showError(err.message));
+    });
     $("btn-favorites-check")?.addEventListener("click", () => {
       setBoxesChecked(document.querySelectorAll(".favorite-content:not(:disabled)"), true);
       syncFavoriteButtons();
@@ -19930,6 +20036,7 @@
       searchEolContent().catch((err) => showError(err.message));
     });
     $("btn-eol-refresh")?.addEventListener("click", () => loadEolQueue().catch((err) => showError(err.message)));
+    $("btn-eol-check-mine")?.addEventListener("click", () => checkMyEolRequests());
     $("btn-eol-approve-selected")?.addEventListener("click", () => {
       const rids = [...document.querySelectorAll(".eol-approve-check:checked")].map((box) => box.dataset.rid);
       const items = eolQueue.filter((row) => rids.includes(row.rid));

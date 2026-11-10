@@ -1,3 +1,8 @@
+## 2.2.2 — 2026-11-10
+
+- **Favorites from the Load VMs box.** Save to Favorites uses the content ID typed there, looks up the demo name and the other datacenter IDs, and does not store the status line as the name
+- **One End of Life per content.** Content that already has an open request cannot be submitted again. Check My Requests selects the ones you submitted that are waiting for approval
+
 ## 2.2.1 — 2026-11-10
 
 - **Favorites keep the demo name.** Saving demo IDs from Schedule no longer stores the status line under the box. A saved status line shows as the content ID until that demo is loaded again
