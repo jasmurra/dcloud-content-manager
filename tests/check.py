@@ -5356,7 +5356,10 @@ def test_favorites_page_remembers_content_ids() -> None:
         and "Content you access frequently" in view
         and "Star content you schedule often" not in INDEX
         and "favorite-actions-menu" in INDEX
-        and "Remove from Favorites" in INDEX,
+        and "Remove from Favorites" in INDEX
+        and "function favoriteNameIsPlaceholder(" in INDEX
+        and "hint.dataset.demoName" in INDEX
+        and "global catalog availability" in INDEX,
     )
 
 

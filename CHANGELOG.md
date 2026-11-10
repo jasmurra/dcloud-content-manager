@@ -1,3 +1,7 @@
+## 2.2.1 — 2026-11-10
+
+- **Favorites keep the demo name.** Saving demo IDs from Schedule no longer stores the status line under the box. A saved status line shows as the content ID until that demo is loaded again
+
 ## 2.2.0 — 2026-11-10
 
 - **End of Life page.** Search CAMGR content, pick how many days, and submit. Approve from the same page when that CAMGR login can. Promoted content has End of Life. End of Life skips content that is not promoted, and those rows can still be checked for share, delete, and copy. Topology Builder v2 rows stay in the datacenter list with End of Life instead of Delete. EOL Checked uses one day setting for the rows you own. Approval opens on the day count that was submitted, shows the sessions, saves, and superseding content stored from that submit, and looks them up again only if you ask. Each selected content has its own replacement datacenter and demo ID. Confirm looks that content up, and the submit uses the captured DC.ID call. Approval of a request that has a replacement uses that datacenter and demo ID, the same as CAMGR. The page also links to the CAMGR end-of-life list. Those actions stay grey until CAMGR is connected

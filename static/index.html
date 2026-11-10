@@ -7709,6 +7709,7 @@
       if (hint) {
         hint.textContent = "";
         delete hint.dataset.miss;
+        delete hint.dataset.demoName;
       }
     }
 
@@ -7844,6 +7845,10 @@
           el.classList.add("stale-id");
         }
         if (hint) {
+          const title = String(info.name || data.name || "").trim();
+          const lookupId = String(info.id || (fromSource ? data.demoId : "") || "").trim();
+          if (title && el.value.trim() && el.value.trim() === lookupId) hint.dataset.demoName = title;
+          else delete hint.dataset.demoName;
           if (info.id) {
             hint.textContent = info.note || "";
             delete hint.dataset.miss;
@@ -16300,16 +16305,32 @@
       return true;
     }
 
+    function favoriteNameIsPlaceholder(name, contentId) {
+      const text = String(name || "").trim().toLowerCase();
+      if (!text || text === `content ${String(contentId || "").trim()}`.toLowerCase()) return true;
+      return [
+        "global catalog availability",
+        "from this session",
+        "not published",
+        "catalog search skipped",
+        "session has no name",
+      ].includes(text) || text.startsWith("catalog exact match");
+    }
+
+    function favoriteDisplayName(name, contentId) {
+      const text = String(name || "").trim();
+      if (favoriteNameIsPlaceholder(text, contentId)) return `Content ${contentId}`;
+      return text;
+    }
+
     function saveScheduleIdsToFavorites() {
       const entries = [];
       document.querySelectorAll(".demo-id").forEach((input) => {
         const contentId = String(input.value || "").trim();
         const site = String(input.dataset.dc || "").trim().toLowerCase();
         if (!site || !/^\d+$/.test(contentId)) return;
-        const hint = String($(`hint-${site}`)?.textContent || "").replace(/\s+/g, " ").trim();
-        const name = hint && hint.length < 180 && !/error|fail|not found|sign in/i.test(hint)
-          ? hint
-          : `Content ${contentId}`;
+        const title = String($(`hint-${site}`)?.dataset.demoName || "").trim();
+        const name = title && !favoriteNameIsPlaceholder(title, contentId) ? title : `Content ${contentId}`;
         entries.push({ site, contentId, name });
       });
       if (!entries.length) {
@@ -16321,11 +16342,12 @@
         const key = favoriteKey(entry.site, entry.contentId);
         const previous = rows.find((row) => favoriteKey(row.site, row.contentId) === key);
         const rest = rows.filter((row) => favoriteKey(row.site, row.contentId) !== key);
-        const generic = entry.name === `Content ${entry.contentId}`;
+        const generic = favoriteNameIsPlaceholder(entry.name, entry.contentId);
+        const previousName = previous && !favoriteNameIsPlaceholder(previous.name, entry.contentId) ? previous.name : "";
         rows.splice(0, rows.length, {
           site: entry.site,
           contentId: entry.contentId,
-          name: generic && previous?.name ? previous.name : entry.name,
+          name: generic && previousName ? previousName : entry.name,
           owner: previous?.owner || "",
           contentViewUrl: previous?.contentViewUrl || "",
           promoted: Boolean(previous?.promoted),
@@ -16425,15 +16447,16 @@
         const openAttr = dcGroupIsOpen("favorites-list", site, true) ? "open" : "";
         const body = siteRows.map((row) => {
           const key = favoriteKey(row.site, row.contentId);
+          const name = favoriteDisplayName(row.name, row.contentId);
           const link = row.contentViewUrl
             ? `<a href="${escapeHtml(row.contentViewUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.contentId)}</a>`
             : escapeHtml(row.contentId);
           return `<tr>
-            <td><input type="checkbox" class="favorite-content" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(row.name || "")}" ${checked.has(key) ? "checked" : ""} /></td>
-            <td class="name-cell" title="${escapeHtml(row.name || "")}">${escapeHtml(row.name || "")}</td>
+            <td><input type="checkbox" class="favorite-content" data-site="${escapeHtml(row.site)}" data-content-id="${escapeHtml(row.contentId)}" data-name="${escapeHtml(name)}" ${checked.has(key) ? "checked" : ""} /></td>
+            <td class="name-cell" title="${escapeHtml(name)}">${escapeHtml(name)}</td>
             <td class="mono">${link}</td>
             <td>${escapeHtml(row.owner || "")}</td>
-            <td class="saved-actions">${favoriteActionsMenu(row)}</td>
+            <td class="saved-actions">${favoriteActionsMenu({ ...row, name })}</td>
           </tr>`;
         }).join("");
         return `<details class="dc-group" data-site="${escapeHtml(site)}" ${openAttr}>
@@ -19536,6 +19559,7 @@
       if (!input) return;
       const hint = document.getElementById(`hint-${input.dataset.dc}`);
       if (hint) {
+        delete hint.dataset.demoName;
         if (input.value.trim()) hint.textContent = "";
         else if (hint.dataset.miss === "1") hint.textContent = "not published";
       }

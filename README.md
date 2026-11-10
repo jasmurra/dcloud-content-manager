@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.2.1** | Favorites saved from Schedule keep the demo name |
 | **2.2.0** | End of Life page, and Favorites for content you schedule often. Grey until CAMGR is connected |
 | **2.1.17** | The Hub no longer fills with old finished transfers; an active session stays on the workspace |
 | **2.1.16** | Finished CAMGR transfers stay on the Hub until Remove; leaving the Cisco network no longer clears that list |
