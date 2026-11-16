@@ -3200,6 +3200,11 @@ def test_refresh_starts_clean() -> None:
         "applyJobToForm(job, { fillInputs: false })" in INDEX,
     )
     check(
+        "a workspace refresh leaves the session name box open",
+        "function sessionRenameIsOpen(" in INDEX
+        and "sessionRenameIsOpen()" in INDEX,
+    )
+    check(
         "auto-restore does not refill inputs",
         "applyJobToForm(job, { fillInputs: !auto })" in INDEX,
     )
@@ -5176,7 +5181,8 @@ def test_eol_page_uses_the_camgr_capture() -> None:
         and 'id="btn-eol-check-mine"' in INDEX
         and "function checkMyEolRequests(" in INDEX
         and "function eolAlreadyOpen(" in INDEX
-        and "An end-of-life request is already open for this content." in INDEX,
+        and "An end-of-life request is already open for this content." in INDEX
+        and "This CAMGR login cannot approve end of life." in INDEX,
     )
     import camgr_client
 
@@ -5197,7 +5203,7 @@ def test_eol_page_uses_the_camgr_capture() -> None:
                 },
             ], None, ""
         if url.endswith("/users/current"):
-            return {"id": "jasmurra", "access": {"isEoL": True}}, None, ""
+            return {"id": "jasmurra", "access": {"isEoL": cookie != "no-eol"}}, None, ""
         if "/eols?onlyOpCode=1" in url:
             return [{
                 "dc": "SJC",
@@ -5316,6 +5322,7 @@ def test_eol_page_uses_the_camgr_capture() -> None:
             "approval can keep each submitted day count",
             mixed.get("ok") and mixed.get("approved") == 2
             and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/users/current",
                 "https://dcloud-camgr.cisco.com/ca/api/eols/0/create/15/0/req-15",
                 "https://dcloud-camgr.cisco.com/ca/api/eols/0/create/1/0/req-1",
             ],
@@ -5330,7 +5337,10 @@ def test_eol_page_uses_the_camgr_capture() -> None:
         check(
             "approval keeps the superseding content on the captured URL",
             super_ok.get("ok")
-            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols/0/create/10/SYD.319942/hjRwP5YQg1vl2wYm0sDwfBRjdzWKhSH"],
+            and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/users/current",
+                "https://dcloud-camgr.cisco.com/ca/api/eols/0/create/10/SYD.319942/hjRwP5YQg1vl2wYm0sDwfBRjdzWKhSH",
+            ],
         )
         calls.clear()
         approved = camgr_client.approve_eol("cookie", ["req-1"], 1)
@@ -5338,7 +5348,19 @@ def test_eol_page_uses_the_camgr_capture() -> None:
             "approve uses the captured request id URL",
             approved.get("ok")
             and approved["results"][0]["status"] == "EOLING"
-            and calls == ["https://dcloud-camgr.cisco.com/ca/api/eols/0/create/1/0/req-1"],
+            and calls == [
+                "https://dcloud-camgr.cisco.com/ca/api/users/current",
+                "https://dcloud-camgr.cisco.com/ca/api/eols/0/create/1/0/req-1",
+            ],
+        )
+        calls.clear()
+        blocked = camgr_client.approve_eol("no-eol", ["req-1"], 1)
+        check(
+            "approval is refused when the CAMGR end-of-life flag is off",
+            not blocked.get("ok")
+            and blocked.get("approved") in (None, 0)
+            and calls == ["https://dcloud-camgr.cisco.com/ca/api/users/current"]
+            and blocked.get("message") == "This CAMGR login cannot approve end of life.",
         )
         listed = camgr_client.list_eol_requests("cookie")
         check(

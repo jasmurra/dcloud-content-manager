@@ -8731,6 +8731,10 @@
       return Boolean(node?.querySelector("details.vm-menu[open]"));
     }
 
+    function sessionRenameIsOpen() {
+      return Boolean(document.querySelector(".card-name-row.editing"));
+    }
+
     function deferUiRebuildWhileMenuOpen(key, root, rebuild) {
       if (!vmMenuIsOpen(root)) return false;
       pendingUiRebuilds.set(key, rebuild);
@@ -8738,7 +8742,7 @@
     }
 
     function flushUiRebuildsAfterMenusClose() {
-      if (vmMenuIsOpen()) return;
+      if (vmMenuIsOpen() || sessionRenameIsOpen()) return;
       const queued = [...pendingUiRebuilds.values()];
       pendingUiRebuilds.clear();
       queued.forEach((rebuild) => rebuild());
@@ -9459,11 +9463,12 @@
         const cardsFingerprint = jobCardsFingerprint(job);
         const cardsChanged = forceCards || cardsFingerprint !== lastCardsFingerprint;
         if (cardsChanged) {
-          if (vmMenuIsOpen("cards") || vmMenuIsOpen("monitor-cards")) {
+          if (vmMenuIsOpen("cards") || vmMenuIsOpen("monitor-cards") || sessionRenameIsOpen()) {
             pendingUiRebuilds.set("job-cards", () => {
               if (lastRenderedJob) renderJob(lastRenderedJob, { forceCards: true });
             });
           } else {
+            pendingUiRebuilds.delete("job-cards");
             if (document.querySelector("#cards details.card, #monitor-cards details.card")) {
               captureCardLayoutFromDom();
             }
@@ -9859,7 +9864,7 @@
       root.querySelectorAll(".btn-eol-approve").forEach((btn) => {
         btn.addEventListener("click", () => {
           const item = items.find((row) => row.rid === btn.dataset.rid);
-          if (!item || !camgrLoggedIn) return;
+          if (!item || !camgrLoggedIn || !eolCanApprove) return;
           openEolDialog([item], "approve");
         });
       });
@@ -10142,7 +10147,7 @@
         return row.dataset.confirmed === "1" && row.dataset.altId === id && row.dataset.altDc === dc;
       }));
       const ready = eolModalState.mode === "approve"
-        ? (eolModalState.items || []).some((item) => item.rid)
+        ? (eolCanApprove && (eolModalState.items || []).some((item) => item.rid))
         : (eolModalState.previews || []).some((item) => item.guid);
       ok.disabled = !(altOk && ready);
     }
@@ -10292,6 +10297,7 @@
       ok.textContent = mode === "approve" ? "Approving…" : "Submitting…";
       try {
         if (mode === "approve") {
+          if (!eolCanApprove) throw new Error("This CAMGR login cannot approve end of life.");
           const requests = (eolModalState.items || []).filter((item) => item.rid).map((item) => {
             const repl = cachedEolPreview(item).replacement || {};
             return {
@@ -19269,6 +19275,7 @@
             name,
           }),
         });
+        document.querySelectorAll(".card-name-row.editing").forEach((el) => el.classList.remove("editing"));
         if (data.job) renderJob(data.job, { forceCards: true });
         noteLog(`${site.toUpperCase()}: renamed session to "${name}".`);
         showError("");
@@ -19282,6 +19289,7 @@
     }
 
     function cancelSessionRename() {
+      document.querySelectorAll(".card-name-row.editing").forEach((el) => el.classList.remove("editing"));
       if (lastRenderedJob) renderJob(lastRenderedJob, { forceCards: true });
     }
 
@@ -20038,6 +20046,7 @@
     $("btn-eol-refresh")?.addEventListener("click", () => loadEolQueue().catch((err) => showError(err.message)));
     $("btn-eol-check-mine")?.addEventListener("click", () => checkMyEolRequests());
     $("btn-eol-approve-selected")?.addEventListener("click", () => {
+      if (!eolCanApprove) return;
       const rids = [...document.querySelectorAll(".eol-approve-check:checked")].map((box) => box.dataset.rid);
       const items = eolQueue.filter((row) => rids.includes(row.rid));
       if (items.length) openEolDialog(items, "approve");

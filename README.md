@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.2.3** | End of Life approval follows the CAMGR flag. The session name box stays open while the workspace refreshes |
 | **2.2.2** | Save to Favorites uses the Load VMs content ID. A second End of Life is blocked, and Check My Requests selects the ones you submitted |
 | **2.2.1** | Favorites saved from Schedule keep the demo name |
 | **2.2.0** | End of Life page, and Favorites for content you schedule often. Grey until CAMGR is connected |

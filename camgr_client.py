@@ -1688,12 +1688,36 @@ def submit_eol(
     }
 
 
+def _eol_approver(cookie_header: str) -> dict[str, Any]:
+    """CAMGR access.isEoL is the only approval right. Missing or false never approves."""
+    user, _, user_err = _get_json(cookie_header, f"{CAMGR_API}/users/current")
+    if user_err == "CAMGR session expired.":
+        return _auth_error(user_err)
+    if user_err or not isinstance(user, dict):
+        return {
+            "ok": False,
+            "loggedIn": True,
+            "message": user_err or "CAMGR did not return this login.",
+        }
+    access = user.get("access")
+    if isinstance(access, dict) and access.get("isEoL"):
+        return {"ok": True, "loggedIn": True}
+    return {
+        "ok": False,
+        "loggedIn": True,
+        "message": "This CAMGR login cannot approve end of life.",
+    }
+
+
 def approve_eol(
     cookie_header: str,
     rids: list[str],
     days: Any,
     item_days: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    allowed = _eol_approver(cookie_header)
+    if not allowed.get("ok"):
+        return allowed
     jobs: list[tuple[str, int, str, str]] = []
     if item_days:
         for raw in item_days:

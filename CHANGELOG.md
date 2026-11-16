@@ -1,3 +1,8 @@
+## 2.2.3 — 2026-11-16
+
+- **Approval follows the CAMGR flag.** A login whose End of Life flag is off cannot approve. The buttons stay hidden, and the approve call is refused before CAMGR is asked
+- **The session name box stays open.** A workspace refresh no longer closes the name editor while you are typing. Save and Cancel still update the card
+
 ## 2.2.2 — 2026-11-10
 
 - **Favorites from the Load VMs box.** Save to Favorites uses the content ID typed there, looks up the demo name and the other datacenter IDs, and does not store the status line as the name
