@@ -7464,7 +7464,7 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
     def progress(message: str) -> None:
         _log(job, message)
 
-    token = job.get("token") or _resolve_token(payload, progress)
+    token = _job_token(job, progress) or _resolve_token(payload, progress)
     job["token"] = token
     wanted = {site.strip().lower() for site in payload.sites if site.strip()}
     wanted_sid = str(payload.session_id or "").strip()
@@ -7514,6 +7514,12 @@ def _end_job(job: dict[str, Any], payload: EndPayload) -> None:
             continue
         _set_dc(job, site, match_session=session_id, phase="ending", message="Ending session (no save)…")
         result = end_session(token, site, session_id)
+        if not result.get("ok") and is_auth_error(result.get("message")):
+            fresh, auth_err = _recover_auth(job, progress, token)
+            if fresh and not auth_err:
+                token = fresh
+                job["token"] = token
+                result = end_session(token, site, session_id)
         if result.get("ok"):
             ended += 1
             _set_dc(
@@ -9248,6 +9254,11 @@ def api_unified_session_action(body: SearchItemPayload) -> dict[str, Any]:
         # dCloud's End API is also the backend operation behind Cancel for a
         # session which has not started yet; the UI changes the label by status.
         result = end_session(token, site, session_id)
+        if not result.get("ok") and is_auth_error(result.get("message")):
+            fresh = _ensure_user_access_token(force=True)
+            if fresh and fresh != token:
+                token = fresh
+                result = end_session(token, site, session_id)
     elif action == "reset":
         result = reset_session(token, site, session_id)
     elif action == "save":

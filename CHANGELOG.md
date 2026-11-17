@@ -1,3 +1,7 @@
+## 2.2.4 — 2026-11-17
+
+- **End session works after the app restarts.** A tab from the previous open used to show an error while dCloud stayed Active, until a hard refresh. End now picks up the new local secret and retries, and workspace End uses the live dCloud token instead of the one copied onto the job
+
 ## 2.2.3 — 2026-11-16
 
 - **Approval follows the CAMGR flag.** A login whose End of Life flag is off cannot approve. The buttons stay hidden, and the approve call is refused before CAMGR is asked

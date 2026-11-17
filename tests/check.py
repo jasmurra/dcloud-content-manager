@@ -2232,6 +2232,12 @@ def test_ended_card_is_not_a_dead_end() -> None:
     end_job = source[source.index("def _end_job(") : source.index("def _reset_job(")]
     check("ending a session takes the card off the workspace", "_retire_ended_cards(job)" in end_job)
     check(
+        "workspace End uses the live token and retries a 401",
+        "_job_token(job, progress)" in end_job
+        and "is_auth_error(result.get(\"message\"))" in end_job
+        and "_recover_auth(" in end_job,
+    )
+    check(
         "a stopping card is still refreshed",
         "_SKIP_REFRESH_DC_PHASES = _TERMINAL_DC_PHASES" in source
         and '"ending"' in source[
@@ -3646,6 +3652,22 @@ def test_event_management_section() -> None:
         "showToast(message, { kind: \"ok\" })" in search_action
         and 'showToast(err.message, { kind: "err" })' in search_action
         and "ensureTokenReady" in search_action,
+    )
+    check(
+        "a restarted app refreshes the launch secret instead of asking for a hard reload",
+        'cache: "no-store"' in INDEX
+        and "refreshLaunchSecret" in INDEX
+        and "isLaunchGuardError" in INDEX
+        and "function isLaunchGuardError(" in INDEX
+        and "if (isLaunchGuardError(message)) return false;" in INDEX,
+    )
+    search_end = source[
+        source.index("elif action in {\"end\", \"cancel\"}:") : source.index('elif action == "reset":')
+    ]
+    check(
+        "Search End retries once after a 401",
+        "is_auth_error(result.get(\"message\"))" in search_end
+        and "_ensure_user_access_token(force=True)" in search_end,
     )
     check(
         "a failed bulk action reports dCloud's reason instead of only a count",

@@ -2653,14 +2653,43 @@
       var launch = document.querySelector('meta[name="dcm-launch"]');
       var secret = launch ? launch.getAttribute("content") || "" : "";
       var nativeFetch = window.fetch.bind(window);
+      var refreshing = null;
+      function isApiUrl(url) {
+        return String(url || "").indexOf("/api/") !== -1;
+      }
+      function withLaunchHeader(init) {
+        var headers = new Headers((init && init.headers) || {});
+        headers.set("X-DCM-Launch", secret);
+        return Object.assign({}, init || {}, { headers: headers });
+      }
+      function refreshLaunchSecret() {
+        return nativeFetch("/", { cache: "no-store" }).then(function (res) {
+          return res.text();
+        }).then(function (html) {
+          var match = String(html || "").match(/name="dcm-launch" content="([^"]+)"/);
+          var next = match ? match[1] : "";
+          if (!next || next === secret) return false;
+          secret = next;
+          if (launch) launch.setAttribute("content", next);
+          return true;
+        }).catch(function () {
+          return false;
+        });
+      }
       window.fetch = function (input, init) {
         var url = typeof input === "string" ? input : (input && input.url) || "";
-        if (url.indexOf("/api/") !== -1) {
-          var headers = new Headers((init && init.headers) || (input && input.headers) || {});
-          if (!headers.has("X-DCM-Launch")) headers.set("X-DCM-Launch", secret);
-          init = Object.assign({}, init || {}, { headers: headers });
-        }
-        return nativeFetch(input, init);
+        if (!isApiUrl(url)) return nativeFetch(input, init);
+        init = withLaunchHeader(init);
+        return nativeFetch(input, init).then(function (res) {
+          if (res.status !== 403) return res;
+          if (!refreshing) {
+            refreshing = refreshLaunchSecret().finally(function () { refreshing = null; });
+          }
+          return refreshing.then(function (ok) {
+            if (!ok) return res;
+            return nativeFetch(input, withLaunchHeader(init));
+          });
+        });
       };
     })();
   </script>
@@ -4623,9 +4652,19 @@
       );
     }
 
+    function isLaunchGuardError(msg) {
+      const t = String(msg || "").toLowerCase();
+      return (
+        t.includes("refresh this page")
+        || t.includes("local app restarted")
+        || t.includes("previous open")
+      );
+    }
+
     function isTokenError(msg) {
       if (!msg) return false;
       if (isHubAuthError(msg)) return false;
+      if (isLaunchGuardError(msg)) return false;
       const t = String(msg).toLowerCase();
       return (
         t.includes("token")
@@ -4674,6 +4713,7 @@
       const apiPath = String(path || "");
       if (apiPath.startsWith("/api/cai") || apiPath.startsWith("/api/camgr")) return false;
       if (isHubAuthError(message)) return false;
+      if (isLaunchGuardError(message)) return false;
       if (isTokenError(message)) return true;
       if (res.status === 401 || res.status === 403) return true;
       if (!apiPath.startsWith("/api/")) return false;
@@ -20214,6 +20254,7 @@
       }
       const sessionActions = { cancel: "cancel", end: "end", save: "save", reset: "reset" };
       if (sessionActions[action]) {
+        ev.preventDefault();
         runSearchSessionAction(row, sessionActions[action]).catch((err) => {
           showToast(err.message || "Session action failed.", { kind: "err" });
         });
