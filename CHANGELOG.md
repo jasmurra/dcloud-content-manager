@@ -1,3 +1,8 @@
+## 2.2.7 — 2026-11-18
+
+- **Required Update window.** Copies on 2.2.6 see this release as a forced update: the window stays until you click Update, then the page reloads. No restart of start.command
+- **Available slots from the dCloud calendar.** Check Available Slots (or Adjust Schedule on a failed card) lists busy blocks and open windows you can pick, including slots after the next 24 hours
+
 ## 2.2.6 — 2026-11-18
 
 - **Required updates.** The tool checks GitHub every two minutes while the tab is open. When a newer version is on `main`, a window opens that stays until you click Update. Update installs it and reloads the page; no restart of start.command is needed. A copy with local uncommitted work is not forced

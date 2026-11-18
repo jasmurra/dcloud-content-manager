@@ -2741,21 +2741,174 @@ def find_next_available_window(
     *,
     search_end: datetime | None = None,
 ) -> tuple[datetime, datetime] | None:
-    if duration <= timedelta(0):
-        return None
+    openings = list_open_schedule_windows(
+        desired_start,
+        duration,
+        timeslots,
+        search_end=search_end,
+        limit=1,
+    )
+    return openings[0] if openings else None
+
+
+def list_open_schedule_windows(
+    desired_start: datetime,
+    duration: timedelta,
+    timeslots: list[dict[str, Any]],
+    *,
+    search_end: datetime | None = None,
+    limit: int = 12,
+) -> list[tuple[datetime, datetime]]:
+    """Open windows of ``duration`` that fit between busy calendar blocks.
+
+    Same feed as the dCloud schedule calendar. Packed back-to-back in a long
+    gap so a free Friday and Saturday both show as choices.
+    """
+    if duration <= timedelta(0) or limit <= 0:
+        return []
     search_end = search_end or (desired_start + timedelta(days=14))
     if search_end <= desired_start:
-        return None
+        return []
     blocks = _blocking_intervals(timeslots, desired_start, search_end)
+    openings: list[tuple[datetime, datetime]] = []
     cursor = desired_start
     for block_start, block_end in blocks:
-        if cursor < block_start and cursor + duration <= block_start:
-            return cursor, cursor + duration
+        start = cursor
+        while start + duration <= block_start and len(openings) < limit:
+            openings.append((start, start + duration))
+            start = start + duration
         if cursor < block_end:
             cursor = block_end
-    if cursor + duration <= search_end:
-        return cursor, cursor + duration
-    return None
+        if len(openings) >= limit:
+            return openings
+    start = cursor
+    while start + duration <= search_end and len(openings) < limit:
+        openings.append((start, start + duration))
+        start = start + duration
+    return openings
+
+
+def _busy_calendar_rows(
+    timeslots: list[dict[str, Any]],
+    range_start: datetime,
+    range_end: datetime,
+    *,
+    limit: int = 24,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for slot in timeslots or []:
+        if not _is_blocking_timeslot(slot):
+            continue
+        interval = _timeslot_interval(slot)
+        if not interval:
+            continue
+        start, end = interval
+        if end <= range_start or start >= range_end:
+            continue
+        label = str(
+            slot.get("title")
+            or slot.get("name")
+            or slot.get("summary")
+            or slot.get("type")
+            or "Unavailable"
+        ).strip()
+        kind = str(slot.get("type") or "").upper()
+        if kind in {"UNAVAILABLE", "UNAVAILABILITY"} and "resource" not in label.lower():
+            label = "Resources Unavailable" if label.upper() == kind else (label or "Resources Unavailable")
+        rows.append(
+            {
+                "start": _dcloud_timestamp(max(start, range_start)),
+                "stop": _dcloud_timestamp(min(end, range_end)),
+                "label": label or "Unavailable",
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def list_schedule_openings(
+    token: str,
+    site: str,
+    demo_id: str,
+    *,
+    days: int = 1,
+    start_at: str = "",
+    range_days: int = 14,
+) -> dict[str, Any]:
+    """Read the dCloud content calendar and return busy blocks plus open slots to pick."""
+    site_code = (site or "").strip().lower()
+    demo = str(demo_id or "").strip()
+    duration_days = max(1, int(days or 1))
+    begin = parse_schedule_datetime(str(start_at or "").strip()) or datetime.now(timezone.utc)
+    if begin.tzinfo is None:
+        begin = begin.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if begin < now - timedelta(minutes=5):
+        begin = now
+    search_end = begin + timedelta(days=max(3, int(range_days or 14)))
+    duration = timedelta(days=duration_days)
+    pools = _pool_attempts_for_demo(token, site_code, demo)
+    pool_name, pool_id = (pools[0] if pools else ("", None))
+    timeslots, error = fetch_content_calendar(
+        token,
+        site_code,
+        demo,
+        range_start=begin,
+        range_end=search_end + duration,
+        pool_id=pool_id,
+    )
+    if error:
+        return {
+            "ok": False,
+            "site": site_code,
+            "demoId": demo,
+            "days": duration_days,
+            "pool": pool_name or "",
+            "error": error,
+            "busy": [],
+            "openings": [],
+            "shorter": [],
+        }
+
+    def _windows(span_days: int) -> list[dict[str, Any]]:
+        span = timedelta(days=span_days)
+        found = list_open_schedule_windows(
+            begin,
+            span,
+            timeslots,
+            search_end=search_end,
+            limit=12,
+        )
+        return [
+            {
+                "start": _dcloud_timestamp(start),
+                "stop": _dcloud_timestamp(stop),
+                "days": span_days,
+            }
+            for start, stop in found
+        ]
+
+    openings = _windows(duration_days)
+    shorter: list[dict[str, Any]] = []
+    if duration_days > 1 and not openings:
+        shorter = _windows(1)
+    return {
+        "ok": True,
+        "site": site_code,
+        "demoId": demo,
+        "days": duration_days,
+        "pool": pool_name or "",
+        "rangeStart": _dcloud_timestamp(begin),
+        "rangeEnd": _dcloud_timestamp(search_end),
+        "busy": _busy_calendar_rows(timeslots, begin, search_end),
+        "openings": openings,
+        "shorter": shorter,
+        "error": "",
+    }
+
+
+
 
 
 def unavailable_resource_name(message: str) -> str:

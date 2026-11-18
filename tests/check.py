@@ -3158,6 +3158,40 @@ def test_schedule_capacity_explains_and_stays_nearby() -> None:
         'applyDateToControls("start"' in adjust and 'applyDateToControls("stop"' in adjust,
     )
 
+    begin = datetime(2026, 11, 18, 0, 0, tzinfo=timezone.utc)
+    block = {
+        "type": "UNAVAILABLE",
+        "title": "Resources Unavailable",
+        "start": begin.isoformat(),
+        "stop": datetime(2026, 11, 19, 16, 30, tzinfo=timezone.utc).isoformat(),
+    }
+    openings = dcloud_client.list_open_schedule_windows(
+        begin,
+        timedelta(days=1),
+        [block],
+        search_end=begin + timedelta(days=7),
+        limit=3,
+    )
+    check(
+        "a slot after tomorrow still appears in the calendar picker",
+        openings
+        and openings[0][0] == datetime(2026, 11, 19, 16, 30, tzinfo=timezone.utc),
+        str(openings[:1]),
+    )
+    check(
+        "Adjust Schedule opens the calendar picker",
+        "openScheduleOpenings" in adjust,
+    )
+    check(
+        "the schedule page can check available slots",
+        'id="btn-check-slots"' in INDEX and 'id="schedule-openings-modal"' in INDEX,
+    )
+    check(
+        "open slots come from the dCloud content calendar",
+        '@app.post("/api/schedule/openings")' in (ROOT / "app.py").read_text(encoding="utf-8")
+        and "def list_schedule_openings(" in (ROOT / "dcloud_client.py").read_text(encoding="utf-8"),
+    )
+
 
 def test_schedule_does_not_require_load_vms() -> None:
     """1.8.5: a regular session powers its own VMs, so Load VMs is not needed."""

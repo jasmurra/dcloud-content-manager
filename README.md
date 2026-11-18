@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.2.7** | Required Update window from 2.2.6, plus a calendar of open schedule slots you can pick |
 | **2.2.6** | A newer GitHub version opens an Update window that stays until you click Update, checked every two minutes while the tool is open |
 | **2.2.5** | Status checks use the same session list as the dCloud sessions page, stop when the tab is in the background, and no longer poll per-VM status. Adjust Schedule opens the Schedule page. Workspace can remove only the ticked cards |
 | **2.2.4** | End session no longer needs a hard refresh after the app restarts; dCloud was staying Active while the tool showed an error |

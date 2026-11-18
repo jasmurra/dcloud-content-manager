@@ -1525,6 +1525,11 @@
     .schedule-card-conflict strong { color: var(--text); }
     .schedule-card-conflict .conflict-reason { margin-top: 0.3rem; }
     .schedule-card-conflict .conflict-reason > summary { cursor: pointer; }
+    .schedule-openings-card { width: min(100%, 640px); max-height: min(86vh, 720px); overflow: auto; }
+    .schedule-openings-list { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.55rem 0 0; }
+    .schedule-openings-list button { text-align: left; }
+    .schedule-openings-busy { margin: 0.35rem 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 0.8rem; }
+    .schedule-openings-busy li { margin: 0.15rem 0; }
     .modal:not(.hidden) {
       display: flex !important;
     }
@@ -2913,6 +2918,20 @@
       </div>
     </div>
 
+    <div id="schedule-openings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="schedule-openings-title">
+      <div class="modal-backdrop" id="schedule-openings-backdrop"></div>
+      <div class="modal-card action-modal-card schedule-openings-card">
+        <h2 id="schedule-openings-title">Available slots</h2>
+        <p id="schedule-openings-lead" class="hint">Same calendar as the dCloud schedule page. Busy blocks are the grey bars; open slots fit the duration you asked for.</p>
+        <p id="schedule-openings-status" class="hint" aria-live="polite"></p>
+        <ul id="schedule-openings-busy" class="schedule-openings-busy"></ul>
+        <div id="schedule-openings-list" class="schedule-openings-list"></div>
+        <div class="actions" style="margin-top:0.85rem">
+          <button type="button" class="secondary" id="schedule-openings-close">Close</button>
+        </div>
+      </div>
+    </div>
+
     <div id="catalog-schedule-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="catalog-schedule-title">
       <div class="modal-backdrop" id="catalog-schedule-backdrop"></div>
       <div class="modal-card action-modal-card">
@@ -3357,6 +3376,7 @@
       </p>
       <div class="actions">
         <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Check the box above, or load VMs, when you want to pick which VMs power on. A regular session powers everything itself. If a job is already open, new sessions are added to it.">Schedule Regular Session</button>
+        <button type="button" class="secondary" id="btn-check-slots" data-tip="Reads the same calendar as the dCloud schedule page for the first demo ID that is filled in, and lists open slots you can pick.">Check Available Slots</button>
         <button type="button" class="secondary hidden" id="btn-continue-auth" data-tip="After you log in again from Sign in to dCloud, resumes the job that paused because your token expired.">Continue with New Token</button>
       </div>
       <p id="run-result" class="run-result hidden" role="status" aria-live="polite"></p>
@@ -9143,6 +9163,94 @@
           ? `Loaded the suggested ${suggestedDays}-day ${site.toUpperCase()} schedule. Review the dates, then click Schedule sessions.`
           : `Loaded the failed ${site.toUpperCase()} schedule. Adjust its duration or dates, then click Schedule sessions.`
       );
+      openScheduleOpenings({
+        site,
+        demoId,
+        days: Number($("days")?.value || suggestedDays || 1),
+        startAt: conflict.requestedStart || conflict.nextStart || "",
+      }).catch((err) => showError(err.message));
+    }
+
+    function closeScheduleOpenings() {
+      $("schedule-openings-modal")?.classList.add("hidden");
+    }
+
+    function applyScheduleOpening(slot) {
+      const start = new Date(slot.start);
+      const stop = new Date(slot.stop);
+      const days = Number(slot.days || 0);
+      if (days) $("days").value = String(days);
+      if (!Number.isNaN(start.getTime())) applyDateToControls("start", start, { exactTime: true });
+      if (!Number.isNaN(stop.getTime())) applyDateToControls("stop", stop, { exactTime: true });
+      $("sched-delay").value = "0";
+      $("sched-copies").value = "1";
+      if ($("auto-next-available")) $("auto-next-available").checked = false;
+      syncMainScheduleToSaved();
+      syncScheduleCopyHint();
+      showAppView("schedule");
+      closeScheduleOpenings();
+      showToast("Loaded that open slot on the Schedule page. Review it, then click Schedule sessions.");
+    }
+
+    function firstFilledDemoTarget() {
+      for (const input of document.querySelectorAll(".demo-id")) {
+        const id = String(input.value || "").trim();
+        if (id) return { site: input.dataset.dc || "", demoId: id };
+      }
+      return null;
+    }
+
+    async function openScheduleOpenings({ site, demoId, days, startAt }) {
+      const modal = $("schedule-openings-modal");
+      const title = $("schedule-openings-title");
+      const status = $("schedule-openings-status");
+      const busyList = $("schedule-openings-busy");
+      const list = $("schedule-openings-list");
+      if (!modal || !list) return;
+      const dc = String(site || "").toUpperCase();
+      if (title) title.textContent = `Available slots · ${dc}`;
+      if (status) status.textContent = `Checking the ${dc} calendar…`;
+      if (busyList) busyList.innerHTML = "";
+      list.innerHTML = "";
+      modal.classList.remove("hidden");
+      const data = await api("/api/schedule/openings", {
+        method: "POST",
+        body: JSON.stringify({
+          ...tokenPayload(),
+          site,
+          demo_id: demoId,
+          days: Math.max(1, Number(days) || 1),
+          start_at: startAt || "",
+        }),
+      });
+      if (data.error) {
+        if (status) status.textContent = data.error;
+        return;
+      }
+      const busy = data.busy || [];
+      if (busyList) {
+        busyList.innerHTML = busy.length
+          ? busy.map((row) => `<li><strong>${escapeHtml(row.label || "Unavailable")}</strong> — ${escapeHtml(formatScheduleSlot(row.start, row.stop))}</li>`).join("")
+          : "<li>No busy blocks in this range.</li>";
+      }
+      const openings = data.openings || [];
+      const shorter = data.shorter || [];
+      if (!openings.length && !shorter.length) {
+        if (status) {
+          status.textContent = `No open ${data.days || days}-day slot in the next two weeks for ${dc} demo ${demoId}${data.pool ? ` (${data.pool})` : ""}.`;
+        }
+        return;
+      }
+      if (status) {
+        status.textContent = openings.length
+          ? `Open ${data.days}-day slots for ${dc} demo ${demoId}${data.pool ? ` · ${data.pool}` : ""}. Pick one to fill Start and Stop.`
+          : `No ${data.days}-day slot fits. One-day openings are listed instead.`;
+      }
+      const rows = openings.length ? openings : shorter;
+      list.innerHTML = rows.map((slot) => {
+        const label = `${formatScheduleSlot(slot.start, slot.stop)} · ${slot.days} day${Number(slot.days) === 1 ? "" : "s"}`;
+        return `<button type="button" class="secondary schedule-opening-pick" data-start="${escapeHtml(slot.start)}" data-stop="${escapeHtml(slot.stop)}" data-days="${escapeHtml(String(slot.days || ""))}">Use ${escapeHtml(label)}</button>`;
+      }).join("");
     }
 
     function renderShutdownPrompt(dc, cardData, prompt) {
@@ -9406,6 +9514,9 @@
       const adjustSchedule = dc.phase === "error" && dc.scheduleConflict && !dc.sessionId
         ? `<button type="button" class="btn-adjust-schedule" ${cardData} data-requested-start="${escapeHtml(dc.scheduleConflict.requestedStart || "")}">Adjust Schedule</button>`
         : "";
+      const checkSlots = dc.demoId && !dc.sessionId
+        ? `<button type="button" class="btn-check-slots" ${cardData} data-days="${escapeHtml(String(dc.scheduleConflict?.suggestedDays || 1))}" data-requested-start="${escapeHtml(dc.scheduleConflict?.requestedStart || dc.requestedStart || "")}">Available Slots</button>`
+        : "";
       const canRename = canRenameSession(dc);
       const displayName = demoName || (canRename ? "Untitled session" : "");
       const nameLine = canRename
@@ -9491,7 +9602,7 @@
               ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
               ${shutdownPrompt ? renderShutdownPrompt(dc, cardData, shutdownPrompt) : ""}
               ${conflictDetails}
-              ${adjustSchedule ? `<div style="margin-top:0.55rem">${adjustSchedule}</div>` : ""}
+              ${adjustSchedule || checkSlots ? `<div style="margin-top:0.55rem">${adjustSchedule}${checkSlots}</div>` : ""}
               ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
               ${powerWatchBtn ? `<div class="vm-power-watch-row">${powerWatchBtn}</div>` : ""}
               ${powerWatchNote}
@@ -19601,6 +19712,17 @@
         adjustScheduleFromCard(adjustBtn);
         return;
       }
+      const slotsBtn = ev.target.closest(".btn-check-slots");
+      if (slotsBtn) {
+        ev.preventDefault();
+        openScheduleOpenings({
+          site: slotsBtn.dataset.site || "",
+          demoId: slotsBtn.dataset.demoId || "",
+          days: Number(slotsBtn.dataset.days || 1),
+          startAt: slotsBtn.dataset.requestedStart || "",
+        }).catch((err) => showError(err.message));
+        return;
+      }
       const webrdpBtn = ev.target.closest(".btn-vm-webrdp");
       if (webrdpBtn) {
         ev.preventDefault();
@@ -19822,6 +19944,30 @@
     });
     syncVmSourceUi();
     $("btn-run").addEventListener("click", () => startJob());
+    $("btn-check-slots")?.addEventListener("click", () => {
+      const target = firstFilledDemoTarget();
+      if (!target) {
+        showError("Enter a demo / content ID first, then check available slots.");
+        return;
+      }
+      openScheduleOpenings({
+        site: target.site,
+        demoId: target.demoId,
+        days: Number($("days")?.value || 1),
+        startAt: $("sched-start")?.value || "",
+      }).catch((err) => showError(err.message));
+    });
+    $("schedule-openings-close")?.addEventListener("click", () => closeScheduleOpenings());
+    $("schedule-openings-backdrop")?.addEventListener("click", () => closeScheduleOpenings());
+    $("schedule-openings-list")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".schedule-opening-pick");
+      if (!btn) return;
+      applyScheduleOpening({
+        start: btn.dataset.start,
+        stop: btn.dataset.stop,
+        days: btn.dataset.days,
+      });
+    });
     $("btn-quick-schedule")?.addEventListener("click", () => quickSchedule(false).catch((err) => showError(err.message)));
     $("btn-quick-extend")?.addEventListener("click", () => quickExtend().catch((err) => showError(err.message)));
     $("btn-quick-export")?.addEventListener("click", () => quickSchedule(true).catch((err) => showError(err.message)));
@@ -21047,6 +21193,10 @@
         return;
       }
       if (!$("required-update")?.classList.contains("hidden")) {
+        return;
+      }
+      if (!$("schedule-openings-modal")?.classList.contains("hidden")) {
+        closeScheduleOpenings();
         return;
       }
       if (!$("confirm-alert")?.classList.contains("hidden")) {

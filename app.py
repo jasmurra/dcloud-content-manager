@@ -142,6 +142,7 @@ from dcloud_client import (
     save_session,
     schedule_exported_session,
     find_schedule_conflict,
+    list_schedule_openings,
     search_share_users,
     search_admin_records,
     session_info_panels,
@@ -1434,6 +1435,13 @@ class ScheduleConflictCheckPayload(TokenPayload):
     days: int = Field(default=1, ge=1)
     start_at: str = ""
     stop_at: str = ""
+
+
+class ScheduleOpeningsPayload(TokenPayload):
+    site: str
+    demo_id: str
+    days: int = Field(default=1, ge=1)
+    start_at: str = ""
 
 
 class UnifiedSearchPayload(TokenPayload):
@@ -8453,6 +8461,25 @@ def api_schedule_conflicts(body: ScheduleConflictCheckPayload) -> dict[str, Any]
         if hit:
             conflicts.append(hit)
     return {"conflicts": conflicts}
+
+
+@app.post("/api/schedule/openings")
+def api_schedule_openings(body: ScheduleOpeningsPayload) -> dict[str, Any]:
+    """Same calendar as the dCloud schedule page: busy blocks and open slots to pick."""
+    site = body.site.strip().lower()
+    demo_id = str(body.demo_id or "").strip()
+    if site not in {"sjc", "rtp", "lon", "sng", "syd"}:
+        raise HTTPException(400, "Datacenter must be SJC, RTP, LON, SNG, or SYD.")
+    if not demo_id:
+        raise HTTPException(400, "Demo / content ID is required.")
+    token = _resolve_token(body, lambda _msg: None)
+    return list_schedule_openings(
+        token,
+        site,
+        demo_id,
+        days=body.days,
+        start_at=body.start_at,
+    )
 
 
 @app.post("/api/jobs")
