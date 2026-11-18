@@ -846,6 +846,15 @@ def summarize_vm(vm: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# The page poll, the background watcher, and other tabs can ask for the same VM
+# within seconds. A short cache lets them share one tbv3 read, and the semaphore
+# caps how many tbv3 calls this app makes at once across all cards.
+TBV3_STATUS_TTL_SECONDS = 10.0
+_TBV3_STATUS_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_TBV3_STATUS_LOCK = threading.Lock()
+_TBV3_STATUS_SLOTS = threading.BoundedSemaphore(4)
+
+
 def fetch_tbv3_vm_status(
     token: str,
     session_id: str,
@@ -858,10 +867,17 @@ def fetch_tbv3_vm_status(
     version = (topology_uid or "").strip()
     if not sid or not vm_mor or not version:
         return None, None
+    cache_key = (sid, vm_mor, version)
+    now = time.monotonic()
+    with _TBV3_STATUS_LOCK:
+        cached = _TBV3_STATUS_CACHE.get(cache_key)
+    if cached and now - cached[0] < TBV3_STATUS_TTL_SECONDS:
+        return cached[1], None
     query = urlencode({"versionUid": version, "mor": vm_mor})
     url = f"{TBV3_API}/api/sessions/{sid}/vm-status?{query}"
     try:
-        response = _request("GET", url, token, timeout=15)
+        with _TBV3_STATUS_SLOTS:
+            response = _request("GET", url, token, timeout=15)
     except requests.RequestException:
         return None, None
     if response.status_code == 401:
@@ -869,6 +885,10 @@ def fetch_tbv3_vm_status(
     body = _json_or_text(response)
     if not isinstance(body, dict) or response.status_code >= 400:
         return None, None
+    with _TBV3_STATUS_LOCK:
+        if len(_TBV3_STATUS_CACHE) > 2000:
+            _TBV3_STATUS_CACHE.clear()
+        _TBV3_STATUS_CACHE[cache_key] = (time.monotonic(), body)
     return body, None
 
 

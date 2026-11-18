@@ -3339,7 +3339,7 @@
       </label>
       <p class="hint hidden" id="add-to-job-hint">
         Scheduling adds to the current job and keeps your session cards.
-        Use <strong>Clear Job Workspace Cards</strong> below if you want a fresh workspace (monitoring cards stay).
+        Use <strong>Remove All Workspace Cards</strong> below if you want a fresh workspace (monitoring cards stay). To remove only some, tick them and use <strong>Remove Checked Cards</strong>.
       </p>
       <div class="actions">
         <button type="button" id="btn-run" data-tip="Schedules sessions for each DC listed in this section. Check the box above, or load VMs, when you want to pick which VMs power on. A regular session powers everything itself. If a job is already open, new sessions are added to it.">Schedule Regular Session</button>
@@ -3643,11 +3643,12 @@
         </div>
         <p class="hint" style="margin:0 0 0.75rem">Each session is pushed this far past its own end. Five days is one click. If resources are booked, the tool finds the farthest time that still fits and asks before applying it. Set days and hours to 0 to use the until time as an exact stop for every checked session.</p>
         <div class="actions">
-        <button type="button" class="secondary" id="btn-refresh-status" data-tip="Polls dCloud now for every session card on this job (Active, waiting, shutting down, saved, etc.).">Refresh All Session Statuses</button>
+        <button type="button" class="secondary" id="btn-refresh-status" data-tip="Reads session status and VM power from dCloud now. Background polling only checks session status, not VM power.">Refresh All Session Statuses</button>
         <button type="button" class="danger" id="btn-shutdown" disabled data-tip="Guest-shuts down the checked ready cards, waits for their VMs to power off, then saves. Stays off until a card is checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest Shutdown &amp; Save</button>
         <button type="button" class="secondary" id="btn-guest-shutdown-checked" disabled data-tip="Guest-shuts down every powered-on VM on the checked sessions. Does not save or end them. vCUBE is powered off. Stays off until a card is checked.">Guest Shutdown All VMs</button>
         <button type="button" class="end" id="btn-end" disabled data-tip="Ends the checked sessions without saving. Stays off until a card is checked.">End Sessions (No Save)</button>
-        <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes job workspace cards from this tool only. Monitoring cards are kept. Does not end or save anything in dCloud.">Clear Job Workspace Cards</button>
+        <button type="button" class="secondary" id="btn-remove-checked-cards" disabled data-tip="Removes only the ticked workspace cards from this tool. Monitoring cards are not touched. Nothing is ended or saved in dCloud. Stays off until a card is checked.">Remove Checked Cards</button>
+        <button type="button" class="secondary" id="btn-dismiss" data-tip="Removes ALL job workspace cards from this tool, not just the ticked ones. Monitoring cards are kept. Does not end or save anything in dCloud.">Remove All Workspace Cards</button>
         </div>
       </div>
       </div>
@@ -4399,6 +4400,7 @@
     let pendingFlushAttempted = null;
     let lastVmRefreshAt = 0;
     let vmRefreshStartedAt = 0;
+    // Same 15s cadence as the dCloud sessions page (GET /api/sessions). A hidden tab does not poll.
     const VM_REFRESH_INTERVAL_MS = 15000;
     const VM_REFRESH_MAX_MS = 10 * 60 * 1000;
     let lastTokenAlertKey = "";
@@ -8940,7 +8942,7 @@
 
     function syncWorkspaceBulkButtons() {
       const anyChecked = document.querySelectorAll("#cards .card-select:checked").length > 0;
-      for (const id of ["btn-extend-checked", "btn-shutdown", "btn-guest-shutdown-checked", "btn-end"]) {
+      for (const id of ["btn-extend-checked", "btn-shutdown", "btn-guest-shutdown-checked", "btn-end", "btn-remove-checked-cards"]) {
         const button = $(id);
         if (button) button.disabled = !anyChecked;
       }
@@ -9066,9 +9068,11 @@
       if ($("auto-next-available")) $("auto-next-available").checked = false;
       syncMainScheduleToSaved();
       syncScheduleCopyHint();
+      showAppView("schedule");
       const panel = $("panel-step3");
       if (panel) panel.open = true;
       panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      showToast(`Loaded the failed ${site.toUpperCase()} schedule on the Schedule page. Review it, then click Schedule sessions.`);
       noteLog(
         suggestedDays
           ? `Loaded the suggested ${suggestedDays}-day ${site.toUpperCase()} schedule. Review the dates, then click Schedule sessions.`
@@ -13905,9 +13909,19 @@
       ].includes(dc.phase));
     }
 
-    // Starting and resetting sessions only change in dCloud, so poll it rather than our stored copy.
-    function jobNeedsStatusRefresh(job) {
-      return (job?.dcs || []).some((dc) => ["waiting", "resetting", "scheduling"].includes(dc.phase));
+    // Same as the dCloud sessions page: only session status for starting cards,
+    // plus save/shutdown progress. Active VM power is not polled in the background.
+    function pollRefreshTargets(job) {
+      const dcs = job?.dcs || [];
+      const saving = jobHasSaveInProgress(job);
+      const picked = new Map();
+      const add = (dc) => {
+        if (!dc?.sessionId) return;
+        picked.set(`${dc.site}:${dc.sessionId}`, { site: dc.site, session_id: String(dc.sessionId) });
+      };
+      dcs.filter((dc) => ["waiting", "resetting", "scheduling"].includes(dc.phase)).forEach(add);
+      if (saving) dcs.filter((dc) => ["saving", "shutting_down"].includes(dc.phase)).forEach(add);
+      return [...picked.values()];
     }
 
     function stopPolling() {
@@ -13915,23 +13929,42 @@
       pollTimer = null;
     }
 
+    let jobRefreshInFlight = false;
+    let jobPollWatching = false;
+
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
+      if (!jobPollWatching) {
+        jobPollWatching = true;
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) return;
+          lastVmRefreshAt = 0;
+          if (jobId && lastRenderedJob && shouldPollJob(lastRenderedJob)) startPolling();
+        });
+      }
       pollTimer = setInterval(async () => {
         if (!jobId) return;
+        // A background or covered tab must not keep reading dCloud.
+        if (document.hidden) return;
         try {
-          const needsVmRefresh = jobNeedsVmRefresh(lastRenderedJob);
           const saveInProgress = jobHasSaveInProgress(lastRenderedJob);
-          const needsStatusRefresh = jobNeedsStatusRefresh(lastRenderedJob);
           const now = Date.now();
-          const refreshInterval = saveInProgress ? 10000 : VM_REFRESH_INTERVAL_MS;
-          if ((needsVmRefresh || saveInProgress || needsStatusRefresh) && now - lastVmRefreshAt >= refreshInterval) {
+          const refreshInterval = saveInProgress ? 15000 : VM_REFRESH_INTERVAL_MS;
+          const targets = pollRefreshTargets(lastRenderedJob);
+          // One read at a time. A slow read used to stack the next one on top of it.
+          if (targets.length && !jobRefreshInFlight && now - lastVmRefreshAt >= refreshInterval) {
             lastVmRefreshAt = now;
-            const job = await api(`/api/jobs/${jobId}/refresh-status`, {
-              method: "POST",
-              quiet: true,
-              body: JSON.stringify(tokenPayload()),
-            });
+            jobRefreshInFlight = true;
+            let job;
+            try {
+              job = await api(`/api/jobs/${jobId}/refresh-status`, {
+                method: "POST",
+                quiet: true,
+                body: JSON.stringify({ ...tokenPayload(), targets }),
+              });
+            } finally {
+              jobRefreshInFlight = false;
+            }
             renderJob(job);
             if (!shouldPollJob(job)) stopPolling();
             return;
@@ -18901,6 +18934,42 @@
       noteLog(`${(site || "").toUpperCase()}: removed card from this tool.`);
     }
 
+    async function removeCheckedWorkspaceCards() {
+      if (!jobId) return;
+      const boxes = [...document.querySelectorAll("#cards .card-select")].filter((el) => el.checked);
+      if (!boxes.length) return;
+      const count = boxes.length;
+      const noun = count === 1 ? "card" : "cards";
+      if (!await confirmAction(
+        `Remove ${count} checked ${noun} from this tool? The dCloud sessions stay running. Nothing is ended or saved, and the other workspace cards stay.`,
+        { title: "Remove Checked Cards" }
+      )) {
+        return;
+      }
+      let removed = 0;
+      let job = null;
+      try {
+        for (const box of boxes) {
+          job = await api(`/api/jobs/${jobId}/remove-card`, {
+            method: "POST",
+            body: JSON.stringify({
+              ...tokenPayload(),
+              site: box.dataset.site || "",
+              session_id: box.dataset.session || "",
+              demo_id: box.dataset.demoId || "",
+            }),
+          });
+          removed += 1;
+        }
+      } finally {
+        if (job) {
+          renderJob(job, { forceCards: true });
+          markFoundSessionsOnCards(job);
+        }
+        if (removed) noteLog(`Removed ${removed} checked ${removed === 1 ? "card" : "cards"} from this tool. Nothing was ended or saved in dCloud.`);
+      }
+    }
+
     let shareModalState = null;
     let shareSearchTimer = null;
 
@@ -19811,6 +19880,9 @@
       guestShutdownChecked().catch((err) => showError(err.message));
     });
     $("btn-end").addEventListener("click", () => endSessions([]));
+    $("btn-remove-checked-cards").addEventListener("click", () => {
+      removeCheckedWorkspaceCards().catch((err) => showError(err.message));
+    });
     $("btn-dismiss").addEventListener("click", () => dismissJob().catch((err) => showError(err.message)));
     $("btn-start-fresh").addEventListener("click", () => startFresh().catch((err) => showError(err.message)));
     $("fresh-modal-ok").addEventListener("click", () => {

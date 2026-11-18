@@ -5429,6 +5429,25 @@ def test_favorites_page_remembers_content_ids() -> None:
     )
 
 
+def test_status_polling_is_quiet() -> None:
+    poll = js_function("startPolling")
+    targets = js_function("pollRefreshTargets")
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+    client = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
+    watcher = app_source[app_source.index("def _watch_job_statuses(") : app_source.index("def _dismiss_job(")]
+    check("a hidden tab skips dCloud reads", "document.hidden" in poll)
+    check("the poll lists only the cards that need a read", "session_id" in targets and "targets" in poll)
+    check("background poll does not ask for VM power", "dcNeedsVmRefresh" not in targets)
+    check("status checks match the dCloud sessions page interval", "const VM_REFRESH_INTERVAL_MS = 15000" in INDEX)
+    check("the background watcher does not call dCloud", "_refresh_dc_from_dcloud(" not in watcher)
+    check("refresh-status accepts a target list", "targets: list[dict[str, str]]" in app_source)
+    check("the poll uses the dashboard session list", "def _refresh_job_from_session_list(" in app_source and "list_dashboard_sessions(" in app_source)
+    check("tbv3 status is cached and capped", "TBV3_STATUS_TTL_SECONDS" in client and "_TBV3_STATUS_SLOTS" in client)
+    check("Adjust Schedule opens the Schedule page", 'showAppView("schedule")' in js_function("adjustScheduleFromCard"))
+    check("workspace can remove only the ticked cards", 'id="btn-remove-checked-cards"' in INDEX)
+    check("the old clear button removes every workspace card", ">Remove All Workspace Cards<" in INDEX)
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

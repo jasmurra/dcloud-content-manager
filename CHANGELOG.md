@@ -1,3 +1,9 @@
+## 2.2.5 — 2026-11-18
+
+- **Status checks no longer hammer dCloud.** While the tab is in front, the tool uses the same `GET /api/sessions` list the dCloud sessions page uses, once per datacenter every 15 seconds. It does not poll VM power in the background; use Refresh All Session Statuses when you want VM status. A background or covered tab stops. Per-VM reads still run during save/shutdown. Overlapping reads are skipped, and VM status is cached for a few seconds
+- **Adjust Schedule opens the Schedule page.** Failed LON/SYD cards now switch to Schedule with the slot loaded
+- **Remove Checked Cards.** Tick workspace cards and remove only those from the tool. The old button is now Remove All Workspace Cards, which still does not end or save anything in dCloud
+
 ## 2.2.4 — 2026-11-17
 
 - **End session works after the app restarts.** A tab from the previous open used to show an error while dCloud stayed Active, until a hard refresh. End now picks up the new local secret and retries, and workspace End uses the live dCloud token instead of the one copied onto the job

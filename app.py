@@ -124,6 +124,7 @@ from dcloud_client import (
     is_saved_status,
     is_saving_in_progress_status,
     is_stopping_status,
+    list_dashboard_sessions,
     list_dashboard_sessions_all_sites,
     list_admin_events,
     list_event_sessions,
@@ -1333,6 +1334,9 @@ class RemoveCardPayload(TokenPayload):
 class RefreshStatusPayload(TokenPayload):
     site: str = ""
     session_id: str = ""
+    # The page's background poll sends only the cards that need a read, as
+    # {site, session_id}. Empty means refresh every card (the manual button).
+    targets: list[dict[str, str]] = []
 
 
 class ShareSearchPayload(TokenPayload):
@@ -3691,7 +3695,30 @@ def _signed_session_is_live(status: Any) -> bool:
         return False
 
 
+_dc_refresh_inflight: set[tuple[str, str, str]] = set()
+_dc_refresh_guard = threading.Lock()
+
+
 def _refresh_dc_from_dcloud(job: dict[str, Any], dc: dict[str, Any], token: str) -> None:
+    """Read one card from dCloud, unless another read of that same session is already running.
+
+    The page poll, the background watcher, and a second browser tab can all ask
+    for the same session at once. Each read costs several dCloud calls per VM, so
+    an overlapping read is skipped; the one in flight updates the card.
+    """
+    key = (str(job.get("id") or ""), str(dc.get("site") or ""), str(dc.get("sessionId") or ""))
+    with _dc_refresh_guard:
+        if key in _dc_refresh_inflight:
+            return
+        _dc_refresh_inflight.add(key)
+    try:
+        _refresh_dc_from_dcloud_once(job, dc, token)
+    finally:
+        with _dc_refresh_guard:
+            _dc_refresh_inflight.discard(key)
+
+
+def _refresh_dc_from_dcloud_once(job: dict[str, Any], dc: dict[str, Any], token: str) -> None:
     site = dc["site"]
     sid = str(dc.get("sessionId") or "").strip()
     if not sid:
@@ -3980,6 +4007,64 @@ def _retire_ended_cards(job: dict[str, Any]) -> int:
     return len(removed)
 
 
+def _dc_needs_vm_status(dc: dict[str, Any]) -> bool:
+    """Save/shutdown still needs per-VM power. Idle Active cards do not; use Refresh All for that."""
+    return str(dc.get("phase") or "") in {"saving", "shutting_down"}
+
+
+def _apply_dashboard_row(job: dict[str, Any], dc: dict[str, Any], row: dict[str, Any] | None, token: str) -> None:
+    """Update one card from the dashboard session list, without per-VM status."""
+    if _dc_needs_vm_status(dc):
+        _refresh_dc_from_dcloud(job, dc, token)
+        return
+    if not row:
+        return
+    site = dc["site"]
+    sid = str(dc.get("sessionId") or "").strip()
+    reported = row.get("rawStatus")
+    status = str(row.get("status") or format_status(reported) or "").strip()
+
+    def bump(**fields: Any) -> None:
+        _set_dc(job, site, match_session=sid, **fields)
+
+    if row.get("viewUrl"):
+        bump(viewUrl=row["viewUrl"])
+    if is_active_status(reported):
+        bump(phase="ready", status="Active", resetPendingUntil=0, endedWithoutSave=False)
+        return
+    if _signed_session_is_live(reported):
+        bump(phase="waiting", status=status or "Starting")
+        return
+    # Saved, error, ended, and other uncommon states still need the full read.
+    _refresh_dc_from_dcloud(job, dc, token)
+
+
+def _refresh_job_from_session_list(
+    job: dict[str, Any],
+    token: str,
+    targets: list[dict[str, str]],
+) -> None:
+    """One dashboard list GET per datacenter, matching the sessions page refresh."""
+    by_site: dict[str, list[dict[str, Any]]] = {}
+    for target in targets[:50]:
+        site = str(target.get("site") or "").strip().lower()
+        sid = str(target.get("session_id") or "").strip()
+        dc = _find_dc(job, site, sid or None) if site else None
+        if not dc:
+            continue
+        if _dc_needs_vm_status(dc):
+            _refresh_dc_from_dcloud(job, dc, token)
+            continue
+        by_site.setdefault(site, []).append(dc)
+    for site, dcs in by_site.items():
+        rows, err = list_dashboard_sessions(token, site)
+        if err:
+            continue
+        by_id = {str(row.get("sessionId") or ""): row for row in rows}
+        for dc in dcs:
+            _apply_dashboard_row(job, dc, by_id.get(str(dc.get("sessionId") or "")), token)
+
+
 def _refresh_job_from_dcloud(job: dict[str, Any], token: str) -> None:
     job["token"] = token
     for dc in list(job.get("dcs") or []):
@@ -3988,7 +4073,6 @@ def _refresh_job_from_dcloud(job: dict[str, Any], token: str) -> None:
 
 
 def _watch_job_statuses(job: dict[str, Any]) -> None:
-    token = job.get("token") or ""
     while not job["stop"].is_set():
         pending = [
             dc for dc in (job.get("dcs") or []) if dc.get("phase") in _WATCHED_DC_PHASES
@@ -3997,17 +4081,12 @@ def _watch_job_statuses(job: dict[str, Any]) -> None:
             _retire_ended_cards(job)
             _sync_job_phase(job)
             return
-        tok = str(job.get("token") or token or "").strip()
-        if not tok:
-            tok, _token_err = _refresh_job_token(job)
-        if tok:
-            for dc in pending:
-                if job["stop"].is_set():
-                    return
-                _refresh_dc_from_dcloud(job, dc, tok)
+        # The open tab drives dCloud reads. This loop only waits until those
+        # reads clear the pending cards. A hidden or closed tab must not keep
+        # hitting the platform.
         _retire_ended_cards(job)
         _sync_job_phase(job)
-        time.sleep(20)
+        time.sleep(30)
 
 
 def _dismiss_job(job_id: str) -> dict[str, Any]:
@@ -8669,7 +8748,13 @@ def api_refresh_job_status(job_id: str, body: RefreshStatusPayload) -> dict[str,
     job["token_at"] = time.time()
     site = body.site.strip().lower()
     session_id = str(body.session_id or "").strip()
-    if site:
+    if body.targets:
+        # Background poll: same GET /api/sessions list the dCloud sessions page
+        # uses, once per datacenter. Per-VM tbv3 is only for save/shutdown or a
+        # card that still has no power state.
+        _refresh_job_from_session_list(job, token, body.targets)
+        _sync_job_phase(job)
+    elif site:
         dc = _find_dc(job, site, session_id or None)
         if not dc:
             raise HTTPException(404, f"No card for {site.upper()}.")

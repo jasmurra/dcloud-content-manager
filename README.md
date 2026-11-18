@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.2.5** | Status checks use the same session list as the dCloud sessions page, stop when the tab is in the background, and no longer poll per-VM status. Adjust Schedule opens the Schedule page. Workspace can remove only the ticked cards |
 | **2.2.4** | End session no longer needs a hard refresh after the app restarts; dCloud was staying Active while the tool showed an error |
 | **2.2.3** | End of Life approval follows the CAMGR flag. The session name box stays open while the workspace refreshes |
 | **2.2.2** | Save to Favorites uses the Load VMs content ID. A second End of Life is blocked, and Check My Requests selects the ones you submitted |
