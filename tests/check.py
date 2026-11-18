@@ -637,6 +637,19 @@ def test_bulk_share_adds_people_without_replacing() -> None:
     )
 
 
+def test_required_update_modal_stays_until_they_click() -> None:
+    page = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    check("the page polls GitHub for a newer VERSION", '"/api/update/available"' in page and "startRequiredUpdateWatch" in page)
+    check("the poll skips a hidden tab", "function startRequiredUpdateWatch(" in page and "document.hidden" in js_function("startRequiredUpdateWatch"))
+    check("a newer copy opens a blocking Update window", 'id="required-update"' in page and 'id="required-update-ok"' in page)
+    check("the Update window has no Cancel", 'id="required-update-cancel"' not in page)
+    check("Escape does not close the Update window", 'if (!$("required-update")?.classList.contains("hidden"))' in page)
+    check("the available-update API does not install", '@app.get("/api/update/available")' in source and "working_tree_dirty()" in source)
+    watch = js_function("startRequiredUpdateWatch")
+    check("the poll runs on a timer", "UPDATE_POLL_MS" in page and "setInterval" in watch)
+
+
 def test_github_unreachable_does_not_look_like_the_app_broke() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     updater = (ROOT / "update_from_github.py").read_text(encoding="utf-8")

@@ -1210,6 +1210,9 @@
     #token-alert {
       z-index: 1200;
     }
+    #required-update {
+      z-index: 1200;
+    }
     .modal {
       position: fixed;
       inset: 0;
@@ -2953,6 +2956,17 @@
         <div class="actions">
           <button type="button" class="secondary" id="catalog-explore-close">Close</button>
           <button type="button" id="catalog-explore-try" disabled>Try It</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="required-update" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="required-update-title">
+      <div class="modal-backdrop" id="required-update-backdrop"></div>
+      <div class="modal-card action-modal-card">
+        <h2 id="required-update-title">Update required</h2>
+        <p id="required-update-body">A newer version is on GitHub. You must update this copy to keep using the tool.</p>
+        <div class="actions">
+          <button type="button" id="required-update-ok">Update</button>
         </div>
       </div>
     </div>
@@ -5039,6 +5053,57 @@
         setHeaderStatus("Update downloaded — restart");
         button.setAttribute("data-tip", "The update downloaded, but automatic reload timed out. Close and restart start.command.");
       }
+    }
+
+    const UPDATE_POLL_MS = 2 * 60 * 1000;
+    let updatePollTimer = null;
+    let updatePollWatching = false;
+    let requiredUpdateShown = false;
+
+    function showRequiredUpdateModal(version) {
+      const modal = $("required-update");
+      const body = $("required-update-body");
+      const btn = $("required-update-ok");
+      if (!modal) return;
+      requiredUpdateShown = true;
+      const ver = String(version || "").trim();
+      if (body) {
+        body.textContent = ver
+          ? `Version ${ver} is on GitHub. You must update this copy before you keep using the tool. The page will reload after the update.`
+          : "A newer version is on GitHub. You must update this copy before you keep using the tool. The page will reload after the update.";
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = ver ? `Update to ${ver}` : "Update";
+      }
+      modal.classList.remove("hidden");
+    }
+
+    async function pollRequiredAppUpdate() {
+      try {
+        const data = await api("/api/update/available", { quiet: true });
+        if (data.updateAvailable && !data.localWork) {
+          showRequiredUpdateModal(data.remoteVersion || data.version);
+        }
+      } catch {
+        // GitHub down or the local app restarting — keep the current copy running.
+      }
+    }
+
+    function startRequiredUpdateWatch() {
+      if (updatePollTimer) clearInterval(updatePollTimer);
+      const probe = () => {
+        if (document.hidden) return;
+        pollRequiredAppUpdate();
+      };
+      probe();
+      updatePollTimer = setInterval(probe, UPDATE_POLL_MS);
+      if (updatePollWatching) return;
+      updatePollWatching = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) return;
+        pollRequiredAppUpdate();
+      });
     }
 
     async function checkForAppUpdates() {
@@ -15460,6 +15525,7 @@
       ]);
       await refreshAuth().catch(() => {});
       startAuthKeepAlive();
+      startRequiredUpdateWatch();
       if (jobId) {
         let jobGone = false;
         try {
@@ -20980,6 +21046,9 @@
         closeCatalogSchedulePicker();
         return;
       }
+      if (!$("required-update")?.classList.contains("hidden")) {
+        return;
+      }
       if (!$("confirm-alert")?.classList.contains("hidden")) {
         hideConfirmAlert(false);
         return;
@@ -21114,6 +21183,20 @@
     });
     $("btn-check-updates")?.addEventListener("click", () => {
       checkForAppUpdates().catch((err) => showError(err.message));
+    });
+    $("required-update-ok")?.addEventListener("click", () => {
+      const btn = $("required-update-ok");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Updating…";
+      }
+      checkForAppUpdates().catch((err) => {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Update";
+        }
+        showToast(err.message || "Could not install the update.", { kind: "warn" });
+      });
     });
     $("btn-close-dcloud-auth")?.addEventListener("click", (ev) => {
       ev.preventDefault();

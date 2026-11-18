@@ -6079,6 +6079,51 @@ def _apply_github_update() -> None:
             _update_check_lock.release()
 
 
+_update_probe_cache: dict[str, Any] = {"at": 0.0, "remote": "", "reachable": False}
+_update_probe_lock = threading.Lock()
+
+
+@app.get("/api/update/available")
+def api_update_available() -> dict[str, Any]:
+    """Compare this copy to GitHub VERSION. Does not install anything."""
+    from update_from_github import fetch_public_version, is_newer, load_config, working_tree_dirty
+
+    config = load_config()
+    repo = str(config.get("repo") or "").strip()
+    branch = str(config.get("branch") or "main").strip() or "main"
+    current = _read_app_version()
+    if not repo:
+        return {
+            "ok": True,
+            "reachable": False,
+            "updating": False,
+            "updateAvailable": False,
+            "localWork": False,
+            "version": current,
+            "remoteVersion": "",
+            "message": "GitHub updates are not configured.",
+        }
+    now = time.time()
+    with _update_probe_lock:
+        cached = _update_probe_cache
+        if now - float(cached.get("at") or 0) < 45:
+            remote = str(cached.get("remote") or "")
+            reachable = bool(cached.get("reachable"))
+        else:
+            remote = fetch_public_version(repo, branch) or ""
+            reachable = bool(remote)
+            _update_probe_cache.update(at=now, remote=remote, reachable=reachable)
+    return {
+        "ok": True,
+        "reachable": reachable,
+        "updating": False,
+        "updateAvailable": bool(remote and is_newer(remote, current)),
+        "localWork": working_tree_dirty(),
+        "version": current,
+        "remoteVersion": remote,
+    }
+
+
 @app.post("/api/update/check")
 def api_update_check() -> dict[str, Any]:
     """Check public GitHub and apply a newer VERSION without a manual restart."""

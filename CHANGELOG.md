@@ -1,3 +1,8 @@
+## 2.2.6 — 2026-11-18
+
+- **Required updates.** The tool checks GitHub every two minutes while the tab is open. When a newer version is on `main`, a window opens that stays until you click Update. Update installs it and reloads the page; no restart of start.command is needed. A copy with local uncommitted work is not forced
+- **Status checks stay quiet.** Same as 2.2.5: session status only, and no background checks while the tab is hidden
+
 ## 2.2.5 — 2026-11-18
 
 - **Status checks no longer hammer dCloud.** While the tab is in front, the tool uses the same `GET /api/sessions` list the dCloud sessions page uses, once per datacenter every 15 seconds. It does not poll VM power in the background; use Refresh All Session Statuses when you want VM status. A background or covered tab stops. Per-VM reads still run during save/shutdown. Overlapping reads are skipped, and VM status is cached for a few seconds
