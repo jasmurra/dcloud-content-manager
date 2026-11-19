@@ -18,6 +18,7 @@ Details and troubleshooting are in `START HERE.txt`.
 
 | Version | What changed |
 | --- | --- |
+| **2.3.0** | Demo Toolbox look: dark page, glowing card borders on hover, Magnetic blue controls, and space between Adjust Schedule and Available Slots |
 | **2.2.8** | Opening the tool no longer re-reads every card; Refresh All uses the sessions list, background checks are once a minute, and VM power is only on a card ↻ |
 | **2.2.7** | Required Update window from 2.2.6, plus a calendar of open schedule slots you can pick |
 | **2.2.6** | A newer GitHub version opens an Update window that stays until you click Update, checked every two minutes while the tool is open |

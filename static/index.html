@@ -8,27 +8,30 @@
   <link rel="icon" href="/static/app-icon.png?v=2" type="image/png">
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a2332;
-      --border: #2d3a4d;
-      --text: #e7ecf3;
-      --muted: #8b9cb3;
-      --accent: #049fd9;
-      --ok: #3dd68c;
-      --warn: #fbbf24;
-      --stopping: #fb923c;
-      --err: #f87171;
+      --bg: #0b1118;
+      --panel: #131a23;
+      --border: #414a56;
+      --text: #f0f1f2;
+      --muted: #889099;
+      --accent: #7cadf7;
+      --glow: #6eaffd;
+      --ok: #00ab50;
+      --warn: #f2d268;
+      --stopping: #f26722;
+      --err: #ff8b93;
     }
     * { box-sizing: border-box; }
     html:not(.hbr-mode-dark) {
-      --bg: #f4f6f8;
+      --bg: #e0eafc;
       --panel: #ffffff;
-      --border: #d0d7e0;
-      --text: #1b2533;
-      --muted: #5c6b80;
+      --border: rgba(0, 0, 0, 0.12);
+      --text: #172b3f;
+      --muted: #46515f;
+      --accent: #2774d9;
+      --glow: #3e84e5;
       --ok: #1a7f4b;
-      --warn: #b45309;
-      --err: #b91c1c;
+      --warn: #a65503;
+      --err: #b2242d;
     }
     body {
       margin: 0;
@@ -489,11 +492,11 @@
       box-shadow: none;
       transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
     }
-    button:not(:disabled):hover { background: #0388b8; }
+    button:not(:disabled):hover { background: #70a5f6; }
     button:not(:disabled):active {
       transform: none;
       box-shadow: none;
-      background: #02719a;
+      background: #649ef6;
     }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.is-busy:disabled { cursor: wait; }
@@ -926,6 +929,13 @@
       font-size: 0.75rem;
     }
     .vm-power-watch-row { margin: 0.75rem 0 0.35rem; }
+    .card-conflict-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem;
+      margin-top: 0.55rem;
+    }
     .btn-vm-power-watch.is-watching {
       border-color: var(--accent);
       color: var(--accent);
@@ -2650,7 +2660,145 @@
       margin-left: 0;
     }
     .vm-menu > summary { border-radius: 999px; }
-    input, select, textarea, .dt-trigger { border-radius: 4px; }
+    input, select, textarea, .dt-trigger { border-radius: 10px; }
+
+    /* Demo Toolbox reskin: dark page with the blue/purple floor glow, and
+       cards that use the same gradient border that brightens on hover. */
+    html.hbr-mode-dark body.app-body {
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(ellipse 55% 55% at 42% 110%, rgba(64, 72, 120, 0.6) 0, transparent 75%),
+        radial-gradient(ellipse 55% 55% at 58% 110%, rgba(90, 40, 144, 0.55) 0, transparent 75%);
+      background-attachment: fixed;
+    }
+    html:not(.hbr-mode-dark) body.app-body {
+      background-color: var(--bg);
+      background-image: linear-gradient(180deg, #e0eafc, #cfdef3);
+      background-attachment: fixed;
+    }
+    html.hbr-mode-dark .app-topbar {
+      background: rgba(11, 17, 24, 0.78);
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+    }
+    html.hbr-mode-dark #app-nav::part(base) {
+      background: rgba(11, 17, 24, 0.55);
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    html.hbr-mode-dark #app-nav,
+    html.hbr-mode-dark hbr-nav-item {
+      --pointer-bg-color: #7cadf7;
+      --hbr-color-brand: #7cadf7;
+      --nav-item-hover-bg: rgba(124, 173, 247, 0.12);
+      --nav-item-selected-bg: rgba(124, 173, 247, 0.16);
+      --sentiment-bg-color: #7cadf7;
+    }
+    html.hbr-mode-dark hbr-nav-item[active]::part(base),
+    html.hbr-mode-dark hbr-nav-item[selected]::part(base) {
+      background: rgba(124, 173, 247, 0.16) !important;
+      background-color: rgba(124, 173, 247, 0.16) !important;
+      box-shadow: inset 0 0 0 1px rgba(124, 173, 247, 0.45);
+    }
+    html.hbr-mode-dark hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item[active]::part(pointer),
+    html.hbr-mode-dark hbr-shell-nav:not([collapsed]):not([titleless]) hbr-nav-item[selected]::part(pointer) {
+      background: #7cadf7;
+    }
+    html.hbr-mode-dark .panel,
+    html.hbr-mode-dark .card,
+    html.hbr-mode-dark .card-site-group,
+    html.hbr-mode-dark .found-sessions-panel,
+    html.hbr-mode-dark .quick-tasks,
+    html.hbr-mode-dark .schedule-load-vms,
+    html:not(.hbr-mode-dark) .panel,
+    html:not(.hbr-mode-dark) .card,
+    html:not(.hbr-mode-dark) .card-site-group,
+    html:not(.hbr-mode-dark) .found-sessions-panel,
+    html:not(.hbr-mode-dark) .quick-tasks,
+    html:not(.hbr-mode-dark) .schedule-load-vms {
+      border: 2px solid transparent;
+      border-radius: 14px;
+      background:
+        linear-gradient(var(--panel), var(--panel)) padding-box,
+        linear-gradient(135deg, color-mix(in srgb, var(--glow) 55%, transparent), hsla(0, 0%, 100%, 0.16) 50%, color-mix(in srgb, var(--glow) 32%, transparent)) border-box;
+      box-shadow:
+        0 8px 32px -8px rgba(0, 0, 0, 0.45),
+        0 0 18px color-mix(in srgb, var(--glow) 28%, transparent);
+      transition: box-shadow 0.2s ease-out, transform 0.2s ease-out, background 0.2s ease-out;
+    }
+    html.hbr-mode-dark .panel:hover,
+    html.hbr-mode-dark .card:hover,
+    html.hbr-mode-dark .card-site-group:hover,
+    html.hbr-mode-dark .found-sessions-panel:hover,
+    html.hbr-mode-dark .quick-tasks:hover,
+    html.hbr-mode-dark .schedule-load-vms:hover,
+    html:not(.hbr-mode-dark) .panel:hover,
+    html:not(.hbr-mode-dark) .card:hover,
+    html:not(.hbr-mode-dark) .card-site-group:hover,
+    html:not(.hbr-mode-dark) .found-sessions-panel:hover,
+    html:not(.hbr-mode-dark) .quick-tasks:hover,
+    html:not(.hbr-mode-dark) .schedule-load-vms:hover {
+      background:
+        linear-gradient(var(--panel), var(--panel)) padding-box,
+        linear-gradient(135deg, color-mix(in srgb, var(--glow) 95%, transparent), #a0d2ff 50%, color-mix(in srgb, var(--glow) 75%, transparent)) border-box;
+      box-shadow:
+        0 20px 48px -12px rgba(0, 0, 0, 0.6),
+        0 0 22px color-mix(in srgb, var(--glow) 48%, transparent),
+        0 0 48px color-mix(in srgb, var(--glow) 28%, transparent);
+    }
+    /* Do not transform a card on hover. A transform makes the Actions menu,
+       which is position:fixed, stick to the card and jump as the pointer moves. */
+    .app-view > details.panel-collapse,
+    .app-view > details.panel-collapse:hover {
+      border: none !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      transform: none !important;
+    }
+    html.hbr-mode-dark .card.card-drop-before { box-shadow: 0 -3px 0 var(--accent); }
+    html.hbr-mode-dark .card.card-drop-after { box-shadow: 0 3px 0 var(--accent); }
+    html.hbr-mode-dark button.secondary,
+    html.hbr-mode-dark a.secondary {
+      background: transparent;
+      border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+      color: var(--accent);
+    }
+    html.hbr-mode-dark button.secondary:not(:disabled):hover,
+    html.hbr-mode-dark a.secondary:hover {
+      background: rgba(124, 173, 247, 0.12);
+      border-color: var(--accent);
+      box-shadow: 0 0 16px rgba(110, 175, 253, 0.28);
+    }
+    html.hbr-mode-dark button.danger {
+      background: #cc2d37;
+      border-color: #cc2d37;
+    }
+    html.hbr-mode-dark button.danger:not(:disabled):hover {
+      background: #d93843;
+      border-color: #d93843;
+    }
+    html.hbr-mode-dark input:not([type="checkbox"]):not([type="radio"]),
+    html.hbr-mode-dark select,
+    html.hbr-mode-dark textarea,
+    html.hbr-mode-dark .dt-trigger {
+      background: #0b1118;
+      border-color: #414a56;
+    }
+    input:focus, select:focus, textarea:focus, .dt-trigger:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124, 173, 247, 0.28);
+    }
+    .vm-row:hover, .share-search-results li:hover {
+      background: rgba(124, 173, 247, 0.12);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .panel, .card, .card-site-group, .found-sessions-panel, .quick-tasks, .schedule-load-vms,
+      .panel:hover, .card:hover, .card-site-group:hover, .found-sessions-panel:hover, .quick-tasks:hover, .schedule-load-vms:hover {
+        transition: none;
+        transform: none;
+      }
+    }
   </style>
   <script>
     (function () {
@@ -9604,7 +9752,7 @@
               ${dc.message ? `<div style="margin-top:0.35rem">${escapeHtml(dc.message)}</div>` : ""}
               ${shutdownPrompt ? renderShutdownPrompt(dc, cardData, shutdownPrompt) : ""}
               ${conflictDetails}
-              ${adjustSchedule || checkSlots ? `<div style="margin-top:0.55rem">${adjustSchedule}${checkSlots}</div>` : ""}
+              ${adjustSchedule || checkSlots ? `<div class="card-conflict-actions">${adjustSchedule}${checkSlots}</div>` : ""}
               ${showResetInline ? `<div style="margin-top:0.35rem"><button type="button" class="btn-dc-reset" ${cardData} data-tip="${resetTip}">Reset</button></div>` : ""}
               ${powerWatchBtn ? `<div class="vm-power-watch-row">${powerWatchBtn}</div>` : ""}
               ${powerWatchNote}

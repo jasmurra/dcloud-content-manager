@@ -1,3 +1,7 @@
+## 2.3.0 — 2026-11-19
+
+- **Demo Toolbox look.** The page uses the same dark background and blue-purple glow as the Webex Demo Toolbox. Panels and session cards get the gradient border that brightens when you hover. Buttons, the selected nav item, and focused fields use Magnetic blue. Adjust Schedule and Available Slots sit apart instead of touching
+
 ## 2.2.8 — 2026-11-19
 
 - **Fewer dCloud status APIs on every page.** Opening the tool no longer re-reads every workspace and monitor card. Refresh All and background polling use the sessions list (one GET per datacenter), not per-VM tbv3. Background checks run once a minute while the tab is in front, every 30 seconds only during save/shutdown, and stop when the tab is hidden. A card’s ↻ is the only automatic path that still reads VM power. Event reset/end tracking is the same slower cadence
