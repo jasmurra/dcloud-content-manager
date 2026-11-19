@@ -4043,8 +4043,10 @@ def _apply_dashboard_row(job: dict[str, Any], dc: dict[str, Any], row: dict[str,
     if _signed_session_is_live(reported):
         bump(phase="waiting", status=status or "Starting")
         return
-    # Saved, error, ended, and other uncommon states still need the full read.
-    _refresh_dc_from_dcloud(job, dc, token)
+    # Saved, error, ended: keep the list status. Do not fetch the session or
+    # per-VM tbv3 on a background poll; use the card refresh for that.
+    if status:
+        bump(status=status)
 
 
 def _refresh_job_from_session_list(
@@ -8822,8 +8824,7 @@ def api_refresh_job_status(job_id: str, body: RefreshStatusPayload) -> dict[str,
     session_id = str(body.session_id or "").strip()
     if body.targets:
         # Background poll: same GET /api/sessions list the dCloud sessions page
-        # uses, once per datacenter. Per-VM tbv3 is only for save/shutdown or a
-        # card that still has no power state.
+        # uses, once per datacenter. Per-VM tbv3 is only for save/shutdown.
         _refresh_job_from_session_list(job, token, body.targets)
         _sync_job_phase(job)
     elif site:
@@ -8834,8 +8835,15 @@ def api_refresh_job_status(job_id: str, body: RefreshStatusPayload) -> dict[str,
         _refresh_dc_from_dcloud(job, dc, token)
         _sync_job_phase(job)
     else:
-        _log(job, "Refreshing live session status from dCloud…")
-        _refresh_job_from_dcloud(job, token)
+        # Refresh All: one dashboard list GET per datacenter, not per-VM tbv3.
+        all_targets = [
+            {"site": str(dc.get("site") or ""), "session_id": str(dc.get("sessionId") or "")}
+            for dc in (job.get("dcs") or [])
+            if str(dc.get("site") or "").strip() and str(dc.get("sessionId") or "").strip()
+        ]
+        _log(job, "Refreshing session status from the dCloud sessions list…")
+        _refresh_job_from_session_list(job, token, all_targets)
+        _sync_job_phase(job)
     _retire_ended_cards(job)
     _ensure_status_watch(job)
     return _public_job(job)

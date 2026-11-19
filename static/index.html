@@ -3677,7 +3677,7 @@
         </div>
         <p class="hint" style="margin:0 0 0.75rem">Each session is pushed this far past its own end. Five days is one click. If resources are booked, the tool finds the farthest time that still fits and asks before applying it. Set days and hours to 0 to use the until time as an exact stop for every checked session.</p>
         <div class="actions">
-        <button type="button" class="secondary" id="btn-refresh-status" data-tip="Reads session status and VM power from dCloud now. Background polling only checks session status, not VM power.">Refresh All Session Statuses</button>
+        <button type="button" class="secondary" id="btn-refresh-status" data-tip="Reads session status from the same list the dCloud sessions page uses, once per datacenter. Use a card’s ↻ for VM power. Background polling is slower and stops when this tab is hidden.">Refresh All Session Statuses</button>
         <button type="button" class="danger" id="btn-shutdown" disabled data-tip="Guest-shuts down the checked ready cards, waits for their VMs to power off, then saves. Stays off until a card is checked. Skips sessions that are already saved or currently saving. Asks for a name and description first.">Guest Shutdown &amp; Save</button>
         <button type="button" class="secondary" id="btn-guest-shutdown-checked" disabled data-tip="Guest-shuts down every powered-on VM on the checked sessions. Does not save or end them. vCUBE is powered off. Stays off until a card is checked.">Guest Shutdown All VMs</button>
         <button type="button" class="end" id="btn-end" disabled data-tip="Ends the checked sessions without saving. Stays off until a card is checked.">End Sessions (No Save)</button>
@@ -3727,7 +3727,7 @@
         </div>
       </div>
       <div class="actions">
-        <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Polls dCloud for every monitoring card below.">Refresh Monitoring Cards</button>
+        <button type="button" class="secondary hidden" id="btn-refresh-monitor" data-tip="Reads session status for monitoring cards from the dCloud sessions list. Use a card’s ↻ for VM power.">Refresh Monitoring Cards</button>
         <button type="button" class="secondary hidden" id="btn-expand-monitor-dcs">Expand All DCs</button>
         <button type="button" class="secondary hidden" id="btn-collapse-monitor-dcs">Collapse All DCs</button>
         <button type="button" class="secondary hidden" id="btn-expand-monitor-cards">Expand All Cards</button>
@@ -4434,8 +4434,9 @@
     let pendingFlushAttempted = null;
     let lastVmRefreshAt = 0;
     let vmRefreshStartedAt = 0;
-    // Same 15s cadence as the dCloud sessions page (GET /api/sessions). A hidden tab does not poll.
-    const VM_REFRESH_INTERVAL_MS = 15000;
+    // Background session-list poll. A hidden tab does not poll. Per-VM tbv3 is
+    // only on a card ↻ or during save/shutdown.
+    const VM_REFRESH_INTERVAL_MS = 60000;
     const VM_REFRESH_MAX_MS = 10 * 60 * 1000;
     let lastTokenAlertKey = "";
     let lastActionAlertKey = "";
@@ -5422,6 +5423,7 @@
     const EVENTS_STORE = "dcloud-content-manager-events-v1";
     const eventEntries = new Map();
     const eventActionWatches = new Map();
+    const EVENT_ACTION_POLL_MS = 60000;
     let eventActionPollBusy = false;
     let lastFoundEvents = [];
     const foundEventViews = new Map();
@@ -5907,7 +5909,7 @@
     }
 
     async function pollEventActionWatches() {
-      if (eventActionPollBusy || !eventActionWatches.size) return;
+      if (document.hidden || eventActionPollBusy || !eventActionWatches.size) return;
       eventActionPollBusy = true;
       try {
         for (const [key, watch] of [...eventActionWatches]) {
@@ -14125,7 +14127,7 @@
         try {
           const saveInProgress = jobHasSaveInProgress(lastRenderedJob);
           const now = Date.now();
-          const refreshInterval = saveInProgress ? 15000 : VM_REFRESH_INTERVAL_MS;
+          const refreshInterval = saveInProgress ? 30000 : VM_REFRESH_INTERVAL_MS;
           const targets = pollRefreshTargets(lastRenderedJob);
           // One read at a time. A slow read used to stack the next one on top of it.
           if (targets.length && !jobRefreshInFlight && now - lastVmRefreshAt >= refreshInterval) {
@@ -15277,6 +15279,25 @@
       return job;
     }
 
+    async function refreshMonitorStatus() {
+      if (!jobId) {
+        showError("Nothing to refresh — restore the last job first.");
+        return;
+      }
+      if (!ensureTokenReady("refreshing session status")) return;
+      const targets = visibleMonitorDcs(lastRenderedJob || {})
+        .filter((dc) => dc.site && dc.sessionId)
+        .map((dc) => ({ site: dc.site, session_id: String(dc.sessionId) }));
+      if (!targets.length) return;
+      const job = await api(`/api/jobs/${jobId}/refresh-status`, {
+        method: "POST",
+        body: JSON.stringify({ ...tokenPayload(), targets }),
+      });
+      renderJob(job);
+      startPolling();
+      return job;
+    }
+
     async function refreshCardStatus(site, sessionId, btn) {
       if (!jobId) {
         showError("Nothing to refresh — restore the last job first.");
@@ -15566,7 +15587,7 @@
     }
 
     async function restoreJob(forceLatest, options = {}) {
-      const { silent = false, auto = false, skipStatusRefresh = false } = options;
+      const { silent = false, auto = false, skipStatusRefresh = true } = options;
       if (!silent) showError("");
       try {
         let job = null;
@@ -15587,7 +15608,7 @@
         renderJob(job);
         startPolling();
         const prefix = auto ? "Auto-restored" : "Restored";
-        noteLog(`${prefix} job ${job.id} (${job.phase}). Checking live dCloud status…`);
+        noteLog(`${prefix} job ${job.id} (${job.phase}). Cards are from the last local copy; use Refresh All or a card ↻ for a dCloud read.`);
         if (!skipStatusRefresh) {
           try {
             await refreshJobStatus();
@@ -15650,7 +15671,8 @@
           if (jobGone) setJobId(null);
           if (lastRenderedJob && shouldPollJob(lastRenderedJob)) startPolling();
         }
-        if (!jobGone) refreshJobStatus().catch(() => {});
+        // Do not POST refresh-status on load. That used to re-read every card
+        // including per-VM tbv3. Polling covers starting/save cards only.
       }
       await loadSavedIds().catch(() => {});
       await loadCaiTemplates().catch(() => {});
@@ -20107,7 +20129,7 @@
     $("fresh-modal-backdrop").addEventListener("click", () => closeFreshModal(null));
     $("btn-clear-log").addEventListener("click", () => clearLog());
     $("btn-refresh-status").addEventListener("click", () => refreshJobStatus().catch((err) => showError(err.message)));
-    $("btn-refresh-monitor").addEventListener("click", () => refreshJobStatus().catch((err) => showError(err.message)));
+    $("btn-refresh-monitor").addEventListener("click", () => refreshMonitorStatus().catch((err) => showError(err.message)));
     $("share-modal-backdrop").addEventListener("click", closeShareModal);
     $("share-modal-cancel").addEventListener("click", closeShareModal);
     $("share-modal-save").addEventListener("click", () => saveShareModal().catch((err) => showError(err.message)));
@@ -20895,7 +20917,7 @@
     }, 60 * 1000);
     window.setInterval(() => {
       pollEventActionWatches().catch((err) => noteLog(`Event status tracking failed: ${err.message}`));
-    }, 10 * 1000);
+    }, EVENT_ACTION_POLL_MS);
     $("btn-unified-search").addEventListener("click", () => searchAllDcloud());
     $("btn-unified-load-content").addEventListener("click", () => loadUnifiedDcData(["content"]));
     $("btn-unified-load-sessions").addEventListener("click", () => loadUnifiedDcData(["sessions"]));

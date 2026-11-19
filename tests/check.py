@@ -3506,7 +3506,7 @@ def test_event_management_section() -> None:
         and "watch.activePolls >= 2" in INDEX
         and "20 * 60 * 1000" in INDEX
         and "pollEventActionWatches()" in INDEX
-        and "10 * 1000" in INDEX,
+        and "EVENT_ACTION_POLL_MS" in INDEX,
     )
     check(
         "Events is a separate top-level section with site and event ID inputs",
@@ -5479,14 +5479,25 @@ def test_favorites_page_remembers_content_ids() -> None:
 def test_status_polling_is_quiet() -> None:
     poll = js_function("startPolling")
     targets = js_function("pollRefreshTargets")
+    bootstrap = js_function("bootstrapPage")
+    events = js_function("pollEventActionWatches")
     app_source = (ROOT / "app.py").read_text(encoding="utf-8")
     client = (ROOT / "dcloud_client.py").read_text(encoding="utf-8")
     watcher = app_source[app_source.index("def _watch_job_statuses(") : app_source.index("def _dismiss_job(")]
+    refresh_api = app_source[app_source.index("def api_refresh_job_status(") : app_source.index("def api_stop_job(")]
+    apply_row = app_source[app_source.index("def _apply_dashboard_row(") : app_source.index("def _refresh_job_from_session_list(")]
     check("a hidden tab skips dCloud reads", "document.hidden" in poll)
     check("the poll lists only the cards that need a read", "session_id" in targets and "targets" in poll)
     check("background poll does not ask for VM power", "dcNeedsVmRefresh" not in targets)
-    check("status checks match the dCloud sessions page interval", "const VM_REFRESH_INTERVAL_MS = 15000" in INDEX)
+    check("background session checks are once a minute", "const VM_REFRESH_INTERVAL_MS = 60000" in INDEX)
     check("the background watcher does not call dCloud", "_refresh_dc_from_dcloud(" not in watcher)
+    check("Refresh All uses the sessions list, not per-VM tbv3", "_refresh_job_from_session_list(job, token, all_targets)" in refresh_api)
+    check("Refresh All does not walk every card for VM power", "_refresh_job_from_dcloud(" not in refresh_api)
+    check("a list poll does not fetch session details for ended rows", "_refresh_dc_from_dcloud(job, dc, token)" not in apply_row.split("if not row:")[-1])
+    check("opening the tool does not refresh every card", "refreshJobStatus()" not in bootstrap)
+    check("restore does not hit dCloud unless asked", "skipStatusRefresh = true" in INDEX)
+    check("event status tracking skips a hidden tab", "document.hidden" in events)
+    check("event status tracking is once a minute", "const EVENT_ACTION_POLL_MS = 60000" in INDEX)
     check("refresh-status accepts a target list", "targets: list[dict[str, str]]" in app_source)
     check("the poll uses the dashboard session list", "def _refresh_job_from_session_list(" in app_source and "list_dashboard_sessions(" in app_source)
     check("tbv3 status is cached and capped", "TBV3_STATUS_TTL_SECONDS" in client and "_TBV3_STATUS_SLOTS" in client)
